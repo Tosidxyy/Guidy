@@ -1,7 +1,7 @@
 # Guidy｜独立开发任务清单与里程碑
 
 > **版本**：v0.1 开发计划草案（2026-10-09）  
-> **状态**：M0 基础工程开发中；已完成基础三 Tab，登录/后端/真机验收未完成  
+> **状态**：M0 基础工程开发中；已完成三 Tab 与后端探活，登录/数据库/真机验收未完成  
 > **人员与环境**：个人开发者；Windows + iPhone；Expo / React Native + FastAPI  
 > **关联**：[PRD.md](./PRD.md) · [ARCHITECTURE.md](./ARCHITECTURE.md) · [UI_DESIGN.md](./UI_DESIGN.md) · [DATABASE.md](./DATABASE.md)
 
@@ -34,8 +34,8 @@
 
 ### M0-B 后端/数据基础
 
-- [ ] 初始化 FastAPI、Pydantic v2、SQLAlchemy、Alembic、pytest、ruff。
-- [ ] 实现 `/health`、统一错误格式、request_id 和服务端日志脱敏。
+- [x] 初始化 FastAPI、Pydantic v2、SQLAlchemy、Alembic、pytest、ruff。（工具依赖与测试/静态检查配置就绪；数据库连接与迁移流程仍在下方待办中。）
+- [x] 实现 `/health`、统一错误格式、request_id 和服务端日志脱敏。
 - [ ] 创建 Supabase 开发项目，配置 Supabase Auth；配置 API JWT 验证（签名、issuer、audience、过期等）。
 - [ ] 建立开发/测试两套数据库连接与迁移流程；迁移先只创建 `profiles/goals`。
 - [ ] 实现登录、登出、会话恢复、服务端对象所有权中间件。
@@ -221,3 +221,17 @@ flowchart TD
 - 已勾选任务：配置私人 origin 与每轮 Push 开发约定。
 - 阻塞与未验证：本轮不改变 App 行为；未运行前端/后端测试，已有 iPhone/依赖审计限制继续保留。
 - 下一轮：继续 M0 后端基础；每轮测试与提交后同步私人仓库。
+
+### 2026-10-09 — M0 / FastAPI 探活、错误合同与日志基础
+
+- 完成内容：使用可用的 Python 3.12.14 创建 backend/.venv，uv 0.11.32 管理 pyproject/uv.lock；锁定 FastAPI 0.143.0、Pydantic 2.14.0、SQLAlchemy 2.1.4、Alembic 1.20.0、pytest 9.1.1、ruff 0.16.10 等。当前 Starlette TestClient 使用其支持的 httpx2 2.13.1，未引入 Agent/数据库业务。
+- API：公开 `/health` 仅为进程 liveness；JSON 成功/失败 envelope、合法 UUID 请求追踪及响应头、404/405/422/500 统一错误。生产关闭 debug/文档。日志只记录固定字段与路由模板，关闭原始 access log，抑制异常原文和 traceback。
+- 快速测试：backend 中 `.venv/Scripts/python.exe -m ruff check .` → PASS；`-m ruff format --check .` → PASS（15 文件）；`-m pytest` → PASS（22 passed，0 warnings）。覆盖非法 JSON/参数、协议头、500、私密字段、请求 ID 并发隔离、OpenAPI 和生产设置。
+- 环境故障与修正：沙箱内 pytest 在 asyncio socketpair 初始化卡住，诊断后终止，移到支持本机通信的环境运行；首次有效运行 20 passed / 2 failed（测试断言与新版框架不兼容），修正断言与当前 TestClient 依赖后全部通过。未将卡住/失败的运行记为通过。
+- 功能 Smoke Test：`.venv/Scripts/python.exe C:/Users/29035/.codex/visualizations/2026/10/09/01a11f51-bbc0-74b3-9200-ebe6276c1dc5/guidy-backend-smoke.py` → PASS（真实 Uvicorn loopback HTTP 200/404/405，响应追踪头/JSON 一致，非法 ID 替换，stdout/stderr 不含合成私密字段、全为结构化日志）；临时服务已自动停止，脚本在仓库外。
+- 其他检查：`uv lock --check --offline` → PASS；Python/四项基础工具 import → PASS；修改的 README/setup 文档链接、暂存文件/凭据扫描及 `git diff --cached --check` → PASS。前端没有改动，未重复运行前端测试。
+- 代码提交：`4f2ec8115818ff9861a8ed426c5e2d64ad281e6f`。
+- TODO 提交/Push：本轮单独提交 TODO 后推送 origin/main，实际 SHA 和远程同步核验在交付回复中报告。
+- 已勾选任务：后端基础依赖/工具初始化；`/health`、统一错误、request_id 与日志脱敏。
+- 阻塞与未验证：尚无 Supabase 项目配置、Auth/JWT、DB 连接/迁移、CI 或手机请求；SQLAlchemy/Alembic 仅安装并验证工具依赖，未执行 SQL。Windows 整体工具安装项仍未完成（VS Code/EAS 等未验证）。iPhone 实测和前轮前端依赖审计限制仍保留，M0 总体验收未通过。
+- 下一轮：建立前后端基础 CI，并让手机端显示真实 API 连通/失败状态；随后接 Supabase Auth 和 profiles/goals 基础迁移。
