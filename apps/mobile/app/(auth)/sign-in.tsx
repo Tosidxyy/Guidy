@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Platform, TextInput, View } from 'react-native';
 import { DEMO_CODE, DEMO_EMAIL, useDemoAccount } from '../../src/auth/DemoAccountProvider';
 import { demoExpired, demoSendGate, issueDemoChallenge, DEMO_WINDOW_MS, type DemoChallenge } from '../../src/auth/demoChallenge';
+import { normalizeDemoCode } from '../../src/auth/demoInput';
 import { Action, AppText, Badge, Caption, Card, Screen, styles } from '../../src/components/ui';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -22,6 +23,7 @@ export default function SignInScreen() {
   const [failNext, setFailNext] = useState(false);
   const [showScenarios, setShowScenarios] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const emailInput = useRef<TextInput>(null);
   const codeInput = useRef<TextInput>(null);
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
@@ -72,10 +74,12 @@ export default function SignInScreen() {
     if (stage === 'email') {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
         setError('请输入有效的邮箱地址。');
+        emailInput.current?.focus();
         return;
       }
       if (email.trim().toLowerCase() !== DEMO_EMAIL) {
         setError('此预览仅支持演示邮箱 demo@example.invalid。');
+        emailInput.current?.focus();
         return;
       }
       resend();
@@ -124,15 +128,15 @@ export default function SignInScreen() {
         <Card>
           <AppText accessibilityRole="header" style={styles.heading}>{stage === 'email' ? '邮箱登录' : '输入演示验证码'}</AppText>
           <AppText>邮箱</AppText>
-          <TextInput accessibilityLabel="邮箱" value={email} onChangeText={(value) => { setEmail(value); setError(''); }}
+          <TextInput ref={emailInput} accessibilityLabel="邮箱" accessibilityHint={stage === 'email' && error ? error : '此预览使用演示邮箱 demo@example.invalid。'} value={email} onChangeText={(value) => { setEmail(value); setError(''); }}
             editable={!busy && stage === 'email'} keyboardType="email-address" autoCapitalize="none" autoCorrect={false}
             autoComplete="off" maxLength={254} returnKeyType="next" onSubmitEditing={submit}
-            placeholder="demo@example.invalid" placeholderTextColor={colors.secondary} style={inputStyle} />
+            placeholder="demo@example.invalid" placeholderTextColor={colors.secondary} style={[inputStyle, stage === 'email' && error ? { borderWidth: 2, borderColor: colors.text } : null]} />
           {stage === 'code' ? <>
             <AppText>验证码</AppText>
-            <TextInput ref={codeInput} accessibilityLabel="验证码" value={code} onChangeText={(value) => { setCode(value); setError(''); }}
-              editable={!busy} keyboardType="number-pad" autoComplete="off" maxLength={6} returnKeyType="done"
-              onSubmitEditing={submit} placeholder="6 位数字" placeholderTextColor={colors.secondary} style={inputStyle} />
+            <TextInput ref={codeInput} accessibilityLabel="验证码" accessibilityHint={expired ? '演示验证码已过期，请重新获取。' : error || '输入六位演示验证码，可粘贴带空格或短横线的数字。'} value={code} onChangeText={(value) => { setCode(normalizeDemoCode(value)); setError(''); }}
+              autoFocus editable={!busy} keyboardType="number-pad" autoComplete="off" autoCorrect={false} maxLength={32} returnKeyType="done"
+              onSubmitEditing={submit} placeholder="6 位数字" placeholderTextColor={colors.secondary} style={[inputStyle, error && !expired ? { borderWidth: 2, borderColor: colors.text } : null]} />
             <Caption>演示验证码：123456。没有发送邮件。</Caption>
             <Caption>{expired ? '演示验证码已过期，请重新获取。' : `演示有效期剩余 ${Math.max(0, Math.ceil(((challenge?.expiresAt ?? now) - now) / 1000))} 秒。`}</Caption>
           </> : <Caption>使用上方演示邮箱体验流程。</Caption>}
