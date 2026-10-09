@@ -70,7 +70,7 @@ npm start
 1. 阅读 [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) 和 [examples/expo/README.md](examples/expo/README.md)。
 2. 按 `AGENTS.md` 和 `docs/TODO.md` 继续 **M0**，下一轮先实现 FastAPI `/health`，再接 Supabase Auth 与基础迁移。
 3. 在 Windows 启动 Expo 和 FastAPI，在 iPhone 上检查三个 Tab 和 `/health`。
-4. **每轮小任务都遵守 `AGENTS.md` 的闭环：快速测试通过 → `git commit` 实现 → 更新 `docs/TODO.md` → 单独 `git commit` TODO，并反馈真实 SHA。**
+4. **每轮小任务都遵守 `AGENTS.md` 的闭环：快速测试通过 → `git commit` 实现 → 更新 `docs/TODO.md` → 单独 `git commit` TODO → `git push` 到 [私人仓库](https://github.com/Tosidxyy/Guidy)，并反馈真实 SHA 和推送结果。**
 5. M0 通过后才启动动态澄清与 Agent 研究。
 
 ## 重要安全边界
