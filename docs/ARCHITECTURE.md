@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | iOS | Expo / React Native / TypeScript / Expo Router | 三 Tab 与 API 连通检查已实现 |
 | API | Cloudflare Workers / TypeScript，模块化单体 | M0 迁移中；HTTP 标准接口，按功能拆模块 |
-| 业务数据 | Cloudflare D1（SQLite 语义） | 本地开发/测试基础迁移已应用，远程尚无资源 |
+| 业务数据 | Cloudflare D1（SQLite 语义） | 本地开发/测试及独立云开发 D1 迁移已应用；云端认证尚未开放 |
 | 用户认证 | Better Auth + Expo 集成 | 本地 OTP/会话/退出及当前账号保护已接入；正式邮件/云部署/新真机验收待完成 |
 | DB 访问 | D1 binding、参数化 SQL、Wrangler SQL migrations | 本地开发/测试隔离，生产资源待配置，不下发管理凭据 |
 | Schema | TypeScript DTO + 运行时 Schema 校验（M1 选定/锁定实现） | 不把静态 TS 类型当成运行时校验 |
@@ -97,7 +97,7 @@ Task 定义和 Occurrence 执行实例分离；计划版本不可覆盖。局部
 
 M0：TS Worker 探活/错误/日志、基础 CI、D1 开发/测试迁移、Better Auth 登录/恢复/权限、iPhone 基础联调。M1：Goal/研究/PlanDraft 与持久任务。M2：排程/确认/提醒/反馈。M3：局部修订与我的完善。M4：真机与真实用户验证。V0.2 私人模板/启动观察；V0.3 公共模板审核。
 
-用户确认 iPhone Expo Go 预览和 Worker 探活可用；新真实登录、机型、大字体/VoiceOver、原生通知、最终图标/签名安装包尚未验证。本地 Auth 已接入，Workers 云部署、远程 D1、正式邮件提供商尚未创建或接入。公开账号删除/导出、模板脱敏、数据保留/供应商条款在发布前落实。
+用户确认 iPhone Expo Go 预览和本地 Worker 探活可用；新真实登录、机型、大字体/VoiceOver、原生通知、最终图标/签名安装包尚未完整验证。本地 Auth 已接入，云开发 Worker/D1 已部署；正式邮件、云端登录与手机云联调待完成，详见 [云开发环境](CLOUDFLARE_DEPLOY.md)。公开账号删除/导出、模板脱敏、数据保留/供应商条款在发布前落实。
 
 开发用 Wrangler 本地运行；生产使用独立 Worker/D1 及 secrets，不能把无认证开发服务长期公开。Cloudflare 账号、地区/数据需求、费用与资源权限要在真实资源创建时确认；CI 只做检查与 dry-run，不自动部署。失败重试与批处理边界先测再标完成。
 

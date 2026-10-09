@@ -1,6 +1,6 @@
 # Guidy backend · Cloudflare TypeScript
 
-当前已有 Workers API、D1 本地迁移和 Better Auth 邮箱 OTP 登录/退出/会话恢复及受保护账号接口。验证码仅投递到用户选择的本地开发收件箱；正式邮件与云部署未接入。Python 版本仅在 Git 历史中保留。
+当前已有 Workers API、D1 本地迁移和 Better Auth 邮箱 OTP 登录/退出/会话恢复及受保护账号接口。独立云开发 Worker/D1 已部署；云端认证关闭，验证码仍仅投递到本地开发收件箱，正式邮件未接入。Python 版本仅在 Git 历史中保留。
 
 ## Windows 本地运行
 
@@ -43,7 +43,7 @@ health 成功合同保持 `{data:{status:"ok",service:"guidy-api",version:"0.1.0
 
 测试使用 Wrangler 相同版本的 Miniflare/workerd（Miniflare 5 采用官方 V4 配置转换器），不持久化测试数据，验证迁移后的库 Schema、约束、外键、回滚、级联删除与开发/测试绑定隔离。这些不是登录或跨用户 API 权限验收；D1 没有自动 RLS，后续所有业务访问仍须会话/owner 校验。
 
-本地 OTP/会话已接入，下一步是真机验收与正式邮件/云端配置。暂无远程 Worker URL/D1 ID，不能声称已部署。Cloudflare/D1 的语义与 [架构](../docs/ARCHITECTURE.md)、[数据库模型](../docs/DATABASE.md) 一致。
+本地 OTP/会话已接入；云开发 Worker/D1 已创建并部署，云端认证关闭，正式邮件/完整云端登录未完成。部署命令与真实资源见 [Cloudflare 开发环境](../docs/CLOUDFLARE_DEPLOY.md)。Cloudflare/D1 的语义与 [架构](../docs/ARCHITECTURE.md)、[数据库模型](../docs/DATABASE.md) 一致。
 
 ## 本地真实登录
 

@@ -2,7 +2,7 @@
 
 **Guidy** 是面向 iOS 的通用 AI 目标规划与执行产品。用户提出目标，Agent 在短对话中澄清必要条件、自主研究、生成有依据的可执行计划，经过确认后安排到应用内日历，通过提醒、反馈和可审阅的重规划帮助用户推进目标。未来可以将经过执行记录与审核的规划**路径**作为模板复用。
 
-> 当前状态：**M0 基础工程开发中**。Expo 三 Tab、Worker API、D1 本地迁移及 Better Auth 本地 OTP/会话已接入；验证码使用开发收件箱，正式邮件、远程资源和通知未实现。基础 CI 配置见 `.github/workflows/ci.yml`。用户已确认 iPhone 预览/探活；新真实登录的真机验收未完成。
+> 当前状态：**M0 基础工程开发中**。Expo 三 Tab、Worker API、D1 本地迁移及 Better Auth 本地 OTP/会话已接入；独立云开发 Worker/D1 已部署。验证码使用开发收件箱，正式邮件、云端登录和通知未实现。基础 CI 配置见 `.github/workflows/ci.yml`。用户已确认 iPhone 预览/本地探活；新认证的完整真机验收未完成。
 
 ## 产品与技术决策
 
@@ -28,6 +28,7 @@
 | [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) | Windows + iPhone 初始化与图标接入步骤 |
 | [docs/IPHONE_PREVIEW.md](docs/IPHONE_PREVIEW.md) | iPhone Expo Go 与本地 Worker 联通及排查 |
 | [docs/IOS_BUILD.md](docs/IOS_BUILD.md) | EAS 开发构建、签名与 TestFlight 前置条件 |
+| [docs/CLOUDFLARE_DEPLOY.md](docs/CLOUDFLARE_DEPLOY.md) | 已部署的 Cloudflare 开发 Worker/D1 与后续邮件条件 |
 | [AGENTS.md](AGENTS.md) | 给 Codex 的项目约定及实施原则 |
 | [apps/mobile/README.md](apps/mobile/README.md) | 当前前端启动、检查命令与验证边界 |
 | [backend/README.md](backend/README.md) | Workers 启动、API 合同、日志与后端检查 |

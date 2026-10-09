@@ -10,12 +10,15 @@
     "lint": "eslint .",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "build": "wrangler deploy --dry-run --outdir dist",
-    "format:check": "prettier --check src tests scripts eslint.config.js tsconfig.json wrangler*.jsonc package.json",
+    "format:check": "prettier --check src tests scripts eslint.config.js tsconfig.json wrangler*.jsonc wrangler.cloud.json package.json",
     "db:migrate": "node scripts/local-db.mjs migrate dev",
     "db:migrate:test": "node scripts/local-db.mjs migrate test",
     "db:list": "node scripts/local-db.mjs list dev",
     "schema:check": "node scripts/auth-schema.mjs",
-    "auth:inbox": "node scripts/dev-inbox.mjs"
+    "auth:inbox": "node scripts/dev-inbox.mjs",
+    "build:cloud": "node scripts/cloud-dev.mjs build",
+    "db:migrate:cloud": "node scripts/cloud-dev.mjs migrate",
+    "deploy:cloud": "node scripts/cloud-dev.mjs deploy"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261009.1",

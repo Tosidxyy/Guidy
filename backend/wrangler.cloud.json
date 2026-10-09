@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "guidy-api-development",
+  "account_id": "8ea47eed8a010eb55b3d512e14657497",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-09",
+  "workers_dev": true,
+  "observability": { "enabled": false },
+  "vars": {
+    "GUIDY_CORS_ORIGINS": "[]",
+    "GUIDY_AUTH_MODE": "disabled"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "guidy-development",
+      "database_id": "6c77640e-763f-46d7-ac5a-ae383cf540e5",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
