@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Guidy",
+    "slug": "guidy",
+    "scheme": "guidy",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/images/icon.png",
+    "ios": {
+      "supportsTablet": false
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 190,
+          "resizeMode": "contain",
+          "backgroundColor": "#090909",
+          "dark": {
+            "image": "./assets/images/splash-icon.png",
+            "backgroundColor": "#090909"
+          }
+        }
+      ]
+    ]
+  }
+}

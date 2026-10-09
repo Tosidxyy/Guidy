@@ -1,0 +1,282 @@
+{
+  "product": "Guidy",
+  "version": "v1.3_with_prototypes",
+  "created_at": "2026-10-09",
+  "readme": "README.md",
+  "approved_icon": "assets/icons/guidy-app-icon-ios-1024.png",
+  "screens": [
+    {
+      "name": "01-goals",
+      "stage": "V0.1",
+      "png": "design/prototypes/01-goals.png",
+      "svg": "design/prototypes/01-goals.svg"
+    },
+    {
+      "name": "02-agent-chat",
+      "stage": "V0.1",
+      "png": "design/prototypes/02-agent-chat.png",
+      "svg": "design/prototypes/02-agent-chat.svg"
+    },
+    {
+      "name": "03-plan-detail",
+      "stage": "V0.1",
+      "png": "design/prototypes/03-plan-detail.png",
+      "svg": "design/prototypes/03-plan-detail.svg"
+    },
+    {
+      "name": "04-calendar",
+      "stage": "V0.1",
+      "png": "design/prototypes/04-calendar.png",
+      "svg": "design/prototypes/04-calendar.svg"
+    },
+    {
+      "name": "05-profile",
+      "stage": "V0.1",
+      "png": "design/prototypes/05-profile.png",
+      "svg": "design/prototypes/05-profile.svg"
+    },
+    {
+      "name": "06-template-detail",
+      "stage": "V0.3 concept",
+      "png": "design/prototypes/06-template-detail.png",
+      "svg": "design/prototypes/06-template-detail.svg"
+    }
+  ],
+  "files": [
+    {
+      "path": ".gitignore",
+      "bytes": 192,
+      "sha256": "fc91e8718565d682059732fc7a163807acc1bb99c69c9c298f13b8e75ebb9127"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 6133,
+      "sha256": "75486aaa63066349e2abeea5357c0eded5c9125b638ecdfdff8fcf3d9f7d961a"
+    },
+    {
+      "path": "README.md",
+      "bytes": 4816,
+      "sha256": "6f3083217cbc016121681d6b37373683a676c8c3e98c40fe060e1984afc0996b"
+    },
+    {
+      "path": "START_CODEX_M0.md",
+      "bytes": 2289,
+      "sha256": "e8c0a4a3a9396b33b9ef39e3db8fd8e056d412c4aa17320fa27c434e0e678d0a"
+    },
+    {
+      "path": "archive/GoalPath_PRD_v1.0.docx",
+      "bytes": 68510,
+      "sha256": "24da417b069eef5024426d1cc3139021880b9fb22de7e22ad45ae3b1185cb45c"
+    },
+    {
+      "path": "archive/GoalPath_PRD_v1.0.md",
+      "bytes": 46843,
+      "sha256": "171a54115c09fa78d4e9b1a230643877cd2cfa0eb2d0ac628523fcbe4976f8b6"
+    },
+    {
+      "path": "archive/icon-explorations/guidy-icon-blue-exploration.png",
+      "bytes": 1117522,
+      "sha256": "371f98555bd4c310612c1f061cb27ff6a682ebcc177f996f9bc07b01481ee206"
+    },
+    {
+      "path": "archive/icon-explorations/guidy-traveler-character-exploration.png",
+      "bytes": 1579701,
+      "sha256": "0800515851b3e9c72c23b079f37f9faf8d12ffaca6944cddb5d7c3d302ab4835"
+    },
+    {
+      "path": "archive/icon-explorations/guidy-traveler-first-exploration.png",
+      "bytes": 1474236,
+      "sha256": "7a85b24c535894cc77d297d095c96f81e1a1db5ed0c819a90059d26e80fab952"
+    },
+    {
+      "path": "archive/icon-explorations/guidy-traveler-landscape-exploration.png",
+      "bytes": 1691531,
+      "sha256": "fed43cf1fcd990dc97f6887584b30086234dda5eeb55939a0d2b88227844ba46"
+    },
+    {
+      "path": "archive/icon-explorations/guidy-traveler-minimal-exploration.png",
+      "bytes": 1491669,
+      "sha256": "53c932cb2737db735d581f5f4b44dfb984ae55a4ce60aa4e67a53419864bbf64"
+    },
+    {
+      "path": "assets/icons/README.md",
+      "bytes": 1129,
+      "sha256": "3a78c52dd36f2bfe1a0c9ca80de5b361be79126ec1d46af4ca9f06348de2fc08"
+    },
+    {
+      "path": "assets/icons/guidy-app-icon-inverse-1024.png",
+      "bytes": 103370,
+      "sha256": "e2ee01982b6c6c8180ecace7ed02b2609127a4786338630dc182edca15b23622"
+    },
+    {
+      "path": "assets/icons/guidy-app-icon-ios-1024.png",
+      "bytes": 101785,
+      "sha256": "a6fd78d2b76a58e0fc0259722c58825cef58ef82178ec1a8857ceaa319f9820c"
+    },
+    {
+      "path": "assets/icons/guidy-approved-original.png",
+      "bytes": 1489683,
+      "sha256": "45d0f6064f2283bc217b03443f26c4904e38ae9c03b3bf65dd80e448e25db9ec"
+    },
+    {
+      "path": "assets/icons/guidy-homescreen-size-preview.png",
+      "bytes": 3322,
+      "sha256": "e802ec9b5df72e9c6b254c0c42155f843eb4ef13aebd0569f91cee7d7fe98a1c"
+    },
+    {
+      "path": "assets/icons/guidy-icon-preview-rounded-256.png",
+      "bytes": 13686,
+      "sha256": "e9f4f78ac5de599a547fb7f91a97faed475a17571ab27100d612350bdb907c1d"
+    },
+    {
+      "path": "assets/icons/guidy-icon-source-black-white.png",
+      "bytes": 1489683,
+      "sha256": "45d0f6064f2283bc217b03443f26c4904e38ae9c03b3bf65dd80e448e25db9ec"
+    },
+    {
+      "path": "assets/icons/guidy-splash-symbol-white.png",
+      "bytes": 114087,
+      "sha256": "6b194d25a204406c90ff35e38d60e712752cc6dabd6b54ee8b7e363d444ab48a"
+    },
+    {
+      "path": "assets/icons/guidy-symbol-black-transparent.png",
+      "bytes": 97683,
+      "sha256": "a41d77fbd8f8195f3b083b5c7cc2a5e0f77f15fec0c42b6f0504eb4786eb489d"
+    },
+    {
+      "path": "assets/icons/guidy-symbol-white-transparent.png",
+      "bytes": 114087,
+      "sha256": "6b194d25a204406c90ff35e38d60e712752cc6dabd6b54ee8b7e363d444ab48a"
+    },
+    {
+      "path": "design/DESIGN_SYSTEM.md",
+      "bytes": 3376,
+      "sha256": "6ab87e748872f327f5f91de99b00020ba470ed12d492b26c761f6c27044b8de2"
+    },
+    {
+      "path": "design/prototypes/00-overview.png",
+      "bytes": 434543,
+      "sha256": "75e725f936577bfb0ea41bcc5836aa1e0465dce5c7950c9df01f30255fefe197"
+    },
+    {
+      "path": "design/prototypes/01-goals.png",
+      "bytes": 106891,
+      "sha256": "756c774ce9f87da78cb4b33d2fd304a3048b85014614fcce24ddd1741bd1fc19"
+    },
+    {
+      "path": "design/prototypes/01-goals.svg",
+      "bytes": 13885,
+      "sha256": "a28bf5ecd198435d05a4cda6fb5e2aa0f0294fd83ed31d6c3b705d89149946ff"
+    },
+    {
+      "path": "design/prototypes/02-agent-chat.png",
+      "bytes": 103683,
+      "sha256": "257cad3d8389f36f2e8c4e45d49c52c66e52c38781d592b63414e486028b57d6"
+    },
+    {
+      "path": "design/prototypes/02-agent-chat.svg",
+      "bytes": 12210,
+      "sha256": "0c19e166476eb591784dd9eaa53b323af9cacc91808a684686cecac33cc0fc73"
+    },
+    {
+      "path": "design/prototypes/03-plan-detail.png",
+      "bytes": 109825,
+      "sha256": "39fb220b701c7d30563e8a783cd6b2feb2440f9fd126e415461451fd10da33d3"
+    },
+    {
+      "path": "design/prototypes/03-plan-detail.svg",
+      "bytes": 7083,
+      "sha256": "ac0043e8ce9e849be0c8bea65a4d88d4b669e4c71971e680a43b3e95d17097ae"
+    },
+    {
+      "path": "design/prototypes/04-calendar.png",
+      "bytes": 98602,
+      "sha256": "c6c940b307ac7af4db5fde37f4b417c144dbdcd0da18c4e4d6ed2bec7f338ecc"
+    },
+    {
+      "path": "design/prototypes/04-calendar.svg",
+      "bytes": 15496,
+      "sha256": "ffe3dc5ff7301e3133f6c8e746b2a042657cd142b11c74595eb0a1f169f525e9"
+    },
+    {
+      "path": "design/prototypes/05-profile.png",
+      "bytes": 77849,
+      "sha256": "3a4c8f2a2c4ae25eed743b700e473f540128363bf18b93d24da41fcbd77fe467"
+    },
+    {
+      "path": "design/prototypes/05-profile.svg",
+      "bytes": 14704,
+      "sha256": "daf22bc94213b07d17f222164ae3edfe3c83f822d903ca5dbc26334c4be9116e"
+    },
+    {
+      "path": "design/prototypes/06-template-detail.png",
+      "bytes": 137056,
+      "sha256": "86e1f06b34aa1b2343ac6cb5227238ed5956987a9101b0fc7c7d4889bc8b127e"
+    },
+    {
+      "path": "design/prototypes/06-template-detail.svg",
+      "bytes": 6270,
+      "sha256": "e6f44ce1cac9c069a94e06076b0bc937fb7c734c48b456e7288637878a083630"
+    },
+    {
+      "path": "design/prototypes/index.html",
+      "bytes": 2675,
+      "sha256": "01413c506669bbebc93736ceb9717510c6fbb0c029543415a5771cb59e5a1989"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "bytes": 44520,
+      "sha256": "6e117bff874d687ab1f2483a3bbb28945a707d0bff0565a4c9f113084f6a79c4"
+    },
+    {
+      "path": "docs/BRAND_GUIDE.md",
+      "bytes": 4847,
+      "sha256": "d2bdd4084bed59e76bce004225f67cf811feab2fd0dc29a003d12f657c5aba22"
+    },
+    {
+      "path": "docs/DATABASE.md",
+      "bytes": 18855,
+      "sha256": "9c738a5177a7b76badc52f60168ca0e64b392100678fb449e125384c01ed2900"
+    },
+    {
+      "path": "docs/DEVELOPMENT_SETUP.md",
+      "bytes": 4798,
+      "sha256": "7ab73ea98eb8868a4cb6c3486d03a4f886e05a1f7bf3782c649c34e67bf70eeb"
+    },
+    {
+      "path": "docs/PRD.md",
+      "bytes": 33609,
+      "sha256": "9593c7a105cd066005bb27fe170faeed2b6d381437253837b113f40777ce764a"
+    },
+    {
+      "path": "docs/TODO.md",
+      "bytes": 13608,
+      "sha256": "9a34965feffca9ee7dde1e38a3c81164b5792704e48b2ba75c428907de56bc79"
+    },
+    {
+      "path": "docs/UI_DESIGN.md",
+      "bytes": 21358,
+      "sha256": "74cd66090b8fb047677d1459f27fb18c03f96a29eb05fc3aa7b5f92512cb3eda"
+    },
+    {
+      "path": "examples/expo/README.md",
+      "bytes": 1355,
+      "sha256": "1a8e56adde0050dbd28ab3944e0ef5227d94d9fc54c85c257feac97341edfae1"
+    },
+    {
+      "path": "examples/expo/app.json",
+      "bytes": 666,
+      "sha256": "82d5572396492446ddc247b97d32e7c4f31758f30a73f4599c7afaafd34c542b"
+    },
+    {
+      "path": "examples/expo/assets/images/icon.png",
+      "bytes": 101785,
+      "sha256": "a6fd78d2b76a58e0fc0259722c58825cef58ef82178ec1a8857ceaa319f9820c"
+    },
+    {
+      "path": "examples/expo/assets/images/splash-icon.png",
+      "bytes": 114087,
+      "sha256": "6b194d25a204406c90ff35e38d60e712752cc6dabd6b54ee8b7e363d444ab48a"
+    }
+  ]
+}

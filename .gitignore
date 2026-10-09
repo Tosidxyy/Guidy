@@ -1,0 +1,17 @@
+# Generated project caches
+node_modules/
+.expo/
+dist/
+coverage/
+*.log
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+.DS_Store
+.vscode/.ropeproject/
