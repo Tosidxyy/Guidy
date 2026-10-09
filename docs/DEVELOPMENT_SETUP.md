@@ -1,6 +1,6 @@
 # Guidy｜Windows + iPhone 开发环境与启动顺序
 
-> 当前已初始化 `apps/mobile` 的 Expo 三 Tab 基础界面；FastAPI、Supabase 数据库与登录尚未实现，iPhone 尚未验证。下面的初始化步骤仅在相应目录不存在时执行；现有前端从 [移动端 README](../apps/mobile/README.md) 的 `npm ci` / `npm start` 开始。
+> 当前已初始化 Expo 三 Tab 与 FastAPI `/health` 基础工程；Supabase 数据库与登录尚未实现，iPhone 尚未验证。下面的初始化步骤仅在相应目录不存在时执行；前端启动见 [移动端 README](../apps/mobile/README.md)，后端启动见 [后端 README](../backend/README.md)。
 
 ## 1. 工具准备
 
@@ -19,7 +19,7 @@ Guidy/
 ├── AGENTS.md
 ├── apps/
 │   └── mobile/                  # 已初始化 Expo + TypeScript 三 Tab 基础界面
-├── backend/                      # 预留目录；后续初始化 FastAPI + Worker
+├── backend/                      # FastAPI 基础 API；数据库/Worker 尚未实现
 ├── docs/
 │   ├── PRD.md
 │   ├── ARCHITECTURE.md
@@ -52,9 +52,9 @@ npx expo start
 
 在 iPhone 上通过 Expo Go 扫码运行；手机和 Windows 尽量使用同一局域网。网络障碍可按 Expo 官方说明尝试 `npx expo start --tunnel`。如果 SDK 不兼容，**不要硬改依赖来绕过**，应匹配 Expo 官方支持的版本或转用 EAS Development Build。
 
-后端建议另建 `backend/.venv`，使用 `FastAPI + SQLAlchemy + Alembic + PydanticAI`；API 服务不能把模型 API Key、Supabase Service Role Key 直接放入 Expo 客户端。
+后端已经创建独立 `backend/.venv`，用 uv 管理和锁定 FastAPI、Pydantic v2、SQLAlchemy、Alembic、pytest、ruff；PydanticAI/Worker 按 M1 引入。API 服务不能把模型 API Key、Supabase Service Role Key 放入 Expo 客户端。
 
-已检查 Windows 工具：Node 24.15.0、npm 11.14.0、Git 2.55.0；默认 Python 3.11.0。后端要求 Python 3.12+，下一轮需选用或准备兼容解释器；VS Code、EAS、Apple 签名及 iPhone 环境尚未验证。
+已检查 Windows 工具：Node 24.15.0、npm 11.14.0、Git 2.55.0、uv 0.11.32；系统默认 Python 3.11.0，后端独立环境使用已验证的 Python 3.12.14。VS Code、EAS、Apple 签名及 iPhone 环境尚未验证。
 
 ## 3. iOS 图标接入
 

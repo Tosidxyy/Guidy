@@ -2,7 +2,7 @@
 
 **Guidy** 是面向 iOS 的通用 AI 目标规划与执行产品。用户提出目标，Agent 在短对话中澄清必要条件、自主研究、生成有依据的可执行计划，经过确认后安排到应用内日历，通过提醒、反馈和可审阅的重规划帮助用户推进目标。未来可以将经过执行记录与审核的规划**路径**作为模板复用。
 
-> 当前状态：**M0 基础工程开发中**。`apps/mobile` 已有 Expo 三 Tab、黑白主题与明确标注的演示数据；`backend` 仅为后端预留目录。登录、FastAPI、数据库和通知尚未实现，iPhone 尚未实测。
+> 当前状态：**M0 基础工程开发中**。`apps/mobile` 已有 Expo 三 Tab、黑白主题与明确标注的演示数据；`backend` 已有 FastAPI `/health`、统一错误/request_id 和脱敏日志。登录、数据库和通知尚未实现，iPhone 尚未实测。
 
 ## 产品与技术决策
 
@@ -28,6 +28,7 @@
 | [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) | Windows + iPhone 初始化与图标接入步骤 |
 | [AGENTS.md](AGENTS.md) | 给 Codex 的项目约定及实施原则 |
 | [apps/mobile/README.md](apps/mobile/README.md) | 当前前端启动、检查命令与验证边界 |
+| [backend/README.md](backend/README.md) | FastAPI 启动、API 合同、日志与后端检查 |
 
 ## 图标资源 · 已锁定最终视觉
 
@@ -68,7 +69,7 @@ npm start
 从根目录运行 `npm run typecheck`、`npm run lint`；浏览器预览用 `npm run mobile:web`。详细信息见 [移动端说明](apps/mobile/README.md)。
 
 1. 阅读 [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) 和 [examples/expo/README.md](examples/expo/README.md)。
-2. 按 `AGENTS.md` 和 `docs/TODO.md` 继续 **M0**，下一轮先实现 FastAPI `/health`，再接 Supabase Auth 与基础迁移。
+2. 按 `AGENTS.md` 和 `docs/TODO.md` 继续 **M0**，下一轮建立基础 CI 与前后端连通验证，再接 Supabase Auth 与基础迁移。
 3. 在 Windows 启动 Expo 和 FastAPI，在 iPhone 上检查三个 Tab 和 `/health`。
 4. **每轮小任务都遵守 `AGENTS.md` 的闭环：快速测试通过 → `git commit` 实现 → 更新 `docs/TODO.md` → 单独 `git commit` TODO → `git push` 到 [私人仓库](https://github.com/Tosidxyy/Guidy)，并反馈真实 SHA 和推送结果。**
 5. M0 通过后才启动动态澄清与 Agent 研究。

@@ -441,7 +441,9 @@ P0 简单实现：`GET /agent-runs/{run_id}` 轮询阶段状态和结果；若�
 
 ## 9. API 合约草案
 
-所有路径前缀 `/api/v1`；每个受保护请求带 Bearer Token。返回格式示例：`{data, error:{code,message,details}, request_id}`（具体包裹策略在建仓前统一）。
+业务路径前缀 `/api/v1`；每个受保护请求带 Bearer Token。M0 已统一 JSON 合同：成功 `{data, error:null, request_id}`，失败 `{data:null, error:{code,message,details}, request_id}`，保留对应 HTTP 状态。`request_id` 是规范 UUID，与 `X-Request-ID` 响应头一致；非法客户端追踪文本替换为服务端随机 UUID。
+
+独立基础设施接口 `GET /health` 无需登录，仅验证 API 进程存活，不代表数据库/Auth/模型已可用。文档与 OpenAPI 等框架资源不套业务 JSON envelope；staging/production 关闭公开文档。错误响应不回显请求输入、异常原文或堆栈，普通服务端日志仅记录路由模板、请求 ID、状态、方法与耗时，不记录原始路径/查询参数/正文/令牌。具体运行合同见 [backend/README.md](../backend/README.md)。
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
