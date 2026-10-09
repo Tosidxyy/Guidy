@@ -40,7 +40,7 @@
 - [ ] 创建 Supabase 开发项目，配置 Supabase Auth；配置 API JWT 验证（签名、issuer、audience、过期等）。
 - [ ] 建立开发/测试两套数据库连接与迁移流程；迁移先只创建 `profiles/goals`。
 - [ ] 实现登录、登出、会话恢复、服务端对象所有权中间件。
-- [ ] 建立 CI：后端格式化/静态检查/单测，前端 TypeScript 类型检查/基础 lint。
+- [x] 建立 CI：后端格式化/静态检查/单测，前端 TypeScript 类型检查/基础 lint。
 
 **M0 验收**：iPhone 登录成功→浏览「目标/日历/我的」三 Tab→「我的」显示基础昵称/账号状态；断网能看到错误或缓存提示，不泄露后台密钥。
 
@@ -249,3 +249,11 @@ flowchart TD
 - 已勾选任务：M0 API 连接状态实现与浏览器联调；iPhone 和 CI 远程验收保持未完成。
 - 阻塞与未验证：iPhone 局域网请求/Expo Go、大字体/安全区仍未验证；Supabase Auth/DB 未接入；前轮依赖在线审计问题仍保留。本轮 CORS 仅用于浏览器探活，业务写方法应在后续 Auth API 实现时按需扩展。
 - 下一轮：确认远程 CI 后继续 Supabase Auth 与 profiles/goals 迁移；需要开发项目公开配置和独立数据库连接，不将密钥提交到仓库。
+
+### 2026-10-09 — M0 / 首次远程 CI 验收补记
+
+- 验收结果：GitHub Actions [Guidy CI #37899646600](https://github.com/Tosidxyy/Guidy/actions/runs/37899646600) → completed / success，运行 SHA 为 `71578a2a0bf35a56f34d6335e05cd59578b9e659`（包含实现 `c3a37b3` 与首次 TODO 记录）。
+- mobile job `113718946274`：npm ci、typecheck、lint、test:api 各步骤 success；backend job `113718945925`：uv sync --locked、ruff check、ruff format --check、pytest 各步骤 success。均为真实 ubuntu-latest runner 运行，非本地模拟。
+- 快速检查：只读 GitHub Actions API 核对运行/两 job/各 step 结果 → PASS；本次 TODO 文档/SHA/链接与 `git diff --check` → PASS。
+- 已勾选任务：基础 CI；其他 Auth/数据库/iPhone 待办不变。只补记远程结果，无应用代码变更，单独文档提交并再次 Push；workflow 的 paths 不会因纯文档更新重复运行。
+- 下一轮：继续 M0 Supabase Auth 与基础数据库迁移；iPhone 局域网/API 实测仍待执行。
