@@ -1,7 +1,7 @@
 # Guidy｜独立开发任务清单与里程碑
 
 > **版本**：v0.1 开发计划草案（2026-10-09）  
-> **状态**：M0 基础工程开发中；本地 D1 迁移已通过，登录/远程资源/专项真机验收未完成  
+> **状态**：M0 基础工程开发中；本地 D1/真实 OTP 认证已接入，正式邮件/远程资源/新认证真机验收未完成  
 > **人员与环境**：个人开发者；Windows + iPhone；Expo / React Native + Cloudflare Workers / TypeScript  
 > **关联**：[PRD.md](./PRD.md) · [ARCHITECTURE.md](./ARCHITECTURE.md) · [UI_DESIGN.md](./UI_DESIGN.md) · [DATABASE.md](./DATABASE.md)
 
@@ -48,6 +48,8 @@
 - [ ] 创建 Cloudflare 开发 Worker/D1 资源，接入 Better Auth；验证会话、过期、撤销与受保护 API。
 - [x] 建立开发/测试两套数据库连接与迁移流程；迁移先创建 Better Auth 必需表与 `profiles/goals`，通过 Wrangler SQL migrations 验证。（本地 D1；远程资源未创建。）
 - [ ] 实现登录、登出、会话恢复、服务端对象所有权中间件。
+- [x] 本地真实认证链路：Better Auth/D1 OTP、登录/退出/恢复、受保护当前账号接口与身份隔离；前端替换演示账号，接官方 Expo/SecureStore。（开发收件箱由用户确认；浏览器/真实 Worker 已验收，原生新登录待确认，后续业务对象授权仍待原项。）
+- [ ] 验收新 iPhone 真实登录、完全 Reload/重启恢复、正常/断网退出与 SecureStore 行为；接入正式邮件与云端资源后完成总体认证验收。
 - [x] 验证迁移后的 CI：后端 TypeScript/ESLint/格式/边界测试/dry-run，前端类型/lint/API 测试。（真实 GitHub jobs 已通过。）
 
 **M0 验收**：iPhone 登录成功→浏览「目标/日历/我的」三 Tab→「我的」显示基础昵称/账号状态；断网能看到错误或缓存提示，不泄露后台密钥。
@@ -447,3 +449,17 @@ flowchart TD
 
 - GitHub [Guidy CI #37952168616](https://github.com/Tosidxyy/Guidy/actions/runs/37952168616) → completed/success，运行 SHA `4fc9665c5fa2a5d04ebc4bb2266c8ef6f98ef45e`；mobile job `113893473853` 与 backend job `113893473228` 全部既有步骤 success。
 - 快速检查：只读 Actions API/步骤、实际 SHA/链接和 `git diff --check` → PASS；单独文档提交后推送并核对远程 HEAD。CI 不替代本轮 iPhone 后台/切页/失败恢复验收。
+
+### 2026-10-10 — M0 / 真实本地 OTP 登录与会话完整链路
+
+- 用户授权与范围：用户要求停止反复打磨演示、推进真实认证，并明确选择“没有，先用本地开发收件箱”。本轮完成前端/Worker/D1 的实际功能；没有配置邮件供应商、发送外部邮件或部署云端。
+- 完成内容：Better Auth 1.7.7 + 配套 Expo 1.7.7，6 位随机 OTP/5 分钟/3 次尝试/数据库限流，认证 verifier 哈希；新增不可重写 0003、CLI 仅本地开发收件箱（成功验证删除、过期不可读、无公开取码接口）。数据库真实会话、profiles、当前账号身份验证；GET /api/v1/me 不接受 owner_id/X-User-ID 作为身份。SDK 路径保持库协议，业务接口保持 envelope，日志/错误脱敏，未配置或公开地址的本地投递认证失败关闭。
+- 前端：替换固定演示登录与内存账号 Provider，接随机 OTP、会话恢复、退出和错误保留/重试；官方 Expo 插件/SecureStore，仅 cookie 存储，关闭账号资料缓存。原生退出先确认服务端撤销，再清本地 cookie，网络失败保留凭据可重试。三 Tab、品牌与目标/日历演示边界不变。
+- 最小有效检查：backend typecheck/lint/format:check/schema:check → PASS，npm test → PASS（22 项，含真实临时 D1 登录、哈希、错误/过期/复用、跨用户身份、撤销、Expo Origin/cookie、重复退出、限流、插件实际 Schema 与既有回归），build → PASS（dry-run）。db:migrate/db:migrate:test → PASS（0003 分别应用本地开发/测试，旧数据未清空）。mobile typecheck/lint/test:api（9）/test:ui-state（5）/export:ios → PASS；在线 expo install --check → Dependencies are up to date。未重复无关通知/业务测试或本轮 Web 静态导出。
+- 实际链路：仓库外 guidy-real-auth.cjs（捆绑 Playwright/Edge；Browser plugin not available）→ PASS，localhost:8090 → 真实 Wrangler 8787 → 本地 D1；生成合成 QA 账号、请求真实随机验证码、CLI 查询本地收件箱（码/会话不输出）、错误码拒绝/保留输入、正确码登录、账号 API 200、完整页面重载恢复、退出及旧 cookie 401。未 mock 认证响应；1 个预期 400 资源错误，未预期错误/警告 0；登录/账号截图检查通过。仅清理本轮合成 QA 账号，保留既有开发数据。
+- 修正记录：测试初版将前置被拒请求的限流计数忽略，隔离 fixture 后验证真实 3 次边界；旧“只有 health”断言更新为认证未配置 503；测试 Web 全局改用 globalThis；原生取 cookie 方法按实际插件 API 使用 getCookie。失败运行未作为通过。原有 mobile 29 项依赖审计限制保持，后端安装 audit 0；未强制修改 SDK。
+- 提交检查：文档相对链接、精确直接依赖/lockfile、批准原图哈希、暂存范围/实际本地密钥不在 diff、忽略 .dev.vars、git diff --cached --check → PASS。随机本地密钥只写忽略文件，不提交/输出；CLI 展示验证码仅供用户本地查看。手机 8089 在线 Metro 清缓存重启，Worker 保留运行。
+- 代码提交：`8bc480f24a0b1dcdb7d997b6645ff93b177d6344`。
+- 已勾选：本地完整认证实现小项。总体登录验收/云资源保持未完成：开发收件箱不验证真实邮箱归属、不能公开或生产使用；新的 iPhone SecureStore/重启/断网退出、大字体/VoiceOver 未测，后续 Goal/Task 对象授权随业务 API 实现。
+- TODO 提交/Push：本条单独提交后推送私人 origin/main 并验证远程 SHA；实际 CI 在交付回复核对，不为重复记 CI 追加无必要进度提交。
+- 下一步：用户在 iPhone Reload 后「我的 → 登录 → 获取验证码」，Windows backend 运行 auth:inbox 取码登录；确认新原生链路后继续 M0 正式邮件/远程配置，未提前实现 M1。
