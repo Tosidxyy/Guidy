@@ -26,6 +26,8 @@
 | [docs/TODO.md](docs/TODO.md) | M0–M4 里程碑和逐项任务 |
 | [docs/BRAND_GUIDE.md](docs/BRAND_GUIDE.md) | Guidy 黑白标识和 UI 视觉 Token |
 | [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) | Windows + iPhone 初始化与图标接入步骤 |
+| [docs/IPHONE_PREVIEW.md](docs/IPHONE_PREVIEW.md) | iPhone Expo Go 与本地 Worker 联通及排查 |
+| [docs/IOS_BUILD.md](docs/IOS_BUILD.md) | EAS 开发构建、签名与 TestFlight 前置条件 |
 | [AGENTS.md](AGENTS.md) | 给 Codex 的项目约定及实施原则 |
 | [apps/mobile/README.md](apps/mobile/README.md) | 当前前端启动、检查命令与验证边界 |
 | [backend/README.md](backend/README.md) | Workers 启动、API 合同、日志与后端检查 |

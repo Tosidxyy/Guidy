@@ -50,6 +50,8 @@ EXPO_PUBLIC_API_URL=http://192.168.YOUR.WINDOWS_IP:8787
 
 上面是占位地址，须替换为实际 Windows 局域网 IP；手机不能用 `localhost` 访问 Windows 后端。后端用 `npm run dev:lan` 做受控局域网联调，见 [后端说明](../../backend/README.md)。修改公开环境配置后完全重载 App。未配置或无效地址只显示配置错误，不发送请求。
 
+手机与本地 API 的分步验证、当前终端配置方式和排查顺序见 [iPhone 联通指南](../../docs/IPHONE_PREVIEW.md)。先验证 Safari `/health`，再验证 App 的连接状态，避免把 Windows 自测当作手机验收。
+
 浏览器本机预览可设 `EXPO_PUBLIC_API_URL=http://127.0.0.1:8787`，并在后端设置 `GUIDY_CORS_ORIGINS=["http://localhost:8082"]`，匹配 `npx expo start --localhost --port 8082`；手机原生 fetch 不需要 CORS。客户端只检查状态、Guidy 服务名、版本和请求 ID/响应头的一致性，不打印原始异常、不回显服务端失败正文，也不发送认证凭据。
 
 禁止将模型、搜索、Cloudflare API Token 或 Better Auth secret 放入客户端。所有 EXPO_PUBLIC 值都可被 App 用户读取。
