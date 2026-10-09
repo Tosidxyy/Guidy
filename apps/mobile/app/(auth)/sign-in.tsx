@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Platform, TextInput, View } from 'react-native';
 import { DEMO_CODE, DEMO_EMAIL, useDemoAccount } from '../../src/auth/DemoAccountProvider';
+import { demoExpired, demoSendGate, issueDemoChallenge, DEMO_WINDOW_MS, type DemoChallenge } from '../../src/auth/demoChallenge';
 import { Action, AppText, Badge, Caption, Card, Screen, styles } from '../../src/components/ui';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -12,21 +13,55 @@ export default function SignInScreen() {
   const [email, setEmail] = useState(DEMO_EMAIL);
   const [code, setCode] = useState('');
   const [stage, setStage] = useState<Stage>('email');
-  const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<'issue' | 'verify' | null>(null);
+  const busy = operation !== null;
   const [error, setError] = useState('');
+  const [challenge, setChallenge] = useState<DemoChallenge | null>(null);
+  const [history, setHistory] = useState<number[]>([]);
+  const [now, setNow] = useState(Date.now);
+  const [failNext, setFailNext] = useState(false);
+  const [showScenarios, setShowScenarios] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const codeInput = useRef<TextInput>(null);
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, []);
 
-  function finishPreviewStep(callback: () => void) {
+  const gate = demoSendGate(history, now);
+  const expired = stage === 'code' && demoExpired(challenge, now);
+
+  function showCode() {
+    const timestamp = Date.now();
+    setHistory((values) => [...values.filter((time) => time > timestamp - DEMO_WINDOW_MS), timestamp]);
+    setChallenge(issueDemoChallenge(timestamp));
+    setNow(timestamp);
+    setStage('code');
+    setCode('');
+    setError('');
+  }
+
+  function resend() {
+    if (timer.current) return;
+    const currentGate = demoSendGate(history, Date.now());
+    if (currentGate.reason) {
+      setError('');
+      return;
+    }
+    setError('');
+    finishPreviewStep(showCode, 'issue');
+  }
+
+  function finishPreviewStep(callback: () => void, kind: 'issue' | 'verify' = 'verify') {
     if (timer.current) return;
     Keyboard.dismiss();
-    setBusy(true);
+    setOperation(kind);
     // Deliberate mock loading state; no request, email or backend operation occurs.
     timer.current = setTimeout(() => {
       timer.current = null;
-      setBusy(false);
+      setOperation(null);
       callback();
     }, 500);
   }
@@ -43,7 +78,12 @@ export default function SignInScreen() {
         setError('此预览仅支持演示邮箱 demo@example.invalid。');
         return;
       }
-      finishPreviewStep(() => { setStage('code'); setCode(''); });
+      resend();
+      return;
+    }
+    if (demoExpired(challenge, Date.now())) {
+      setError('演示验证码已过期，请重新获取。');
+      setNow(Date.now());
       return;
     }
     if (!/^\d{6}$/.test(code)) {
@@ -55,12 +95,16 @@ export default function SignInScreen() {
       setError('演示验证码不正确，请输入 123456。');
       return;
     }
-    finishPreviewStep(() => { enterDemo(); router.dismissTo('/me'); });
+    finishPreviewStep(() => {
+      if (demoExpired(challenge, Date.now())) { setError('演示验证码已过期，请重新获取。'); setNow(Date.now()); return; }
+      if (failNext) { setFailNext(false); setError('模拟验证失败。输入已保留，请再次重试。'); return; }
+      enterDemo(); router.dismissTo('/me');
+    });
   }
 
   function back() {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
-    setBusy(false);
+    setOperation(null);
     Keyboard.dismiss();
     router.dismissTo('/me');
   }
@@ -90,12 +134,27 @@ export default function SignInScreen() {
               editable={!busy} keyboardType="number-pad" autoComplete="off" maxLength={6} returnKeyType="done"
               onSubmitEditing={submit} placeholder="6 位数字" placeholderTextColor={colors.secondary} style={inputStyle} />
             <Caption>演示验证码：123456。没有发送邮件。</Caption>
+            <Caption>{expired ? '演示验证码已过期，请重新获取。' : `演示有效期剩余 ${Math.max(0, Math.ceil(((challenge?.expiresAt ?? now) - now) / 1000))} 秒。`}</Caption>
           </> : <Caption>使用上方演示邮箱体验流程。</Caption>}
-          {error ? <AppText accessibilityRole="alert" accessibilityLiveRegion="polite">{error}</AppText> : null}
-          <Action label={busy ? (stage === 'email' ? '准备中…' : '验证中…') : (stage === 'email' ? '显示演示验证码' : '进入演示账号')}
-            onPress={submit} disabled={busy} />
-          {stage === 'code' ? <Action label="修改邮箱" secondary disabled={busy} onPress={() => { setStage('email'); setCode(''); setError(''); }} /> : null}
+          {error && !expired ? <AppText accessibilityRole="alert" accessibilityLiveRegion="polite">{error}</AppText> : null}
+          <Action label={busy ? (operation === 'issue' ? '准备中…' : '验证中…') : (stage === 'email' ? '显示演示验证码' : expired ? '验证码已过期' : '进入演示账号')}
+            onPress={submit} disabled={busy || expired || (stage === 'email' && gate.reason !== null)} />
+          {gate.reason ? <Caption>{gate.reason === 'limited' ? '演示重发频率受限' : '演示重发冷却中'} · {gate.waitSeconds} 秒后可重试</Caption> : null}
+          {stage === 'code' ? <>
+            <Action label={busy ? '请稍候…' : gate.reason ? `重新获取（${gate.waitSeconds}s）` : '重新获取演示验证码'} secondary disabled={busy || gate.reason !== null} onPress={resend} />
+            {failNext ? <Caption>下一次正确验证码提交将模拟失败，然后可正常重试。</Caption> : null}
+            <Action label="修改邮箱" secondary disabled={busy} onPress={() => { setStage('email'); setCode(''); setError(''); setFailNext(false); setShowScenarios(false); }} />
+          </> : null}
         </Card>
+        {stage === 'code' ? <Card>
+          <Action label={showScenarios ? '收起异常演示' : '展开异常演示'} secondary disabled={busy} onPress={() => setShowScenarios((value) => !value)} />
+          {showScenarios ? <>
+            <Caption>下列操作只切换前端演示状态。模拟时长不是正式登录规则。</Caption>
+            <Action label="演示验证码过期" secondary disabled={busy} onPress={() => { setChallenge({ expiresAt: Date.now() }); setNow(Date.now()); setError('演示验证码已过期，请重新获取。'); }} />
+            <Action label="演示重发限流" secondary disabled={busy} onPress={() => { const timestamp = Date.now(); setHistory([timestamp, timestamp, timestamp]); setNow(timestamp); setError(''); }} />
+            <Action label="演示下一次验证失败" secondary disabled={busy || expired} onPress={() => { setFailNext(true); setError(''); }} />
+          </> : null}
+        </Card> : null}
         <Caption>仅用于界面预览，不调用认证接口，不保存凭据。完全重载后，演示账号状态重置。</Caption>
         <Action label="返回我的" secondary onPress={back} />
       </Screen>
