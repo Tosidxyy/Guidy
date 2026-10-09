@@ -1,9 +1,9 @@
-> **2026-10-09 架构切换说明**：本文件为 D1 适配后的概念模型；旧 PostgreSQL 文档保存在 [历史快照](../archive/architecture-before-cloudflare/DATABASE.md)。本轮没有执行数据库迁移。
+> **2026-10-09 架构切换说明**：本文件为 D1 适配后的模型；旧 PostgreSQL 文档保存在 [历史快照](../archive/architecture-before-cloudflare/DATABASE.md)。M0 已在独立本地开发/测试 D1 应用认证核心表与 profiles/goals；远程资源、登录和其他表尚未实现。
 
 # Guidy｜数据库设计与数据生命周期
 
 > **版本**：v0.1 数据模型草案（2026-10-09）  
-> **状态**：供开发评审，尚未执行迁移或生产验证  
+> **状态**：M0 本地基础迁移通过；完整模型仍待后续实现和生产验证  
 > **数据库**：Cloudflare D1（SQLite 语义）；参数化 SQL + Wrangler migrations  
 > **关联**：[PRD.md](./PRD.md) · [ARCHITECTURE.md](./ARCHITECTURE.md) · [UI_DESIGN.md](./UI_DESIGN.md) · [TODO.md](./TODO.md)
 
@@ -49,7 +49,7 @@ erDiagram
 - 数据库表名 `snake_case` 复数；主键优先 `TEXT`（业务 UUID；认证 ID 为不透明字符串）；`created_at/updated_at` 为 UTC epoch 毫秒 `INTEGER`。
 - 外部输入的本地时间必须带 **IANA 时区**（如 `Asia/Shanghai`），计划具体实例的起止时间存 UTC 语义的 UTC epoch 毫秒 `INTEGER`；重复规则存本地时区语义，不能仅用 `UTC+8` 代替。
 - 所有可版本化的动态结构必须带 `schema_version`；通过 json_valid CHECK 的 JSON `TEXT` 用于 Slot 值、模板参数模式、重复规则和计划差异，不代替具备强引用关系的任务表。
-- 不信任前端传入的 `owner_id`；由验证后的 JWT `sub` 决定当前用户。
+- 不信任前端传入的 `owner_id`；由验证后的 Better Auth 会话身份决定当前用户，不假定一定使用 JWT。
 - 各类 `status` 使用受约束的文本或 enum；状态变化必须由 Service 定义合法转移。开发早期优先带 `CHECK` 的文本以降低 enum 迁移成本。
 - 公共对象和个人私密记录物理/逻辑隔离；日志与埋点仅记录最小必要标识、状态和耗时，不记录健康数据或完整对话。
 
@@ -165,6 +165,8 @@ erDiagram
 外键、`NOT NULL`、`CHECK(duration_min > 0)`、`CHECK(end_at > start_at)` 和适当的 `ON DELETE` 行为写进 Wrangler SQL migrations。循环依赖、跨用户关联、同 Goal active 指针一致性等涉及多行状态的校验须由服务层或专门约束实现。
 
 ## 8. D1 迁移与权限
+
+已应用的本地文件为 `backend/migrations/0001_auth_core.sql`（Better Auth 1.7.7 实际生成）与 `0002_profiles_goals.sql`（STRICT 业务表）。开发/测试配置、目录、绑定 ID 分开；没有真实云数据库。具体命令和验证边界见 [后端说明](../backend/README.md)。认证 ID 为库的不透明字符串，Goal ID 为规范小写 UUID；标题限制 1–200 个字符。当前没有公开 Goal CRUD，M0 active_plan_version_id 必须为 NULL；M2 的新迁移再添加计划版本关系。
 
 首轮仅 Better Auth 必需表（按锁定版本生成）及 profiles/goals。D1 SQL 方言用 TEXT 主键、INTEGER UTC 毫秒、JSON TEXT；不直接使用旧 PostgreSQL SQL。为状态、revision、时长、结束晚于开始、同 Goal 计划指针及依赖所属添加 CHECK/外键/唯一约束，并在真实 D1 本地运行验证。
 

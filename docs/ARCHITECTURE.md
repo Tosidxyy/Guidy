@@ -8,9 +8,9 @@
 | --- | --- | --- |
 | iOS | Expo / React Native / TypeScript / Expo Router | 三 Tab 与 API 连通检查已实现 |
 | API | Cloudflare Workers / TypeScript，模块化单体 | M0 迁移中；HTTP 标准接口，按功能拆模块 |
-| 业务数据 | Cloudflare D1（SQLite 语义） | 尚无远程资源或业务迁移 |
+| 业务数据 | Cloudflare D1（SQLite 语义） | 本地开发/测试基础迁移已应用，远程尚无资源 |
 | 用户认证 | Better Auth + Expo 集成 | 后续 M0；会话、注销、恢复及对象权限须验收 |
-| DB 访问 | D1 binding、参数化 SQL、Wrangler SQL migrations | 开发与测试/生产资源隔离，不下发管理凭据 |
+| DB 访问 | D1 binding、参数化 SQL、Wrangler SQL migrations | 本地开发/测试隔离，生产资源待配置，不下发管理凭据 |
 | Schema | TypeScript DTO + 运行时 Schema 校验（M1 选定/锁定实现） | 不把静态 TS 类型当成运行时校验 |
 | Agent | TypeScript Provider 抽象 + 结构化 PlanDraft | M1 才实现；模型/检索供应商未选定 |
 | 排程 | TypeScript SchedulingService | 确定性校验，不由模型写日历 |

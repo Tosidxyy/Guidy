@@ -9,6 +9,7 @@
 ```powershell
 cd C:\Users\29035\Desktop\Guidy\backend
 npm ci
+npm run db:migrate
 npm run dev:lan
 ```
 
@@ -38,6 +39,6 @@ iPhone 安装兼容 Expo Go、同一 Wi-Fi、登录同一 Expo 账号，用相�
 
 V0.1 仅内置日历，提醒首次真正使用时申请；正式通知、冷启动、点击与 deep link 在 iPhone Development/Release Build 验证。服务端通知意图与手机 schedule/cancel ACK 分开，送达不是完成。
 
-Cloudflare 账号/资源权限、D1 本地/开发/测试迁移、Better Auth 和邮件发送待后续 M0；模型/搜索 Provider 在 M1，不能把服务端密钥放入 App。详见 [后端](../backend/README.md)、[移动端](../apps/mobile/README.md)、[架构](ARCHITECTURE.md)、[TODO](TODO.md)。
+Cloudflare 账号/资源权限、D1 本地开发/测试迁移已应用，Better Auth 登录和邮件发送待后续 M0；模型/搜索 Provider 在 M1，不能把服务端密钥放入 App。详见 [后端](../backend/README.md)、[移动端](../apps/mobile/README.md)、[架构](ARCHITECTURE.md)、[TODO](TODO.md)。
 
 官方参考：[Expo](https://docs.expo.dev/)、[Workers](https://developers.cloudflare.com/workers/)、[D1](https://developers.cloudflare.com/d1/)、[Better Auth Expo](https://better-auth.com/docs/integrations/expo)。
