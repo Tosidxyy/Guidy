@@ -2,6 +2,12 @@
 
 本流程仅验证 Expo Go 预览和公开 `/health`。接口可用不代表登录、D1、云部署或业务同步完成。Windows 与 iPhone 必须位于可相互访问的同一局域网；访客 Wi-Fi、设备隔离或 VPN 路由可能阻断连接。
 
+## 0. 确认 Expo 登录
+
+当前 iOS Expo Go 要求电脑 Expo CLI 与手机 Expo Go 登录同一个 Expo 账号；仅有账号还不够。电脑在 `apps/mobile` 运行 `npx expo whoami` 检查；未登录时运行 `npx expo login`，按官方登录流程操作。手机 Expo Go 首页右上角头像处登录同一个账号。不要在聊天或 Git 中提供密码/Token。[Expo 官方登录要求](https://expo.dev/changelog/expo-go-57-login)
+
+如果手机报 Expo CLI 未登录，先核对两端账号，再取消终端的 `EXPO_OFFLINE`，重启 Metro 后打开新的预览。离线模式用于部分本地构建检查，不作为本流程的默认手机启动方式。2026-10-09 用户在取消离线启动并重新打开后确认预览可用；这一反馈仅验证打开预览，不代表 `/health` 已真机通过。
+
 ## 1. 启动 Worker
 
 在 Windows 打开第一个终端：
@@ -26,6 +32,7 @@ npm run dev:lan
 
 ```powershell
 cd C:\Users\29035\Desktop\Guidy\apps\mobile
+Remove-Item Env:EXPO_OFFLINE -ErrorAction SilentlyContinue
 $env:EXPO_PUBLIC_API_URL='http://192.168.x.x:8787'
 npm run start:go
 ```
@@ -41,6 +48,7 @@ npm run start:go
 | 现象 | 检查顺序 |
 | --- | --- |
 | Windows 自己也打不开 health | Worker 是否 Ready、端口是否 8787、是否用了 dev:lan、是否有启动错误 |
+| Expo Go 报 CLI/手机未登录 | npx expo whoami、手机头像处账号是否一致；取消 EXPO_OFFLINE，停止并重新启动 Metro |
 | Windows 可用，iPhone Safari 不可用 | 同一网络/IP、访客网络或设备隔离、VPN 路由、Windows 防火墙是否允许开发进程在当前可信网络访问 |
 | Safari 可用，App 显示配置未完成 | 使用设置 API 地址的终端启动 Metro，扫描新二维码，完整 Reload；地址不带 /health |
 | Safari 可用，App 超时/连接失败 | iOS 中 Expo Go 的本地网络权限、是否仍加载旧 Metro；重新检查并核对 Worker 请求日志 |

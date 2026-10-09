@@ -20,6 +20,8 @@ npm run start:go
 
 iPhone 与 Windows 使用同一局域网，通过兼容 Expo Go 扫描二维码。SDK 是否受手机上的 Expo Go 支持需要实机确认；不兼容时使用对应 Development Build。Windows 不支持 Xcode iOS 模拟器。
 
+当前 iOS Expo Go 要求电脑 CLI 与手机登录同一个 Expo 账号。电脑用 `npx expo whoami` 检查，未登录时 `npx expo login`；手机在 Expo Go 首页头像处登录。手机预览前取消 `EXPO_OFFLINE` 并重启 Metro，详见 [联通指南](../../docs/IPHONE_PREVIEW.md)。
+
 开发客户端依赖与 EAS development/production profiles 已准备；`npm run start:dev-client` 用于已安装的 Guidy 开发包。当前用户已有 Expo 账号、尚无 Apple 付费会员，未链接 EAS 项目、未注册 Bundle Identifier 或生成签名包。完整流程和 TestFlight 前置条件见 [iOS 构建指南](../../docs/IOS_BUILD.md)。安装依赖不代表已经能生成或安装 iPhone 包。
 
 ## 快速检查
