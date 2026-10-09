@@ -1,16 +1,20 @@
 import { Pressable, View } from 'react-native';
+import { router } from 'expo-router';
+import { DEMO_EMAIL, useDemoAccount } from '../../src/auth/DemoAccountProvider';
 import { ConnectionStatus } from '../../src/components/ConnectionStatus';
-import { AppText, Badge, Caption, Card, Screen, SectionTitle, styles } from '../../src/components/ui';
+import { Action, AppText, Badge, Caption, Card, Screen, SectionTitle, styles } from '../../src/components/ui';
 import { useTheme, type ThemePreference } from '../../src/theme/ThemeProvider';
 
 const preferences: { value: ThemePreference; label: string }[] = [{ value: 'system', label: '跟随系统' }, { value: 'light', label: '浅色' }, { value: 'dark', label: '深色' }];
 export default function MeScreen() {
   const { colors, preference, setPreference } = useTheme();
+  const { demoSignedIn, leaveDemo } = useDemoAccount();
   return (
     <Screen title="我的">
       <Card>
-        <View style={styles.row}><View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: colors.action, alignItems: 'center', justifyContent: 'center' }}><AppText style={{ color: colors.onAction, fontSize: 24, fontWeight: '700' }}>G</AppText></View><View style={{ flex: 1 }}><AppText style={styles.heading}>欢迎使用 Guidy</AppText><Caption>未登录 · M0 基础界面</Caption></View></View>
-        <Caption>登录与个人资料将在 M0 后续接入，当前没有保存个人数据。</Caption>
+        <View style={styles.row}><View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: colors.action, alignItems: 'center', justifyContent: 'center' }}><AppText style={{ color: colors.onAction, fontSize: 24, fontWeight: '700' }}>G</AppText></View><View style={{ flex: 1 }}><AppText style={styles.heading}>{demoSignedIn ? '演示用户' : '欢迎使用 Guidy'}</AppText><Caption>{demoSignedIn ? '演示账号 · 未连接认证' : '未登录 · M0 基础界面'}</Caption></View></View>
+        <Caption>{demoSignedIn ? `${DEMO_EMAIL} · 仅本次预览有效` : '先体验登录界面；本轮不调用认证接口。'}</Caption>
+        <Action label={demoSignedIn ? '退出演示账号' : '体验登录 UI'} secondary={demoSignedIn} onPress={demoSignedIn ? leaveDemo : () => router.push('/sign-in')} />
       </Card>
       <ConnectionStatus />
       <SectionTitle>我的内容</SectionTitle>

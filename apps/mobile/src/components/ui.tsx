@@ -7,11 +7,11 @@ export function AppText({ style, ...props }: TextProps) {
   const { colors } = useTheme();
   return <Text {...props} style={[{ color: colors.text, fontSize: typography.body, lineHeight: 23 }, style]} />;
 }
-export function Screen({ title, children }: PropsWithChildren<{ title: string }>) {
+export function Screen({ title, children, bottomInset = false }: PropsWithChildren<{ title: string; bottomInset?: boolean }>) {
   const { colors } = useTheme();
   return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1, backgroundColor: colors.background }}>
-      <ScrollView contentContainerStyle={styles.screen}>
+    <SafeAreaView edges={bottomInset ? ['top', 'left', 'right', 'bottom'] : ['top', 'left', 'right']} style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScrollView contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <View style={styles.brand}>
           <Image source={require('../../assets/images/icon.png')} style={styles.logo} accessibilityLabel="Guidy 标识" />
           <AppText accessibilityRole="header" style={styles.title}>{title}</AppText>
@@ -36,12 +36,12 @@ export function Caption({ children }: PropsWithChildren) {
 export function SectionTitle({ children }: PropsWithChildren) {
   return <AppText accessibilityRole="header" style={styles.heading}>{children}</AppText>;
 }
-export function Action({ label, onPress, disabled = false }: { label: string; onPress?: () => void; disabled?: boolean }) {
+export function Action({ label, onPress, disabled = false, secondary = false }: { label: string; onPress?: () => void; disabled?: boolean; secondary?: boolean }) {
   const { colors } = useTheme();
   return (
     <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
-      style={({ pressed }) => [styles.action, { backgroundColor: colors.action, opacity: disabled ? 0.55 : pressed ? 0.8 : 1 }]}>
-      <AppText style={{ color: colors.onAction, fontWeight: '600', textAlign: 'center' }}>{label}</AppText>
+      style={({ pressed }) => [styles.action, { backgroundColor: secondary ? colors.subtle : colors.action, opacity: disabled ? 0.55 : pressed ? 0.8 : 1 }]}>
+      <AppText style={{ color: secondary ? colors.text : colors.onAction, fontWeight: '600', textAlign: 'center' }}>{label}</AppText>
     </Pressable>
   );
 }
