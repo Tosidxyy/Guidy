@@ -1,4 +1,6 @@
-export interface Env {
+import { createAuth, isLocalHost, type AuthEnv } from "./auth.ts";
+
+export interface Env extends AuthEnv {
   GUIDY_CORS_ORIGINS?: string;
 }
 type RequestLog = {
@@ -14,6 +16,131 @@ type Route = {
   method: string;
   handle: (requestId: string) => Response | Promise<Response>;
 };
+
+const authPaths = new Map([
+  ["/api/auth/email-otp/send-verification-otp", "POST"],
+  ["/api/auth/sign-in/email-otp", "POST"],
+  ["/api/auth/get-session", "GET"],
+  ["/api/auth/sign-out", "POST"],
+]);
+
+async function authResponse(
+  request: Request,
+  env: Env,
+  id: string,
+  origins: string[],
+): Promise<Response> {
+  if (!isLocalHost(new URL(request.url).hostname))
+    return error(id, 503, "AUTH_NOT_CONFIGURED", "认证尚未配置。");
+  let auth: ReturnType<typeof createAuth>;
+  try {
+    auth = createAuth(env, origins);
+  } catch {
+    return error(id, 503, "AUTH_NOT_CONFIGURED", "请先配置本地认证服务。");
+  }
+  const path = new URL(request.url).pathname;
+  if (path === "/api/v1/me") {
+    if (request.method !== "GET")
+      return error(id, 405, "METHOD_NOT_ALLOWED", "此接口不支持该请求方法。", {
+        Allow: "GET",
+      });
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session) return error(id, 401, "UNAUTHORIZED", "请重新登录。");
+    const profile = await env
+      .DB!.prepare(
+        "SELECT display_name,locale,timezone FROM profiles WHERE user_id=?",
+      )
+      .bind(session.user.id)
+      .first();
+    return json({
+      data: {
+        id: session.user.id,
+        email: session.user.email,
+        name: profile?.display_name ?? session.user.name,
+      },
+      error: null,
+      request_id: id,
+    });
+  }
+  const method = authPaths.get(path);
+  if (!method) return error(id, 404, "NOT_FOUND", "资源不存在。");
+  if (request.method !== method)
+    return error(id, 405, "METHOD_NOT_ALLOWED", "此接口不支持该请求方法。", {
+      Allow: method,
+    });
+  let safeRequest = request;
+  let email: string | undefined;
+  if (request.method === "POST") {
+    if (!request.headers.get("Content-Type")?.startsWith("application/json"))
+      return error(id, 415, "INVALID_CONTENT_TYPE", "请使用 JSON 请求。");
+    const reader = request.body?.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    if (reader) {
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        size += next.value.byteLength;
+        if (size > 4096) {
+          await reader.cancel();
+          return error(id, 413, "BODY_TOO_LARGE", "请求内容过长。");
+        }
+        chunks.push(next.value);
+      }
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(new TextDecoder().decode(bytes));
+      if (!body || typeof body !== "object" || Array.isArray(body))
+        throw new Error();
+    } catch {
+      return error(id, 400, "INVALID_BODY", "请求格式不正确。");
+    }
+    if (path.endsWith("send-verification-otp") && body.type !== "sign-in")
+      return error(id, 400, "INVALID_BODY", "仅支持登录验证码。");
+    if (typeof body.email === "string") email = body.email.toLowerCase();
+    safeRequest = new Request(request.url, {
+      method: request.method,
+      headers: request.headers,
+      body: bytes,
+    });
+  }
+  const response = await auth.handler(safeRequest);
+  if (response.ok && path.endsWith("sign-in/email-otp") && email) {
+    await env
+      .DB!.prepare("DELETE FROM dev_auth_inbox WHERE email=?")
+      .bind(email)
+      .run();
+  }
+  // SDK endpoints keep Better Auth's wire protocol; never expose raw internal errors.
+  if (!response.ok) {
+    let code = "AUTH_FAILED";
+    try {
+      const value = (await response.json()) as { code?: string };
+      if (value.code && /^[A-Z_]{1,80}$/.test(value.code)) code = value.code;
+    } catch {
+      /* Return a generic error even when the auth library body is malformed. */
+    }
+    return json(
+      {
+        code,
+        message:
+          response.status === 429
+            ? "请求过于频繁，请稍后重试。"
+            : "登录检查失败，请确认验证码或重新获取。",
+      },
+      response.status,
+      { "Retry-After": response.headers.get("Retry-After") ?? "60" },
+    );
+  }
+  return response;
+}
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -86,7 +213,20 @@ export function createApp({
       const id = requestId(request.headers.get("X-Request-ID"));
       const started = performance.now();
       const path = new URL(request.url).pathname;
-      const route = routes.find((entry) => entry.path === path);
+      const isAuth = path.startsWith("/api/auth/") || path === "/api/v1/me";
+      const route = isAuth
+        ? {
+            path: path === "/api/v1/me" ? path : "/api/auth/*",
+            method: authPaths.get(path) ?? "GET",
+            handle: (requestId: string) =>
+              authResponse(
+                request,
+                env,
+                requestId,
+                corsOrigins(env.GUIDY_CORS_ORIGINS),
+              ),
+          }
+        : routes.find((entry) => entry.path === path);
       const origin = request.headers.get("Origin");
       let response: Response;
       let allowed = false;
@@ -107,22 +247,33 @@ export function createApp({
               .map((h) => h.trim().toLowerCase()) ?? [];
           if (
             !allowed ||
-            request.headers.get("Access-Control-Request-Method") !== "GET" ||
-            requestedHeaders.some((h) => h !== "x-request-id")
+            !(isAuth ? ["GET", "POST"] : ["GET"]).includes(
+              request.headers.get("Access-Control-Request-Method") ?? "",
+            ) ||
+            requestedHeaders.some(
+              (h) =>
+                !(
+                  isAuth
+                    ? ["x-request-id", "content-type", "expo-origin"]
+                    : ["x-request-id"]
+                ).includes(h),
+            )
           ) {
             response = error(id, 400, "CORS_REJECTED", "跨域请求未获允许。");
           } else {
             response = new Response(null, {
               status: 204,
               headers: {
-                "Access-Control-Allow-Methods": "GET",
-                "Access-Control-Allow-Headers": "X-Request-ID",
+                "Access-Control-Allow-Methods": isAuth ? "GET, POST" : "GET",
+                "Access-Control-Allow-Headers": isAuth
+                  ? "Content-Type, Expo-Origin, X-Request-ID"
+                  : "X-Request-ID",
               },
             });
           }
         } else if (!route) {
           response = error(id, 404, "NOT_FOUND", "资源不存在。");
-        } else if (request.method !== route.method) {
+        } else if (!isAuth && request.method !== route.method) {
           response = error(
             id,
             405,
@@ -148,6 +299,7 @@ export function createApp({
       if (allowed && origin) {
         headers.set("Access-Control-Allow-Origin", origin);
         headers.set("Access-Control-Expose-Headers", "X-Request-ID");
+        if (isAuth) headers.set("Access-Control-Allow-Credentials", "true");
       }
       const result = new Response(response.body, {
         status: response.status,

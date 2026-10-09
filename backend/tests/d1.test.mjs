@@ -82,7 +82,16 @@ test("D1 auth schema matches the locked library and only M0 tables exist", async
   ).results;
   assert.deepEqual(
     tables.map((row) => row.name),
-    ["account", "goals", "profiles", "session", "user", "verification"],
+    [
+      "account",
+      "dev_auth_inbox",
+      "goals",
+      "profiles",
+      "rateLimit",
+      "session",
+      "user",
+      "verification",
+    ],
   );
 });
 

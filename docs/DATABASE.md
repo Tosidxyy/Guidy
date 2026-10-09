@@ -1,4 +1,6 @@
-> **2026-10-09 架构切换说明**：本文件为 D1 适配后的模型；旧 PostgreSQL 文档保存在 [历史快照](../archive/architecture-before-cloudflare/DATABASE.md)。M0 已在独立本地开发/测试 D1 应用认证核心表与 profiles/goals；远程资源、登录和其他表尚未实现。
+> **2026-10-09 架构切换说明**：本文件为 D1 适配后的模型；旧 PostgreSQL 文档保存在 [历史快照](../archive/architecture-before-cloudflare/DATABASE.md)。M0 已在独立本地开发/测试 D1 应用认证核心表与 profiles/goals、rateLimit/本地开发收件箱，接入本地 OTP/会话；远程资源、正式邮件与其他业务表尚未实现。
+
+0003 增加库的 `rateLimit` 与仅限本地的 `dev_auth_inbox`。后者不属于生产邮件模型；没有公开读取接口，验证码仅由本地 CLI 查看，成功验证后删除，过期不再提供。认证 `verification` 的 OTP 使用哈希；部署基础配置未启用本地投递模式。业务账号的 profiles 按验证会话创建并查询，传入的 owner_id/X-User-ID 不作为身份依据。
 
 # Guidy｜数据库设计与数据生命周期
 

@@ -1,167 +1,64 @@
 import { router } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Platform, TextInput, View } from 'react-native';
-import { DEMO_CODE, DEMO_EMAIL, useDemoAccount } from '../../src/auth/DemoAccountProvider';
-import { demoExpired, demoSendGate, issueDemoChallenge, DEMO_WINDOW_MS, type DemoChallenge } from '../../src/auth/demoChallenge';
+import { useRef, useState } from 'react';
+import { Keyboard, KeyboardAvoidingView, Platform, TextInput } from 'react-native';
+import { authClient, authMessage } from '../../src/auth/client';
 import { normalizeDemoCode } from '../../src/auth/demoInput';
-import { Action, AppText, Badge, Caption, Card, Screen, styles } from '../../src/components/ui';
+import { Action, AppText, Badge, Caption, Card, Screen } from '../../src/components/ui';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
-type Stage = 'email' | 'code';
 export default function SignInScreen() {
   const { colors } = useTheme();
-  const { enterDemo } = useDemoAccount();
-  const [email, setEmail] = useState(DEMO_EMAIL);
+  const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
-  const [stage, setStage] = useState<Stage>('email');
-  const [operation, setOperation] = useState<'issue' | 'verify' | null>(null);
-  const busy = operation !== null;
+  const [stage, setStage] = useState<'email' | 'code'>('email');
+  const [busy, setBusy] = useState(false);
+  const lock = useRef(false);
   const [error, setError] = useState('');
-  const [challenge, setChallenge] = useState<DemoChallenge | null>(null);
-  const [history, setHistory] = useState<number[]>([]);
-  const [now, setNow] = useState(Date.now);
-  const [failNext, setFailNext] = useState(false);
-  const [showScenarios, setShowScenarios] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const emailInput = useRef<TextInput>(null);
   const codeInput = useRef<TextInput>(null);
-
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-  useEffect(() => {
-    const tick = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(tick);
-  }, []);
-
-  const gate = demoSendGate(history, now);
-  const expired = stage === 'code' && demoExpired(challenge, now);
-
-  function showCode() {
-    const timestamp = Date.now();
-    setHistory((values) => [...values.filter((time) => time > timestamp - DEMO_WINDOW_MS), timestamp]);
-    setChallenge(issueDemoChallenge(timestamp));
-    setNow(timestamp);
-    setStage('code');
-    setCode('');
-    setError('');
-  }
-
-  function resend() {
-    if (timer.current) return;
-    const currentGate = demoSendGate(history, Date.now());
-    if (currentGate.reason) {
-      setError('');
-      return;
-    }
-    setError('');
-    finishPreviewStep(showCode, 'issue');
-  }
-
-  function finishPreviewStep(callback: () => void, kind: 'issue' | 'verify' = 'verify') {
-    if (timer.current) return;
-    Keyboard.dismiss();
-    setOperation(kind);
-    // Deliberate mock loading state; no request, email or backend operation occurs.
-    timer.current = setTimeout(() => {
-      timer.current = null;
-      setOperation(null);
-      callback();
-    }, 500);
-  }
-
-  function submit() {
-    if (timer.current) return;
-    setError('');
-    if (stage === 'email') {
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-        setError('请输入有效的邮箱地址。');
-        emailInput.current?.focus();
-        return;
+  const emailInput = useRef<TextInput>(null);
+  async function submit(resend = false) {
+    if (lock.current) return;
+    const address = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) { setError('请输入有效邮箱。'); emailInput.current?.focus(); return; }
+    if (!authClient) { setError('请配置服务地址后重启 App。'); return; }
+    if (stage === 'code' && !resend && !/^\d{6}$/.test(code)) { setError('请输入 6 位数字验证码。'); codeInput.current?.focus(); return; }
+    lock.current = true; setBusy(true); setError(''); Keyboard.dismiss();
+    try {
+      if (stage === 'email' || resend) {
+        const result = await authClient.emailOtp.sendVerificationOtp({ email: address, type: 'sign-in' });
+        if (result.error) { setError(authMessage(result.error.code)); return; }
+        setEmail(address); setCode(''); setStage('code');
+      } else {
+        const result = await authClient.signIn.emailOtp({ email: address, otp: code });
+        if (result.error) { setError(authMessage(result.error.code)); return; }
+        router.dismissTo('/me');
       }
-      if (email.trim().toLowerCase() !== DEMO_EMAIL) {
-        setError('此预览仅支持演示邮箱 demo@example.invalid。');
-        emailInput.current?.focus();
-        return;
-      }
-      resend();
-      return;
-    }
-    if (demoExpired(challenge, Date.now())) {
-      setError('演示验证码已过期，请重新获取。');
-      setNow(Date.now());
-      return;
-    }
-    if (!/^\d{6}$/.test(code)) {
-      setError('请输入 6 位数字验证码。');
-      codeInput.current?.focus();
-      return;
-    }
-    if (code !== DEMO_CODE) {
-      setError('演示验证码不正确，请输入 123456。');
-      return;
-    }
-    finishPreviewStep(() => {
-      if (demoExpired(challenge, Date.now())) { setError('演示验证码已过期，请重新获取。'); setNow(Date.now()); return; }
-      if (failNext) { setFailNext(false); setError('模拟验证失败。输入已保留，请再次重试。'); return; }
-      enterDemo(); router.dismissTo('/me');
-    });
+    } catch { setError('无法连接认证服务，请检查连接后重试。'); }
+    finally { lock.current = false; setBusy(false); }
   }
-
-  function back() {
-    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
-    setOperation(null);
-    Keyboard.dismiss();
-    router.dismissTo('/me');
-  }
-
-  const inputStyle = {
-    minHeight: 52, paddingHorizontal: 16, paddingVertical: 12, borderWidth: 1,
-    borderRadius: 12, borderColor: colors.divider, backgroundColor: colors.surface,
-    color: colors.text, fontSize: 16,
-  };
-
-  return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Screen title="Guidy" bottomInset>
-        <View><AppText accessibilityRole="header" style={styles.hero}>把想法变成行动。</AppText><Caption>Chat &amp; Do It.</Caption></View>
-        <Caption>提出目标 → 确认计划 → 按时执行</Caption>
-        <Badge>UI 演示 · 未连接认证后端</Badge>
-        <Card>
-          <AppText accessibilityRole="header" style={styles.heading}>{stage === 'email' ? '邮箱登录' : '输入演示验证码'}</AppText>
-          <AppText>邮箱</AppText>
-          <TextInput ref={emailInput} accessibilityLabel="邮箱" accessibilityHint={stage === 'email' && error ? error : '此预览使用演示邮箱 demo@example.invalid。'} value={email} onChangeText={(value) => { setEmail(value); setError(''); }}
-            editable={!busy && stage === 'email'} keyboardType="email-address" autoCapitalize="none" autoCorrect={false}
-            autoComplete="off" maxLength={254} returnKeyType="next" onSubmitEditing={submit}
-            placeholder="demo@example.invalid" placeholderTextColor={colors.secondary} style={[inputStyle, stage === 'email' && error ? { borderWidth: 2, borderColor: colors.text } : null]} />
-          {stage === 'code' ? <>
-            <AppText>验证码</AppText>
-            <TextInput ref={codeInput} accessibilityLabel="验证码" accessibilityHint={expired ? '演示验证码已过期，请重新获取。' : error || '输入六位演示验证码，可粘贴带空格或短横线的数字。'} value={code} onChangeText={(value) => { setCode(normalizeDemoCode(value)); setError(''); }}
-              autoFocus editable={!busy} keyboardType="number-pad" autoComplete="off" autoCorrect={false} maxLength={32} returnKeyType="done"
-              onSubmitEditing={submit} placeholder="6 位数字" placeholderTextColor={colors.secondary} style={[inputStyle, error && !expired ? { borderWidth: 2, borderColor: colors.text } : null]} />
-            <Caption>演示验证码：123456。没有发送邮件。</Caption>
-            <Caption>{expired ? '演示验证码已过期，请重新获取。' : `演示有效期剩余 ${Math.max(0, Math.ceil(((challenge?.expiresAt ?? now) - now) / 1000))} 秒。`}</Caption>
-          </> : <Caption>使用上方演示邮箱体验流程。</Caption>}
-          {error && !expired ? <AppText accessibilityRole="alert" accessibilityLiveRegion="polite">{error}</AppText> : null}
-          <Action label={busy ? (operation === 'issue' ? '准备中…' : '验证中…') : (stage === 'email' ? '显示演示验证码' : expired ? '验证码已过期' : '进入演示账号')}
-            onPress={submit} disabled={busy || expired || (stage === 'email' && gate.reason !== null)} />
-          {gate.reason ? <Caption>{gate.reason === 'limited' ? '演示重发频率受限' : '演示重发冷却中'} · {gate.waitSeconds} 秒后可重试</Caption> : null}
-          {stage === 'code' ? <>
-            <Action label={busy ? '请稍候…' : gate.reason ? `重新获取（${gate.waitSeconds}s）` : '重新获取演示验证码'} secondary disabled={busy || gate.reason !== null} onPress={resend} />
-            {failNext ? <Caption>下一次正确验证码提交将模拟失败，然后可正常重试。</Caption> : null}
-            <Action label="修改邮箱" secondary disabled={busy} onPress={() => { setStage('email'); setCode(''); setError(''); setFailNext(false); setShowScenarios(false); }} />
-          </> : null}
-        </Card>
-        {stage === 'code' ? <Card>
-          <Action label={showScenarios ? '收起异常演示' : '展开异常演示'} secondary disabled={busy} onPress={() => setShowScenarios((value) => !value)} />
-          {showScenarios ? <>
-            <Caption>下列操作只切换前端演示状态。模拟时长不是正式登录规则。</Caption>
-            <Action label="演示验证码过期" secondary disabled={busy} onPress={() => { setChallenge({ expiresAt: Date.now() }); setNow(Date.now()); setError('演示验证码已过期，请重新获取。'); }} />
-            <Action label="演示重发限流" secondary disabled={busy} onPress={() => { const timestamp = Date.now(); setHistory([timestamp, timestamp, timestamp]); setNow(timestamp); setError(''); }} />
-            <Action label="演示下一次验证失败" secondary disabled={busy || expired} onPress={() => { setFailNext(true); setError(''); }} />
-          </> : null}
-        </Card> : null}
-        <Caption>仅用于界面预览，不调用认证接口，不保存凭据。完全重载后，演示账号状态重置。</Caption>
-        <Action label="返回我的" secondary onPress={back} />
-      </Screen>
-    </KeyboardAvoidingView>
-  );
+  const inputStyle = { minHeight: 52, borderWidth: error ? 2 : 1, borderColor: error ? colors.text : colors.divider, borderRadius: 12, paddingHorizontal: 14, color: colors.text, backgroundColor: colors.subtle, fontSize: 17 };
+  return <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <Screen title="登录 Guidy">
+      <Badge>本地开发认证</Badge>
+      <Card>
+        <AppText style={{ fontSize: 24, fontWeight: '700' }}>用邮箱继续</AppText>
+        <Caption>真实账号与会话保存在本地 D1。当前验证码投递到 Windows 开发收件箱，尚未发送邮件。</Caption>
+        <AppText>邮箱</AppText>
+        <TextInput ref={emailInput} accessibilityLabel="邮箱" value={email} onChangeText={value => { setEmail(value); setError(''); }} editable={!busy && stage === 'email'} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} maxLength={254} placeholder="you@example.com" placeholderTextColor={colors.secondary} style={inputStyle} returnKeyType="next" onSubmitEditing={() => { void submit(); }} />
+        {stage === 'code' ? <>
+          <AppText>验证码</AppText>
+          <TextInput ref={codeInput} accessibilityLabel="验证码" accessibilityHint={error || '输入开发收件箱中的六位验证码。'} value={code} onChangeText={value => { setCode(normalizeDemoCode(value)); setError(''); }} editable={!busy} keyboardType="number-pad" autoFocus autoComplete="one-time-code" maxLength={32} placeholder="6 位数字" placeholderTextColor={colors.secondary} style={inputStyle} onSubmitEditing={() => { void submit(); }} />
+          <Caption>在 Windows 后端目录运行 npm run auth:inbox -- 你的邮箱 获取验证码。有效期 5 分钟，不能使用旧演示码。</Caption>
+        </> : null}
+        {error ? <AppText accessibilityRole="alert" accessibilityLiveRegion="polite">{error}</AppText> : null}
+        <Action label={busy ? '处理中…' : stage === 'email' ? '获取验证码' : '登录'} disabled={busy} onPress={() => { void submit(); }} />
+        {stage === 'code' ? <>
+          <Action label="重新获取验证码" secondary disabled={busy} onPress={() => { void submit(true); }} />
+          <Action label="修改邮箱" secondary disabled={busy} onPress={() => { setStage('email'); setCode(''); setError(''); }} />
+        </> : null}
+      </Card>
+      <Caption>仅在本地开发环境启用；正式邮件发送与云端认证尚未配置。</Caption>
+      <Action label="返回我的" secondary disabled={busy} onPress={() => router.dismissTo('/me')} />
+    </Screen>
+  </KeyboardAvoidingView>;
 }

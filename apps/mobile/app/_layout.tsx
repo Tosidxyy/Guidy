@@ -2,11 +2,11 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
 import { GuidyThemeProvider, useTheme } from '../src/theme/ThemeProvider';
-import { DemoAccountProvider } from '../src/auth/DemoAccountProvider';
+import { AuthProvider } from '../src/auth/AuthProvider';
 
 export { ErrorBoundary } from 'expo-router';
 export default function RootLayout() {
-  return <GuidyThemeProvider><DemoAccountProvider><Navigation /></DemoAccountProvider></GuidyThemeProvider>;
+  return <GuidyThemeProvider><AuthProvider><Navigation /></AuthProvider></GuidyThemeProvider>;
 }
 function Navigation() {
   const { colors, scheme } = useTheme();

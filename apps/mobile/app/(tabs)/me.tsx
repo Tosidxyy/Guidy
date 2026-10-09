@@ -1,6 +1,7 @@
 import { Pressable, View } from 'react-native';
 import { router } from 'expo-router';
-import { DEMO_EMAIL, useDemoAccount } from '../../src/auth/DemoAccountProvider';
+import { useState } from 'react';
+import { useAccount } from '../../src/auth/AuthProvider';
 import { ConnectionStatus } from '../../src/components/ConnectionStatus';
 import { Action, AppText, Badge, Caption, Card, Screen, SectionTitle, styles } from '../../src/components/ui';
 import { useTheme, type ThemePreference } from '../../src/theme/ThemeProvider';
@@ -8,13 +9,23 @@ import { useTheme, type ThemePreference } from '../../src/theme/ThemeProvider';
 const preferences: { value: ThemePreference; label: string }[] = [{ value: 'system', label: '跟随系统' }, { value: 'light', label: '浅色' }, { value: 'dark', label: '深色' }];
 export default function MeScreen() {
   const { colors, preference, setPreference } = useTheme();
-  const { demoSignedIn, leaveDemo } = useDemoAccount();
+  const { user, pending, error, signOut, refresh } = useAccount();
+  const [leaving, setLeaving] = useState(false);
+  const [accountError, setAccountError] = useState('');
+  async function leave() {
+    if (leaving) return;
+    setLeaving(true); setAccountError('');
+    try { await signOut(); } catch { setAccountError('退出失败，请检查连接后重试。'); }
+    finally { setLeaving(false); }
+  }
   return (
     <Screen title="我的">
       <Card>
-        <View style={styles.row}><View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: colors.action, alignItems: 'center', justifyContent: 'center' }}><AppText style={{ color: colors.onAction, fontSize: 24, fontWeight: '700' }}>G</AppText></View><View style={{ flex: 1 }}><AppText style={styles.heading}>{demoSignedIn ? '演示用户' : '欢迎使用 Guidy'}</AppText><Caption>{demoSignedIn ? '演示账号 · 未连接认证' : '未登录 · M0 基础界面'}</Caption></View></View>
-        <Caption>{demoSignedIn ? `${DEMO_EMAIL} · 仅本次预览有效` : '先体验登录界面；本轮不调用认证接口。'}</Caption>
-        <Action label={demoSignedIn ? '退出演示账号' : '体验登录 UI'} secondary={demoSignedIn} onPress={demoSignedIn ? leaveDemo : () => router.push('/sign-in')} />
+        <View style={styles.row}><View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: colors.action, alignItems: 'center', justifyContent: 'center' }}><AppText style={{ color: colors.onAction, fontSize: 24, fontWeight: '700' }}>G</AppText></View><View style={{ flex: 1 }}><AppText style={styles.heading}>{user ? user.name || 'Guidy 用户' : '欢迎使用 Guidy'}</AppText><Caption>{pending ? '正在恢复账号…' : user ? '已登录' : '未登录'}</Caption></View></View>
+        <Caption>{user ? user.email : '登录后恢复你的账号；目标和日历目前仍是演示数据。'}</Caption>
+        {error || accountError ? <AppText accessibilityRole="alert">{accountError || error}</AppText> : null}
+        <Action label={leaving ? '退出中…' : user ? '退出登录' : '登录'} secondary={!!user} disabled={pending || leaving} onPress={user ? leave : () => router.push('/sign-in')} />
+        {error ? <Action label="重新验证账号" secondary onPress={() => { void refresh(); }} /> : null}
       </Card>
       <ConnectionStatus />
       <SectionTitle>我的内容</SectionTitle>

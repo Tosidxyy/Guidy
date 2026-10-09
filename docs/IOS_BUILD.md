@@ -17,7 +17,7 @@ npm ci
 npm run start:go
 ```
 
-iPhone 与 Windows 在同一局域网，用兼容当前 SDK 的 Expo Go 扫描二维码。手机不能用 localhost 访问 Windows；公开 API 地址参考 [mobile README](../apps/mobile/README.md)。UI 登录继续是内存演示，不发送认证请求。
+iPhone 与 Windows 在同一局域网，用兼容当前 SDK 的 Expo Go 扫描二维码。手机不能用 localhost 访问 Windows；公开 API 地址参考 [mobile README](../apps/mobile/README.md)。登录现接本地 Better Auth/D1，验证码仅在开发收件箱投递，详见后端说明。
 
 ## 条件具备后生成开发包
 

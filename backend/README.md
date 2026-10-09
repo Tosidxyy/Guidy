@@ -1,6 +1,6 @@
 # Guidy backend · Cloudflare TypeScript
 
-2026-10-09 用户确认迁移。当前已有 Workers 基础 API 和 D1 本地开发/测试迁移；Better Auth 核心表已按锁定库生成，登录接口、邮件、真实会话和云部署仍未实现。Python 版本仅在 Git 历史中保留，不是当前入口。
+当前已有 Workers API、D1 本地迁移和 Better Auth 邮箱 OTP 登录/退出/会话恢复及受保护账号接口。验证码仅投递到用户选择的本地开发收件箱；正式邮件与云部署未接入。Python 版本仅在 Git 历史中保留。
 
 ## Windows 本地运行
 
@@ -43,4 +43,27 @@ health 成功合同保持 `{data:{status:"ok",service:"guidy-api",version:"0.1.0
 
 测试使用 Wrangler 相同版本的 Miniflare/workerd（Miniflare 5 采用官方 V4 配置转换器），不持久化测试数据，验证迁移后的库 Schema、约束、外键、回滚、级联删除与开发/测试绑定隔离。这些不是登录或跨用户 API 权限验收；D1 没有自动 RLS，后续所有业务访问仍须会话/owner 校验。
 
-下一轮实现登录/登出/恢复与受保护 API。暂无远程账号、Worker URL、D1 ID 或真实会话，不能声称已部署或已登录。Cloudflare/D1 的语义与 [架构](../docs/ARCHITECTURE.md)、[数据库模型](../docs/DATABASE.md) 一致。
+本地 OTP/会话已接入，下一步是真机验收与正式邮件/云端配置。暂无远程 Worker URL/D1 ID，不能声称已部署。Cloudflare/D1 的语义与 [架构](../docs/ARCHITECTURE.md)、[数据库模型](../docs/DATABASE.md) 一致。
+
+## 本地真实登录
+
+复制 .dev.vars.example 后，在忽略的 .dev.vars 中设置实际 `BETTER_AUTH_URL`（Windows LAN origin）和随机 `BETTER_AUTH_SECRET`（至少 32 字符），不要提交或发送密钥。本地配置已设置 GUIDY_AUTH_MODE=local-inbox；基础部署配置没有开启认证，本轮不会部署。
+
+```powershell
+# 生成随机密钥时仅在你自己的终端查看，填入忽略文件
+node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
+npm run db:migrate
+npm run dev:lan
+```
+
+App「我的 → 登录」输入邮箱、获取验证码，然后在另一个 Windows 后端终端运行：
+
+```powershell
+npm run auth:inbox -- your-email@example.com
+```
+
+命令强制查询本地开发 D1，输出该邮箱未过期的验证码；不要分享、截图或提交输出。开发收件箱不验证真实邮箱归属，也不发送邮件，仅用于测试；禁止用于公开/生产认证。验证码 6 位/5 分钟、验证最多 3 次，发送有服务端持久限流；旧码复用/过期被拒绝。认证 verifier 使用哈希，开发收件箱临时保留明码以供本地查看，成功验证删除，过期读取不显示、后续投递清理。没有公开取码接口。
+
+开放的 Better Auth SDK 路径仅发送登录 OTP、sign-in/email-otp、get-session、sign-out；其响应遵循库协议。业务 `GET /api/v1/me` 保持统一 envelope，仅从验证过的数据库会话提取 user ID，返回自己的基础账号资料，不返回 token。cookie 缓存禁用，过期/撤销的旧会话不能继续访问。用户不能用 owner_id/X-User-ID 指定他人账号；其他业务对象授权随 M1 API 继续实现。
+
+本地迁移 0003 增加 dev_auth_inbox 和库 rateLimit 表，未重写旧迁移。正常退出撤销服务端会话；原生客户端先确认撤销再清理 SecureStore。后端不打印邮箱、验证码、cookie/token 或原始认证异常。CORS 仅显式配置的浏览器 origin 可携带 cookie；原生使用官方 Expo cookie/Origin 集成。真实邮件、HTTPS 远程部署、正式环境限流/通知及 iPhone 新登录验收仍未完成。

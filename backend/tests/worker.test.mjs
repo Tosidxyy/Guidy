@@ -203,9 +203,10 @@ test("request state is isolated across concurrent requests", async () => {
   );
 });
 
-test("only health is available; Auth and framework docs are not simulated", async () => {
+test("unconfigured Auth fails closed and framework docs stay unavailable", async () => {
   const app = createApp(quiet);
-  for (const path of ["/docs", "/openapi.json", "/api/v1/me", "/_test/crash"]) {
+  assert.equal((await app.fetch(request("/api/v1/me"))).status, 503);
+  for (const path of ["/docs", "/openapi.json", "/_test/crash"]) {
     assert.equal((await app.fetch(request(path))).status, 404);
   }
 });

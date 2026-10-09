@@ -14,9 +14,11 @@
     "db:migrate": "node scripts/local-db.mjs migrate dev",
     "db:migrate:test": "node scripts/local-db.mjs migrate test",
     "db:list": "node scripts/local-db.mjs list dev",
-    "schema:check": "node scripts/auth-schema.mjs"
+    "schema:check": "node scripts/auth-schema.mjs",
+    "auth:inbox": "node scripts/dev-inbox.mjs"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20261009.1",
     "@eslint/js": "10.0.1",
     "eslint": "10.12.0",
     "miniflare": "5.20261006.1-alpha",
@@ -26,6 +28,7 @@
     "wrangler": "4.149.0"
   },
   "dependencies": {
+    "@better-auth/expo": "1.7.7",
     "better-auth": "1.7.7"
   }
 }

@@ -9,7 +9,7 @@
 | iOS | Expo / React Native / TypeScript / Expo Router | 三 Tab 与 API 连通检查已实现 |
 | API | Cloudflare Workers / TypeScript，模块化单体 | M0 迁移中；HTTP 标准接口，按功能拆模块 |
 | 业务数据 | Cloudflare D1（SQLite 语义） | 本地开发/测试基础迁移已应用，远程尚无资源 |
-| 用户认证 | Better Auth + Expo 集成 | 后续 M0；会话、注销、恢复及对象权限须验收 |
+| 用户认证 | Better Auth + Expo 集成 | 本地 OTP/会话/退出及当前账号保护已接入；正式邮件/云部署/新真机验收待完成 |
 | DB 访问 | D1 binding、参数化 SQL、Wrangler SQL migrations | 本地开发/测试隔离，生产资源待配置，不下发管理凭据 |
 | Schema | TypeScript DTO + 运行时 Schema 校验（M1 选定/锁定实现） | 不把静态 TS 类型当成运行时校验 |
 | Agent | TypeScript Provider 抽象 + 结构化 PlanDraft | M1 才实现；模型/检索供应商未选定 |
@@ -40,7 +40,7 @@ backend/migrations/           # 后续 M0 添加 SQL，不提前创建 M1 表
 
 404/405/500 使用稳定错误码与通用文案；未来请求 Schema 失败保持 422，认证保持 401/403。不得回显异常原文、令牌或私人字段。日志仅记录 event、request_id、已知 method、路由模板、status_code、duration_ms；未知路径记 unmatched。Cloudflare 平台日志策略须部署前核对，不能将原始 URL/正文作为业务日志。Workers observability 默认关闭，本地 Wrangler 自带访问输出与业务白名单日志分开理解。
 
-浏览器 CORS 默认空，仅显式 origin 与 GET 探活，暴露 X-Request-ID、不使用凭据；后续 Auth 的方法/头按最小必要扩展。原生 iPhone fetch 不依赖 CORS。账户数据不因跨域允许就获得访问权限。
+浏览器 CORS 默认空；health 仅 GET/request ID、不使用凭据。Auth/当前账号路径仅显式 origin 可使用 GET/POST、Content-Type/Expo-Origin/request ID 与 cookie 凭据；原生 iPhone fetch 不依赖 CORS。账户数据仍须服务端会话验证。Better Auth SDK 路径保留库响应协议，业务 /api/v1/me 使用统一 envelope。
 
 ## 4. 认证与数据一致性
 
@@ -97,7 +97,7 @@ Task 定义和 Occurrence 执行实例分离；计划版本不可覆盖。局部
 
 M0：TS Worker 探活/错误/日志、基础 CI、D1 开发/测试迁移、Better Auth 登录/恢复/权限、iPhone 基础联调。M1：Goal/研究/PlanDraft 与持久任务。M2：排程/确认/提醒/反馈。M3：局部修订与我的完善。M4：真机与真实用户验证。V0.2 私人模板/启动观察；V0.3 公共模板审核。
 
-用户确认 iPhone Expo Go 预览可用；机型、大字体/VoiceOver、原生通知、最终图标/签名安装包尚未验证。Workers 云部署、D1 资源、Auth/邮件提供商尚未创建或接入。公开账号删除/导出、模板脱敏、数据保留/供应商条款在发布前落实。
+用户确认 iPhone Expo Go 预览和 Worker 探活可用；新真实登录、机型、大字体/VoiceOver、原生通知、最终图标/签名安装包尚未验证。本地 Auth 已接入，Workers 云部署、远程 D1、正式邮件提供商尚未创建或接入。公开账号删除/导出、模板脱敏、数据保留/供应商条款在发布前落实。
 
 开发用 Wrangler 本地运行；生产使用独立 Worker/D1 及 secrets，不能把无认证开发服务长期公开。Cloudflare 账号、地区/数据需求、费用与资源权限要在真实资源创建时确认；CI 只做检查与 dry-run，不自动部署。失败重试与批处理边界先测再标完成。
 
