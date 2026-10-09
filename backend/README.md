@@ -38,7 +38,8 @@ JSON envelope 中的 request_id 与 `X-Request-ID` 响应头一致。客户端�
 
 - 请求日志只记录固定 event、level、request_id、method、路由模板、状态码与耗时；404 使用 `unmatched`，不记录 URL 参数、正文、Token 或个人信息。
 - 关闭 Uvicorn 原始 access log，并对 Uvicorn error log 使用白名单 formatter，避免异常原文/堆栈进入普通日志。服务端错误只输出通用信息；后续按需增加脱敏诊断字段。
-- `.env.example` 目前只有 `GUIDY_ENVIRONMENT=local`；环境值限 local/test/staging/production，无效值阻止启动。
+- `.env.example` 包含 `GUIDY_ENVIRONMENT=local` 与可选 CORS 来源；环境值限 local/test/staging/production，无效值阻止启动。
+- 可选 `GUIDY_CORS_ORIGINS` 是 JSON origin 列表，默认空（不开放浏览器跨域）。本机 Expo 8082 预览使用 `["http://localhost:8082"]`；拒绝通配符、路径和凭据，当前仅允许 GET，不携带 cookies，暴露 X-Request-ID 供客户端验证。原生手机请求不依赖 CORS。
 - 此轮 SQLAlchemy/Alembic 是已安装锁定的工具依赖，尚无数据库连接、迁移 env 或已执行的 SQL；后续先为 profiles/goals 建立开发/测试隔离和迁移。
 
 ## 快速检查
@@ -49,7 +50,7 @@ uv run --frozen ruff format --check .
 uv run --frozen pytest
 ```
 
-本轮 22 个测试覆盖成功探活、404/405/422/500、非法 JSON、请求 ID 合法/非法与并发隔离、错误/日志私密字段保护、OpenAPI 合同、生产关闭调试/文档、配置验证。测试辅助路由仅在测试 fixture 注册，不存在于运行应用中。
+当前 30 个测试覆盖成功探活、404/405/422/500、非法 JSON、请求 ID 合法/非法与并发隔离、错误/日志私密字段保护、OpenAPI 合同、生产关闭调试/文档、配置验证及 CORS 来源/方法/凭据边界。测试辅助路由仅在测试 fixture 注册，不存在于运行应用中。
 
 另通过临时 Uvicorn 的真实 loopback HTTP 与 stdout/stderr 日志检查；测试后自动停止服务。Codex Windows 沙箱可能阻断 asyncio socketpair，这种情况下需要在支持本机进程通信的环境运行，不能将卡住的测试记为通过。
 

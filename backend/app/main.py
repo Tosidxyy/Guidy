@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.api.health import router as health_router
@@ -22,6 +23,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.state.settings = config
     register_error_handlers(application)
+    if config.cors_origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=config.cors_origins,
+            allow_credentials=False,
+            allow_methods=["GET"],
+            allow_headers=["X-Request-ID"],
+            expose_headers=["X-Request-ID"],
+        )
     application.add_middleware(RequestContextMiddleware)
     application.include_router(health_router)
     return application

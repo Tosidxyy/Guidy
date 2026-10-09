@@ -1,4 +1,5 @@
 import { Pressable, View } from 'react-native';
+import { ConnectionStatus } from '../../src/components/ConnectionStatus';
 import { AppText, Badge, Caption, Card, Screen, SectionTitle, styles } from '../../src/components/ui';
 import { useTheme, type ThemePreference } from '../../src/theme/ThemeProvider';
 
@@ -11,6 +12,7 @@ export default function MeScreen() {
         <View style={styles.row}><View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: colors.action, alignItems: 'center', justifyContent: 'center' }}><AppText style={{ color: colors.onAction, fontSize: 24, fontWeight: '700' }}>G</AppText></View><View style={{ flex: 1 }}><AppText style={styles.heading}>欢迎使用 Guidy</AppText><Caption>未登录 · M0 基础界面</Caption></View></View>
         <Caption>登录与个人资料将在 M0 后续接入，当前没有保存个人数据。</Caption>
       </Card>
+      <ConnectionStatus />
       <SectionTitle>我的内容</SectionTitle>
       <Card><View style={styles.row}><AppText style={{ flex: 1, fontWeight: '600' }}>我的模板</AppText><Badge>即将开放</Badge></View><Caption>V0.2 开放私人模板，V0.3 开放公共模板。</Caption></Card>
       <SectionTitle>外观</SectionTitle>

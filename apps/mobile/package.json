@@ -1,5 +1,6 @@
 {
   "name": "@guidy/mobile",
+  "type": "module",
   "main": "expo-router/entry",
   "version": "0.1.0",
   "dependencies": {
@@ -31,6 +32,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
+    "test:api": "node --experimental-strip-types --test tests/health.test.mjs",
     "export:ios": "expo export --platform ios",
     "export:web": "expo export --platform web"
   },
