@@ -33,7 +33,7 @@ try {
     console.log(`Created auth core migration for Better Auth ${version}`);
   } else {
     assert.equal(
-      await readFile(target, "utf8"),
+      (await readFile(target, "utf8")).replace(/\r\n/g, "\n"),
       sql,
       "Locked auth schema drift: add a new migration instead of rewriting an applied one",
     );
