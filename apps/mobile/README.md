@@ -15,10 +15,12 @@ Expo Router + React Native + TypeScript。当前是基础界面，不是已完�
 ```powershell
 cd apps/mobile
 npm ci
-npm start
+npm run start:go
 ```
 
 iPhone 与 Windows 使用同一局域网，通过兼容 Expo Go 扫描二维码。SDK 是否受手机上的 Expo Go 支持需要实机确认；不兼容时使用对应 Development Build。Windows 不支持 Xcode iOS 模拟器。
+
+开发客户端依赖与 EAS development/production profiles 已准备；`npm run start:dev-client` 用于已安装的 Guidy 开发包。当前用户已有 Expo 账号、尚无 Apple 付费会员，未链接 EAS 项目、未注册 Bundle Identifier 或生成签名包。完整流程和 TestFlight 前置条件见 [iOS 构建指南](../../docs/IOS_BUILD.md)。安装依赖不代表已经能生成或安装 iPhone 包。
 
 ## 快速检查
 
@@ -64,7 +66,7 @@ API 客户端测试使用 Node 24 的类型擦除与内置 test runner，无额�
 
 演示输入支持 `123 456`、`123-456` 和 `１２３４５６` 等格式；空格/短横线与全角数字会规范化，字母/其他错误字符保留为无效输入，不会把 `123456x` 悄悄变成正确码。进入验证码页会聚焦输入框；错误使用文字、边框和 accessibilityHint，编辑后清除旧错误。仍未读取剪贴板或发送输入，只处理 TextInput 接收到的值。
 
-本轮自动检查了浏览器焦点、Enter 提交、错误提示、格式化输入与暗色/窄屏布局；原生自动聚焦、键盘、大字体与 VoiceOver 尚未真机验证，不能沿用之前旧界面的手动结果。真实认证仍未接入。
+浏览器已检查焦点、Enter 提交、错误提示、格式化输入与暗色/窄屏布局；用户于 2026-10-09 确认最新版本 iPhone 自动聚焦和按钮正常。大字体与 VoiceOver 尚未真机验证，真实认证仍未接入。
 
 `../../MANIFEST.json` 是原始设计资源包快照，不是当前工程清单。正式品牌原图与 icon 的原始字节保持不变。
 

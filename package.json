@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "mobile": "npm --prefix apps/mobile start",
+    "mobile": "npm --prefix apps/mobile run start:go",
     "mobile:web": "npm --prefix apps/mobile run web",
     "backend": "npm --prefix backend run dev",
     "backend:lan": "npm --prefix backend run dev:lan",

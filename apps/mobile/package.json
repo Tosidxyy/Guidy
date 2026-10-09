@@ -6,6 +6,7 @@
   "dependencies": {
     "expo": "57.0.27",
     "expo-constants": "57.0.21",
+    "expo-dev-client": "57.0.19",
     "expo-font": "57.0.4",
     "expo-linking": "57.0.12",
     "expo-router": "57.0.25",
@@ -26,7 +27,9 @@
     "typescript": "6.0.3"
   },
   "scripts": {
-    "start": "expo start",
+    "start": "expo start --go",
+    "start:go": "expo start --go --lan",
+    "start:dev-client": "expo start --dev-client --lan",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
