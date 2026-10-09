@@ -2,7 +2,7 @@
 
 > **版本**：v0.1 开发计划草案（2026-10-09）  
 > **状态**：M0 基础工程开发中；已完成三 Tab 与后端探活，登录/数据库/真机验收未完成  
-> **人员与环境**：个人开发者；Windows + iPhone；Expo / React Native + FastAPI  
+> **人员与环境**：个人开发者；Windows + iPhone；Expo / React Native + Cloudflare Workers / TypeScript  
 > **关联**：[PRD.md](./PRD.md) · [ARCHITECTURE.md](./ARCHITECTURE.md) · [UI_DESIGN.md](./UI_DESIGN.md) · [DATABASE.md](./DATABASE.md)
 
 ## 0. 当前已确定的产品与工程约束
@@ -10,7 +10,7 @@
 - [x] iOS 为首发形态；Windows 开发 + iPhone 真机测试；Expo EAS 负责云端 iOS 构建。
 - [x] 底部 Tab **固定为「目标｜日历｜我的」**；不设 Agent Tab，不设模板 Tab。
 - [x] 「我的」包含个人资料、通知与隐私、账户等入口；「我的模板」为二级页面（V0.2），后续「发现模板」由它进入（V0.3）。
-- [x] 采用模块化单体后端：FastAPI + PydanticAI + PostgreSQL；Agent 不直接操作计划/日历数据表。
+- [x] 采用模块化单体后端：TypeScript Workers + D1 + Better Auth；Agent 不直接操作计划/日历数据表。
 - [x] V0.1 验证完整闭环；21 天启动期/私人模板进入 V0.2，公开模板社区进入 V0.3。
 - [ ] 使用真实 iPhone 复核 UI 交互与通知权限路径。
 - [ ] 确认开发者会员、EAS、托管 API、LLM 与检索费用预算（尚未定价或购买）。
@@ -19,28 +19,28 @@
 
 ## 1. 第一里程碑：项目基础可运行（M0）
 
-**交付标准**：Windows 可运行 Expo、FastAPI、独立开发数据库；iPhone 能看到基础三 Tab 页面并请求 `/health`；GitHub Actions 能运行最基本检查。
+**交付标准**：Windows 可运行 Expo、Wrangler 本地 Worker、独立开发/测试数据库；iPhone 能看到基础三 Tab 页面并请求 `/health`；GitHub Actions 能运行最基本检查。
 
 ### M0-A 环境和仓库
 
 - [x] 初始化 Git 仓库并保存现行规格/品牌资源基线；统一 PRD、架构与 TODO 的里程碑编号。
 - [x] 配置私人仓库 `origin`（Tosidxyy/Guidy），将每轮提交后的 Push 与远程 SHA 核验加入开发约定。
 - [x] 初始化 monorepo `apps/mobile`、`backend`、`docs`；统一 README、环境变量模板和忽略规则。
-- [ ] 在 Windows 安装 Node LTS、包管理器、Python、VS Code，并记录已验证版本。
+- [ ] 在 Windows 安装 Node LTS、包管理器、Wrangler、VS Code，并记录已验证版本。
 - [x] 使用 Expo Router 创建 iOS App；仅三个底部路由：`goals`、`calendar`、`me`。
 - [x] 实现深色/浅色主题 Tokens、基础字体和 44 pt 以上可点击区域。
 - [x] 「我的」实现真实 API 探活、检查中/失败/重试状态；完成浏览器联调（iPhone 验证仍待下项）。
-- [ ] 在 Windows 启动 Metro，使用 iPhone Expo Go（仅兼容场景）预览。
+- [x] 在 Windows 启动 Metro，使用 iPhone Expo Go（仅兼容场景）预览。（用户确认此前基础预览可用；新 Worker 的手机 API 联调仍待复核。）
 - [ ] 准备 EAS Development Build 流程，记录苹果签名/TestFlight 前置条件；正式通知测试必须使用真机开发构建。
 
 ### M0-B 后端/数据基础
 
-- [x] 初始化 FastAPI、Pydantic v2、SQLAlchemy、Alembic、pytest、ruff。（工具依赖与测试/静态检查配置就绪；数据库连接与迁移流程仍在下方待办中。）
+- [x] 初始化 TypeScript Worker、Wrangler、类型/ESLint/格式检查与有效边界测试。（D1 与 Auth 仍在下方待办。）
 - [x] 实现 `/health`、统一错误格式、request_id 和服务端日志脱敏。
-- [ ] 创建 Supabase 开发项目，配置 Supabase Auth；配置 API JWT 验证（签名、issuer、audience、过期等）。
-- [ ] 建立开发/测试两套数据库连接与迁移流程；迁移先只创建 `profiles/goals`。
+- [ ] 创建 Cloudflare 开发 Worker/D1 资源，接入 Better Auth；验证会话、过期、撤销与受保护 API。
+- [ ] 建立开发/测试两套数据库连接与迁移流程；迁移先创建 Better Auth 必需表与 `profiles/goals`，通过 Wrangler SQL migrations 验证。
 - [ ] 实现登录、登出、会话恢复、服务端对象所有权中间件。
-- [x] 建立 CI：后端格式化/静态检查/单测，前端 TypeScript 类型检查/基础 lint。
+- [ ] 验证迁移后的 CI：后端 TypeScript/ESLint/格式/边界测试/dry-run，前端类型/lint/API 测试。（旧 CI 已通过；当前 TS job 待推送后实测。）
 
 **M0 验收**：iPhone 登录成功→浏览「目标/日历/我的」三 Tab→「我的」显示基础昵称/账号状态；断网能看到错误或缓存提示，不泄露后台密钥。
 
@@ -54,7 +54,7 @@
 - [ ] 完成 `POST/GET/PATCH /goals`，支持草稿、暂停、继续和版本号。
 - [ ] 实现首页 Goal 卡：状态、下一动作、未确认草稿提示。
 - [ ] 实现创建目标与 Goal 内 Agent 对话页（不提供独立 Agent Tab）。
-- [ ] 用 Pydantic Slot 模型提取目标、时间、预算、资源、约束等字段，并标明用户确认状态。
+- [ ] 用运行时 Schema 校验的 TypeScript Slot 模型提取目标、时间、预算、资源、约束等字段，并标明用户确认状态。
 - [ ] 实现动态问答策略：优先必要问题，允许“暂不确定”，避免重复问答。
 - [ ] 明确高风险问题（药物、诊断、禁忌）的停止/转介规则，不能因为轮次预算而跳过。
 
@@ -62,8 +62,8 @@
 
 - [ ] 实现搜索/网页提取 Provider 抽象；保存来源 URL、获取时间、适用条件、未知项。
 - [ ] 增加外部网页不可信输入隔离与 SSRF/超时/重定向限制。
-- [ ] 使用 PydanticAI 生成 `PlanDraft`，按 Pydantic Schema 与领域规则两次校验。
-- [ ] 研究/计划生成改为数据库持久 Agent Job + 独立 Worker（lease、heartbeat、重试、检查点）。
+- [ ] 使用 TypeScript Agent Provider 生成 `PlanDraft`，按运行时 Schema 与领域规则两次校验。
+- [ ] 研究/计划生成改为D1 持久 Agent Job + 经验证的 Cloudflare 后台编排/消费者（lease、heartbeat、重试、检查点）。
 - [ ] 实现 Job 状态轮询，恢复后能继续查看阶段进度而不重复扣费/重复生成副作用。
 - [ ] 计划详情展示任务、阶段、依据、预算/时间投入、阻塞原因和未确认条件。
 - [ ] 建立健身、学习、护肤各 1 套可重复的评估样例，避免把 LLM 无法验证的产品参数当事实。
@@ -166,7 +166,7 @@ flowchart TD
 ## 9. 现在最先动手的三个任务
 
 1. **初始化 Expo 项目**：在 iPhone 跑通「目标｜日历｜我的」三 Tab 静态导航，先不用真实 Agent。
-2. **敲定 Schema 与 API 合同**：以 [DATABASE.md](./DATABASE.md) 的 Goal/Plan/Task 模型生成第一版 Alembic 与 Pydantic DTO。
+2. **敲定 Schema 与 API 合同**：以 [DATABASE.md](./DATABASE.md) 的 Goal/Plan/Task 模型生成第一版 D1 SQL migrations 与 TypeScript/运行时 Schema DTO。
 3. **用模拟数据跑通一个故事**：新建“我想学英语”→回答 2–3 个关键问题→看到计划草稿→排程预览→确认后日历显示→记录一次完成；随后再接真实 Agent。
 
 > **不建议现在做的事**：复杂 Multi-Agent、Redis、向量数据库、Kubernetes、用户排名、跨应用持续监控、自动购买、完整模板社区。真实用户使用数据未证明必要前，不纳入 V0.1。
@@ -257,3 +257,18 @@ flowchart TD
 - 快速检查：只读 GitHub Actions API 核对运行/两 job/各 step 结果 → PASS；本次 TODO 文档/SHA/链接与 `git diff --check` → PASS。
 - 已勾选任务：基础 CI；其他 Auth/数据库/iPhone 待办不变。只补记远程结果，无应用代码变更，单独文档提交并再次 Push；workflow 的 paths 不会因纯文档更新重复运行。
 - 下一轮：继续 M0 Supabase Auth 与基础数据库迁移；iPhone 局域网/API 实测仍待执行。
+
+
+### 2026-10-09 — M0 / Cloudflare TypeScript 后端迁移
+
+- 用户确认：改用 Cloudflare 并将后端语言改为 TypeScript；此前 iPhone Expo Go 基础预览已由用户确认可用。没有明确机型/API 成功/字体/通知细节，不扩大真机验收范围。
+- 完成内容：TypeScript Workers 替代 Python 入口；保留 health 成功/错误/追踪合同、最小 CORS、白名单业务日志；新 Wrangler 默认 8787。旧实现可从 Git 历史恢复，旧架构/数据库/启动文档保存历史快照。现行 PRD/AGENTS/架构/数据库/README 统一到 Workers+D1+Better Auth；D1 原子批次、对象授权和后台 Job 语义明确不照搬 PostgreSQL。
+- 依赖：Node 24.15.0；TypeScript 6.0.3、Wrangler 4.149.0、ESLint 10.12.0、typescript-eslint 8.71.1、Prettier 3.9.9，精确版本与 lockfile。最新 TS 7 超出 ESLint 插件兼容范围，安装失败后选兼容 TS 6；未使用 force/legacy-peer-deps。
+- 快速检查：backend 的 `npm run typecheck`、`npm run lint`、`npm run format:check`、`npm test` → PASS（10 项）；`npm run build` → PASS（Wrangler dry-run，未部署）。首轮 lint 的测试 Web globals 未声明，改为 globalThis 引用后复测通过。
+- 真实运行：Wrangler 本地 workerd `/health` 200、错误方法 405、未知路径 404 和请求 ID 合同 → PASS。`node C:/Users/29035/.codex/visualizations/2026/10/09/01a11f51-bbc0-74b3-9200-ebe6276c1dc5/guidy-worker-ui.cjs` → PASS；Expo 8082 → workerd 8787，三视口、加载/成功/断网/超时/异常响应/重试恢复，4 个真实 200，0 未预期错误与 1 预期断网资源错误。浏览器验证不替代 iPhone 验证。
+- 文档/资源/CI 检查：现行链接、历史快照与前一提交内容比对、批准原图 SHA256、精确锁文件、YAML/SHA/检查步骤验证和暂存凭据扫描 → PASS；`git diff --cached --check` → PASS。Cloudflare 管理 Token、本地 .dev.vars、缓存、ignored 的旧 .venv 均不提交。
+- 实现提交：`243f0c2b2f9424baffeeb6f2c626cf95c6cbdad4`。
+- TODO 提交/Push：单独提交进度后 Push，再验证 GitHub 的 TS backend/mobile jobs；实际结果后补记，CI 暂未勾选。历史轮次仅说明当轮事实，不能作为当前技术栈依据。
+- 已勾选任务：Worker 基础工具与 API 迁移；用户确认的此前 iPhone Expo Go 基础预览。Auth/DB/部署/迁移后手机 API 保持未完成。
+- 未验证：远程 Cloudflare 账号/Worker/D1 尚未配置或创建，Better Auth/邮件/真实会话未接入，新 Worker iPhone API 未复核，通知/签名安装包/专项无障碍未测；移动端原有依赖审计限制继续保留。
+- 下一轮：D1 本地开发/测试迁移与 Better Auth 接入，远程部署在资源/账号条件明确后实施；本轮不引入真实 Agent 或 M1 功能。
