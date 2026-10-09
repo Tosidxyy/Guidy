@@ -1,6 +1,6 @@
 # Guidy｜Windows + iPhone 开发环境与启动顺序
 
-> 本资源包只有**正式开发文档和设计资源**，没有已经运行的 App、FastAPI 项目、Supabase 数据库或可上架的产品。请按步骤逐步实现。
+> 当前已初始化 `apps/mobile` 的 Expo 三 Tab 基础界面；FastAPI、Supabase 数据库与登录尚未实现，iPhone 尚未验证。下面的初始化步骤仅在相应目录不存在时执行；现有前端从 [移动端 README](../apps/mobile/README.md) 的 `npm ci` / `npm start` 开始。
 
 ## 1. 工具准备
 
@@ -18,8 +18,8 @@ Guidy/
 ├── README.md
 ├── AGENTS.md
 ├── apps/
-│   └── mobile/                  # 后续初始化 Expo + TypeScript
-├── backend/                      # 后续初始化 FastAPI + Worker
+│   └── mobile/                  # 已初始化 Expo + TypeScript 三 Tab 基础界面
+├── backend/                      # 预留目录；后续初始化 FastAPI + Worker
 ├── docs/
 │   ├── PRD.md
 │   ├── ARCHITECTURE.md
@@ -53,6 +53,8 @@ npx expo start
 在 iPhone 上通过 Expo Go 扫码运行；手机和 Windows 尽量使用同一局域网。网络障碍可按 Expo 官方说明尝试 `npx expo start --tunnel`。如果 SDK 不兼容，**不要硬改依赖来绕过**，应匹配 Expo 官方支持的版本或转用 EAS Development Build。
 
 后端建议另建 `backend/.venv`，使用 `FastAPI + SQLAlchemy + Alembic + PydanticAI`；API 服务不能把模型 API Key、Supabase Service Role Key 直接放入 Expo 客户端。
+
+已检查 Windows 工具：Node 24.15.0、npm 11.14.0、Git 2.55.0；默认 Python 3.11.0。后端要求 Python 3.12+，下一轮需选用或准备兼容解释器；VS Code、EAS、Apple 签名及 iPhone 环境尚未验证。
 
 ## 3. iOS 图标接入
 

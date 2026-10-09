@@ -2,7 +2,7 @@
 
 **Guidy** 是面向 iOS 的通用 AI 目标规划与执行产品。用户提出目标，Agent 在短对话中澄清必要条件、自主研究、生成有依据的可执行计划，经过确认后安排到应用内日历，通过提醒、反馈和可审阅的重规划帮助用户推进目标。未来可以将经过执行记录与审核的规划**路径**作为模板复用。
 
-> 当前状态：**开发前的规格与品牌资源包**。这里还没有 Expo/FastAPI 应用代码、数据库迁移或实际 API；不能视为已完成开发。
+> 当前状态：**M0 基础工程开发中**。`apps/mobile` 已有 Expo 三 Tab、黑白主题与明确标注的演示数据；`backend` 仅为后端预留目录。登录、FastAPI、数据库和通知尚未实现，iPhone 尚未实测。
 
 ## 产品与技术决策
 
@@ -27,7 +27,7 @@
 | [docs/BRAND_GUIDE.md](docs/BRAND_GUIDE.md) | Guidy 黑白标识和 UI 视觉 Token |
 | [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) | Windows + iPhone 初始化与图标接入步骤 |
 | [AGENTS.md](AGENTS.md) | 给 Codex 的项目约定及实施原则 |
-| [archive/](archive/) | 旧版 GoalPath 讨论稿，仅供历史参考 |
+| [apps/mobile/README.md](apps/mobile/README.md) | 当前前端启动、检查命令与验证边界 |
 
 ## 图标资源 · 已锁定最终视觉
 
@@ -42,7 +42,7 @@
 - 透明黑/白符号、反白备选与主屏幕圆角预览：`assets/icons/`
 - 启动页透明白色符号：`assets/icons/guidy-splash-symbol-white.png`
 - Expo 接入范例：`examples/expo/`（配置和已准备的图片）
-- 之前的探索稿：`archive/icon-explorations/`（**非正式图标**）
+- 原始包说明中的 `archive/` 历史文件未包含在当前目录；不作为实现依据。
 
 **注意**：正式 App icon 为完整方形黑底，不预先裁圆角；iOS 系统会处理图标蒙版。商标与上架同名检查尚未完成。
 
@@ -55,10 +55,20 @@
 
 **注意：PNG/SVG 是静态页面设计稿，不是已跑通的 React Native 页面。开发时必须同时阅读 `docs/UI_DESIGN.md`，并遵守 V0.1/V0.2/V0.3 功能边界。**
 
-## 开发下一步
+## 本地启动与开发下一步
+
+```powershell
+cd apps/mobile
+npm ci
+npm start
+```
+
+在同一局域网的 iPhone 上使用兼容 Expo Go 扫描 Metro 二维码。Windows 无法运行 Xcode iOS 模拟器；实际手机结果必须另行记录。
+
+从根目录运行 `npm run typecheck`、`npm run lint`；浏览器预览用 `npm run mobile:web`。详细信息见 [移动端说明](apps/mobile/README.md)。
 
 1. 阅读 [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) 和 [examples/expo/README.md](examples/expo/README.md)。
-2. 向 Codex 提交 `AGENTS.md` 和 `docs/TODO.md`，要求**只做 M0**。
+2. 按 `AGENTS.md` 和 `docs/TODO.md` 继续 **M0**，下一轮先实现 FastAPI `/health`，再接 Supabase Auth 与基础迁移。
 3. 在 Windows 启动 Expo 和 FastAPI，在 iPhone 上检查三个 Tab 和 `/health`。
 4. **每轮小任务都遵守 `AGENTS.md` 的闭环：快速测试通过 → `git commit` 实现 → 更新 `docs/TODO.md` → 单独 `git commit` TODO，并反馈真实 SHA。**
 5. M0 通过后才启动动态澄清与 Agent 研究。

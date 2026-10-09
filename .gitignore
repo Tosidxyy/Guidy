@@ -15,3 +15,7 @@ venv/
 !.env.example
 .DS_Store
 .vscode/.ropeproject/
+.cache/
+.vscode/
+.claude/
+web-build/

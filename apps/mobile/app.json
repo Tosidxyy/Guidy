@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Guidy",
+    "slug": "guidy",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "guidy",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 190,
+          "resizeMode": "contain",
+          "backgroundColor": "#090909",
+          "dark": {
+            "image": "./assets/images/splash-icon.png",
+            "backgroundColor": "#090909"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

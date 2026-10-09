@@ -1,0 +1,11 @@
+{
+  "name": "guidy",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "mobile": "npm --prefix apps/mobile start",
+    "mobile:web": "npm --prefix apps/mobile run web",
+    "typecheck": "npm --prefix apps/mobile run typecheck",
+    "lint": "npm --prefix apps/mobile run lint"
+  }
+}
