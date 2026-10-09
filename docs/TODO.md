@@ -23,6 +23,7 @@
 
 ### M0-A 环境和仓库
 
+- [x] 初始化 Git 仓库并保存现行规格/品牌资源基线；统一 PRD、架构与 TODO 的里程碑编号。
 - [ ] 初始化 monorepo `apps/mobile`、`backend`、`docs`；统一 README、环境变量模板和忽略规则。
 - [ ] 在 Windows 安装 Node LTS、包管理器、Python、VS Code，并记录已验证版本。
 - [ ] 使用 Expo Router 创建 iOS App；仅三个底部路由：`goals`、`calendar`、`me`。
@@ -186,4 +187,12 @@ flowchart TD
 - 下一轮：…
 ```
 
-**当前记录：尚未开始实际源码开发，无代码提交与实测结果。**
+### 2026-10-09 — M0 / 文档分期统一与 Git 基线
+
+- 完成内容：PRD 的 M0–M4 统一为 V0.1；V0.2/V0.3 单列。架构 Sprint A/B 与 M0/M1 对齐，目录名改为 Guidy；初始化 main 分支并保存已有文档和品牌资源。
+- 快速测试：PowerShell 内联 Python 检查 → PASS（分期标题、原型路径、批准图标 SHA256、1024×1024 RGB、凭据扫描）；`git -c core.whitespace=-blank-at-eol show --check HEAD` → PASS（Markdown 原有两个行尾空格用于硬换行；默认 whitespace 检查对此产生提示）。
+- 实现提交：`fbae8f1381d888b9919b5a989ba32c8762944958`（文档与资源基线，无应用代码）。
+- TODO 提交：本轮另行提交，其 SHA 在交付回复中报告。
+- 已勾选任务：新增的 Git 基线与文档分期统一前置项；其余 M0 开发项目保持未完成。
+- 阻塞与未验证：默认 Python 3.11.0 未满足后端 3.12+ 要求；暂无应用源码、Supabase 配置或 iPhone 实测。MANIFEST.json 是原始资源包清单，包含本目录未提供的历史文件及原始文档哈希，不能用作当前工程完整性清单。
+- 下一轮：初始化 Expo Router 三 Tab、接入锁定图标与主题 Tokens，执行类型/lint/打包检查；后端阶段准备 Python 3.12+。
