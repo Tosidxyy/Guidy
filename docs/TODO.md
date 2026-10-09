@@ -34,7 +34,9 @@
 - [x] 登录演示输入与焦点：验证码接受空格/短横线和全角数字，拒绝非法后缀；补充错误边框与读屏提示，验证码页自动聚焦。（用户确认 iPhone 自动聚焦和按钮正常；VoiceOver/大字体未验证，不等于真实认证。）
 - [x] iPhone 登录演示基础表单验证：用户确认验证码键盘展开时无遮挡，输入与按钮操作正常。（用户手动验证；不含真实认证、大字体或 VoiceOver。）
 - [x] 「我的」实现真实 API 探活、检查中/失败/重试状态；完成浏览器联调（iPhone 验证仍待下项）。
-- [ ] 在 iPhone 分别验证 Safari 本地 Worker `/health` 与 App「连接状态」成功，并记录失败/恢复路径。（Windows LAN/客户端真实 HTTP 已通过；手机结果待用户反馈。）
+- [x] iPhone App 本地 Worker 探活成功：用户确认「我的 → 连接状态」显示服务可用。（用户手动验证；不代表认证/DB/云部署就绪。）
+- [ ] 在 iPhone 独立记录 Safari 本地 Worker `/health` 与失败/恢复路径。（App 成功已确认；这些独立路径尚未明确反馈。）
+- [x] 连接检查生命周期：离开「我的」/后台时取消当前请求、可重试、旧响应不覆盖新结果。（浏览器与 Web 事件验证通过；iPhone 新增后台行为待验证。）
 - [x] 在 Windows 启动 Metro，使用 iPhone Expo Go（仅兼容场景）预览。（用户确认此前基础预览可用；新 Worker 的手机 API 联调仍待复核。）
 - [x] 准备 EAS Development Build 流程，记录苹果签名/TestFlight 前置条件；正式通知测试必须使用真机开发构建。（依赖、profiles、启动命令与指南已准备；尚无 Apple 付费会员，未生成签名包。）
 - [ ] 在账号/标识/签名条件具备后，完成 EAS iOS 云构建、iPhone 安装与开发包专项验收。（用户已有 Expo 账号；Apple 付费会员、EAS 项目链接和 Bundle Identifier 待配置。）
@@ -427,3 +429,16 @@ flowchart TD
 
 - GitHub [Guidy CI #37950849932](https://github.com/Tosidxyy/Guidy/actions/runs/37950849932) → completed/success，运行 SHA `3437c6b45bd0cb98274b23851a9f44c56fbec35a`；mobile job `113888922209` 与 backend job `113888922522` 全部既有步骤 success。
 - 快速检查：只读 Actions API/步骤、实际 SHA/链接和 `git diff --check` → PASS；单独文档提交后推送并核验远程 HEAD。没有扩展手机验收范围。
+
+### 2026-10-09 — M0 / iPhone App 探活确认与连接检查生命周期
+
+- 真机结果：用户在要求检查 App「连接状态」后反馈“可用，下一步”，记录为本地 Worker 的 iPhone App 探活成功。Safari 独立结果、失败恢复和本轮新增后台取消行为未明确反馈，保持未验证；没有假称 Codex 操作手机。
+- 完成内容：ConnectionStatus 使用路由焦点清理与 AppState，切页/后台中止当前请求并释放重复点击锁，显示可重试的取消状态；信号和请求实例双重检查，旧 finally/响应不影响新请求。保留历史成功时间，不在后台或返回页面时自动探活；无后端、认证、导航或品牌变更。
+- 快速检查：mobile `npm run typecheck` / `npm run lint` → PASS；`npm run test:api` → PASS（9 项含取消/超时），`npm run test:ui-state` → PASS（5 项既有回归）；顺序 `npm run export:ios` / `npm run export:web` → PASS。打包 EXPO_OFFLINE 仅限独立导出进程，手机预览继续在线。
+- 浏览器 QA：`node C:/Users/29035/.codex/visualizations/2026/10/09/01a11f51-bbc0-74b3-9200-ebe6276c1dc5/guidy-health-lifecycle.cjs` → PASS。Browser plugin not available，沿用捆绑 Playwright/Edge、localhost:8089/me；393×852 与暗色 320×740；受控 health 响应验证切 Tab 取消、按钮恢复、旧响应隔离、模拟 Web visibility 后台事件、返回不自动请求、503 失败重试恢复、窄屏无横向溢出/44 pt 按钮与截图检查。5 个模拟 health 请求、认证请求 0；1 个预期 503 资源错误、未预期错误/警告 0。Web 事件模拟不等同 iPhone AppState 真机验证。
+- 修正记录：两次浏览器运行因 Tab 自动定位超时失败，实际图标字体加载后 Tab 名称含图标字符；按已观察的三个 Tab 顺序定位后整个流程通过。未修改产品导航或把失败运行记为通过。导出 NO_COLOR/FORCE_COLOR 提示为构建环境提示，导出结果成功。
+- 提交检查：实现 diff/文件范围/凭据检查、`git diff --check` / `git diff --cached --check` → PASS；无依赖/锁文件变更，后端未修改，未重复数据库测试。
+- 代码提交：`55a0a964af3ae3b2111f3cf9a8250818f8af04bc`。
+- 已勾选：iPhone App 探活成功、连接检查生命周期自动验证小项；Safari/失败恢复和新增原生后台行为保持待验收。
+- TODO 提交/Push：本条单独提交后推送 origin/main、核对远程 SHA 和实际 CI，结果随后补记。
+- 下一轮：真机复核新取消/恢复行为；M0 的真实认证、签名开发包、通知与专项无障碍仍未完成。
