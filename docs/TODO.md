@@ -1,7 +1,7 @@
 # Guidy｜独立开发任务清单与里程碑
 
 > **版本**：v0.1 开发计划草案（2026-10-09）  
-> **状态**：M0 基础工程开发中；本地 D1/真实 OTP 认证已接入，正式邮件/远程资源/新认证真机验收未完成  
+> **状态**：M0 基础工程开发中；本地真实 OTP 与云开发 Worker/D1 已就绪，正式邮件/云端认证/新认证真机验收未完成  
 > **人员与环境**：个人开发者；Windows + iPhone；Expo / React Native + Cloudflare Workers / TypeScript  
 > **关联**：[PRD.md](./PRD.md) · [ARCHITECTURE.md](./ARCHITECTURE.md) · [UI_DESIGN.md](./UI_DESIGN.md) · [DATABASE.md](./DATABASE.md)
 
@@ -46,6 +46,7 @@
 - [x] 初始化 TypeScript Worker、Wrangler、类型/ESLint/格式检查与有效边界测试。（D1 与 Auth 仍在下方待办。）
 - [x] 实现 `/health`、统一错误格式、request_id 和服务端日志脱敏。
 - [ ] 创建 Cloudflare 开发 Worker/D1 资源，接入 Better Auth；验证会话、过期、撤销与受保护 API。
+- [x] 创建并部署独立 Cloudflare 云开发 Worker/D1，应用 0001–0003，校验真实 HTTPS 成功/失败合同。（云端认证关闭；总体云认证仍待原项，手机云端连接未验收。）
 - [x] 建立开发/测试两套数据库连接与迁移流程；迁移先创建 Better Auth 必需表与 `profiles/goals`，通过 Wrangler SQL migrations 验证。（本地 D1；远程资源未创建。）
 - [ ] 实现登录、登出、会话恢复、服务端对象所有权中间件。
 - [x] 本地真实认证链路：Better Auth/D1 OTP、登录/退出/恢复、受保护当前账号接口与身份隔离；前端替换演示账号，接官方 Expo/SecureStore。（开发收件箱由用户确认；浏览器/真实 Worker 已验收，原生新登录待确认，后续业务对象授权仍待原项。）
@@ -463,3 +464,16 @@ flowchart TD
 - 已勾选：本地完整认证实现小项。总体登录验收/云资源保持未完成：开发收件箱不验证真实邮箱归属、不能公开或生产使用；新的 iPhone SecureStore/重启/断网退出、大字体/VoiceOver 未测，后续 Goal/Task 对象授权随业务 API 实现。
 - TODO 提交/Push：本条单独提交后推送私人 origin/main 并验证远程 SHA；实际 CI 在交付回复核对，不为重复记 CI 追加无必要进度提交。
 - 下一步：用户在 iPhone Reload 后「我的 → 登录 → 获取验证码」，Windows backend 运行 auth:inbox 取码登录；确认新原生链路后继续 M0 正式邮件/远程配置，未提前实现 M1。
+
+### 2026-10-10 — M0 / Cloudflare 云开发 Worker 与 D1 实际部署
+
+- 授权/条件：用户创建账号并完成 Wrangler OAuth 后要求继续配置；CLI 确认正确账号且 D1 初始列表为空。用户确认尚无域名，未购买付费方案/域名或配置邮件发送。插件管理搜索未找到可用 Cloudflare 插件，采用已有官方 Wrangler；没有请求用户发送密码/Token。
+- 实际资源：创建 guidy-development D1（6c77640e-763f-46d7-ac5a-ae383cf540e5，Cloudflare 分配 WNAM），独立于 local/test。已远程应用 0001/0002/0003，SQL 只读核对表结构与 user/dev_auth_inbox 数量均 0；没有复制本地数据。Worker guidy-api-development 已部署到 https://guidy-api-development.guidy-backend.workers.dev，版本 2b0bdb20-746a-4fc0-b6e9-634f61712e64。首次发布 workers.dev 注册提示后 CLI 完成并给出真实地址。
+- 实现：新增真实账号/资源对应的 wrangler.cloud.json、固定云开发目标的 build/migrate/deploy wrapper 与 npm 命令；拒绝参数覆盖/未知操作，保留原有 local wrapper 不变。GUIDY_AUTH_MODE=disabled、CORS 空、observability 关闭；CI 不做远程发布。本地登录与手机 API 地址未切换。
+- 快速检查：backend lint/format:check → PASS；新的 cloud-dev 边界测试 → PASS（1 项，5 组非法调用不启动 Wrangler）；build:cloud → PASS（真实配置 dry-run）；db:migrate:cloud/deploy:cloud → PASS（实际远程迁移/部署）。本轮未改应用源码或依赖，未重复前端导出/既有本地数据库回归。
+- HTTP Smoke Test：Node 实际客户端直连云 origin 10 秒超时，未记为通过；Web 工具亦无法访问。随后使用 Windows 系统网络 Invoke-WebRequest，对真实 HTTPS /health GET 200、/health POST 405、未知 GET 404、/api/v1/me GET 503，响应 envelope/service/version/request ID 一致性 → PASS。说明系统网络路径可用，不等同 Node 直连或 iPhone 验收。
+- 文档/提交检查：真实资源与部署输出比对、文档相对链接、暂存仅配置/脚本/测试/说明、git diff --check/git diff --cached --check → PASS。账号 ID/D1 ID 仅资源标识；OAuth、本地 secret/收件箱/数据库文件未提交或上传。
+- 代码提交：`732f5955d095bbd409a16074f716e6aefc08e644`。
+- 已勾选：云开发基础实际部署小项。正式邮件/云端登录保持未完成：无发信域名，Email Service 未配置/无真实收信测试；未假称邮件适配或总体认证已交付。iPhone 云端访问、原生新会话/退出与专项无障碍仍待验收。
+- TODO 提交/Push：本条单独提交后推送 origin/main，核验远程 SHA；实际 CI 在交付回复核对，不额外重复 CI 进度提交。
+- 下一步：选定/配置发信域名或合适邮件服务后接正式验证码发送，完成独立云 secret/HTTPS Auth 配置和云端认证验收，再切换 App API。此前用户“成功了”按本地取码恢复记录，不扩展为完整原生认证验收。
