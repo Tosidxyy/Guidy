@@ -1,8 +1,10 @@
+> **2026-10-09 架构切换说明**：本文件为 D1 适配后的概念模型；旧 PostgreSQL 文档保存在 [历史快照](../archive/architecture-before-cloudflare/DATABASE.md)。本轮没有执行数据库迁移。
+
 # Guidy｜数据库设计与数据生命周期
 
 > **版本**：v0.1 数据模型草案（2026-10-09）  
 > **状态**：供开发评审，尚未执行迁移或生产验证  
-> **数据库**：Supabase PostgreSQL，SQLAlchemy 2 + Alembic  
+> **数据库**：Cloudflare D1（SQLite 语义）；参数化 SQL + Wrangler migrations  
 > **关联**：[PRD.md](./PRD.md) · [ARCHITECTURE.md](./ARCHITECTURE.md) · [UI_DESIGN.md](./UI_DESIGN.md) · [TODO.md](./TODO.md)
 
 ## 0. 核心决策与范围
@@ -44,9 +46,9 @@ erDiagram
 
 ## 2. 命名、身份与字段规范
 
-- 数据库表名 `snake_case` 复数；主键优先 `uuid`；`created_at/updated_at` 为 `timestamptz`。
-- 外部输入的本地时间必须带 **IANA 时区**（如 `Asia/Shanghai`），计划具体实例的起止时间存 UTC 语义的 `timestamptz`；重复规则存本地时区语义，不能仅用 `UTC+8` 代替。
-- 所有可版本化的动态结构必须带 `schema_version`；`jsonb` 用于 Slot 值、模板参数模式、重复规则和计划差异，不代替具备强引用关系的任务表。
+- 数据库表名 `snake_case` 复数；主键优先 `TEXT`（业务 UUID；认证 ID 为不透明字符串）；`created_at/updated_at` 为 UTC epoch 毫秒 `INTEGER`。
+- 外部输入的本地时间必须带 **IANA 时区**（如 `Asia/Shanghai`），计划具体实例的起止时间存 UTC 语义的 UTC epoch 毫秒 `INTEGER`；重复规则存本地时区语义，不能仅用 `UTC+8` 代替。
+- 所有可版本化的动态结构必须带 `schema_version`；通过 json_valid CHECK 的 JSON `TEXT` 用于 Slot 值、模板参数模式、重复规则和计划差异，不代替具备强引用关系的任务表。
 - 不信任前端传入的 `owner_id`；由验证后的 JWT `sub` 决定当前用户。
 - 各类 `status` 使用受约束的文本或 enum；状态变化必须由 Service 定义合法转移。开发早期优先带 `CHECK` 的文本以降低 enum 迁移成本。
 - 公共对象和个人私密记录物理/逻辑隔离；日志与埋点仅记录最小必要标识、状态和耗时，不记录健康数据或完整对话。
@@ -57,9 +59,9 @@ erDiagram
 
 | 表 | 核心字段 | 约束与说明 |
 | --- | --- | --- |
-| `profiles` | `user_id` PK/FK `auth.users.id`, `display_name`, `avatar_path?`, `locale`, `timezone`, `created_at`, `updated_at` | 「我的」个人资料；不强制姓名、性别、生日、身体信息 |
+| `profiles` | `user_id` PK/FK Better Auth 用户表 ID, `display_name`, `avatar_path?`, `locale`, `timezone`, `created_at`, `updated_at` | 「我的」个人资料；不强制姓名、性别、生日、身体信息 |
 | `goals` | `id`, `owner_id`, `title`, `category?`, `status`, `deadline_at?`, `active_plan_version_id?`, `revision`, `created_at`, `updated_at` | `revision` 用于并发校验；`(owner_id,status)` 索引 |
-| `goal_slots` | `id`, `goal_id`, `key`, `value_jsonb`, `sensitivity`, `source`, `confirmed_at?`, `updated_at` | `UNIQUE(goal_id,key)`；必要时加密敏感字段；按目标隔离 |
+| `goal_slots` | `id`, `goal_id`, `key`, `value_json`, `sensitivity`, `source`, `confirmed_at?`, `updated_at` | `UNIQUE(goal_id,key)`；必要时加密敏感字段；按目标隔离 |
 | `agent_messages` | `id`, `goal_id`, `role`, `content`, `created_at` | 仅该 Goal 对话可见，默认不公开，也不作为模板原件 |
 
 `goals.status` 建议：`draft / clarifying / researching / awaiting_approval / active / paused / completed / archived`。删除可先执行受控软删除流程，再依据策略进行不可恢复清除；删除策略需满足上线地区法规。
@@ -68,9 +70,9 @@ erDiagram
 
 | 表 | 核心字段 | 约束与说明 |
 | --- | --- | --- |
-| `agent_runs` | `id`, `goal_id`, `phase`, `status`, `context_schema_version`, `checkpoint_jsonb`, `cost?`, `started_at`, `updated_at` | `clarifying/researching/drafting/needs_input/...` 阶段；长任务断线可恢复 |
+| `agent_runs` | `id`, `goal_id`, `phase`, `status`, `context_schema_version`, `checkpoint_json`, `cost?`, `started_at`, `updated_at` | `clarifying/researching/drafting/needs_input/...` 阶段；长任务断线可恢复 |
 | `agent_jobs` | `id`, `run_id`, `job_type`, `status`, `available_at`, `lease_until?`, `attempt_count`, `idempotency_key`, `error_code?` | `UNIQUE(idempotency_key)`；领取索引 `(status,available_at)` |
-| `research_evidence` | `id`, `goal_id`, `claim`, `source_url`, `retrieved_at`, `verification_status`, `applicability_jsonb` | 追踪证据与适用性；不得存伪造的来源 |
+| `research_evidence` | `id`, `goal_id`, `claim`, `source_url`, `retrieved_at`, `verification_status`, `applicability_json` | 追踪证据与适用性；不得存伪造的来源 |
 
 外部网页是**不可信数据**，不得在 Worker 中把网页指令提升为系统权限；Agent Job 失败时要保存状态而不是丢失研究过程。原始网页全文如需缓存，应另设保留期限/版权和隐私策略。
 
@@ -78,26 +80,26 @@ erDiagram
 
 | 表 | 核心字段 | 约束与说明 |
 | --- | --- | --- |
-| `plan_versions` | `id`, `goal_id`, `version`, `status`, `schema_version`, `assumptions_jsonb`, `estimated_cost_jsonb?`, `created_at`, `accepted_at?` | `UNIQUE(goal_id,version)`；生效版本原则上不可变 |
-| `tasks` | `id`, `plan_version_id`, `logical_task_key`, `title`, `duration_min`, `recurrence_jsonb?`, `window_jsonb?`, `priority`, `resource_needs_jsonb?`, `safety_flags_jsonb?` | `UNIQUE(plan_version_id,logical_task_key)`；可在版本间逻辑追踪同一任务 |
+| `plan_versions` | `id`, `goal_id`, `version`, `status`, `schema_version`, `assumptions_json`, `estimated_cost_json?`, `created_at`, `accepted_at?` | `UNIQUE(goal_id,version)`；生效版本原则上不可变 |
+| `tasks` | `id`, `plan_version_id`, `logical_task_key`, `title`, `duration_min`, `recurrence_json?`, `window_json?`, `priority`, `resource_needs_json?`, `safety_flags_json?` | `UNIQUE(plan_version_id,logical_task_key)`；可在版本间逻辑追踪同一任务 |
 | `task_dependencies` | `id`, `plan_version_id`, `predecessor_task_id`, `successor_task_id`, `minimum_gap_min?`, `type` | 禁止自依赖与依赖环；两端任务必须属于同一计划版本 |
 | `calendar_events` | `id`, `owner_id`, `source`, `title`, `start_at`, `end_at`, `fixed`, `created_at` | 用户固定事件不能被 AI 静默移动；`end_at > start_at` |
-| `schedule_proposals` | `id`, `goal_id`, `plan_version_id`, `base_goal_revision`, `diff_jsonb`, `status`, `expires_at`, `approved_at?` | 提交时检查版本及日期有效性，防止旧草稿覆盖新安排 |
+| `schedule_proposals` | `id`, `goal_id`, `plan_version_id`, `base_goal_revision`, `diff_json`, `status`, `expires_at`, `approved_at?` | 提交时检查版本及日期有效性，防止旧草稿覆盖新安排 |
 | `scheduled_occurrences` | `id`, `task_id`, `plan_version_id`, `owner_id`, `start_at`, `end_at`, `status`, `superseded_at?` | 每一执行实例；旧实例标记替代，不删除历史反馈 |
 
 **两级版本区分**：`plan_versions.version` 是计划内容版本，`goals.revision` 是 Goal 聚合的并发版本。客户端提交待确认草稿时必须携带当前 `revision`（例如 `If-Match` 或请求字段）。
 
-**排程硬约束**：由 `SchedulingService` 检查时间重叠、前置依赖、互斥资源、最短间隔、截止日期、目标所属权。SQL 约束/索引提供第二道保护，但不依赖单个通用 `EXCLUDE` 约束直接解决所有可并行任务场景。
+**排程硬约束**：由 `SchedulingService` 检查时间重叠、前置依赖、互斥资源、最短间隔、截止日期、目标所属权。D1 CHECK/外键/唯一索引提供第二道保护；可并行与硬冲突仍须领域校验。
 
 ### 3.4 执行反馈与通知
 
 | 表 | 核心字段 | 约束与说明 |
 | --- | --- | --- |
-| `execution_records` | `id`, `occurrence_id`, `owner_id`, `status`, `feedback_jsonb?`, `recorded_at`, `request_id` | `UNIQUE(request_id)` 或用户域内组合唯一；重复提交不能双重计数 |
+| `execution_records` | `id`, `occurrence_id`, `owner_id`, `status`, `feedback_json?`, `recorded_at`, `request_id` | `UNIQUE(request_id)` 或用户域内组合唯一；重复提交不能双重计数 |
 | `notification_intents` | `id`, `occurrence_id`, `owner_id`, `channel`, `due_at`, `desired_revision`, `status`, `dedupe_key` | `UNIQUE(dedupe_key)`；计划改期时作废旧意图 |
 | `notification_device_syncs` | `device_id`, `owner_id`, `last_desired_revision`, `last_ack_at`, `sync_status` | 复合唯一设备关联；支持 App 恢复时增量对账 |
-| `outbox_events` | `id`, `event_type`, `aggregate_id`, `payload_jsonb`, `status`, `created_at`, `processed_at?` | 与计划确认同事务写入；异步通知、评估/事件处理 |
-| `audit_logs` | `id`, `actor_id`, `action`, `entity_type`, `entity_id`, `summary_jsonb`, `created_at` | 仅记录变更元数据与必要的解释，不存敏感原文 |
+| `outbox_events` | `id`, `event_type`, `aggregate_id`, `payload_json`, `status`, `created_at`, `processed_at?` | 与计划确认同事务写入；异步通知、评估/事件处理 |
+| `audit_logs` | `id`, `actor_id`, `action`, `entity_type`, `entity_id`, `summary_json`, `created_at` | 仅记录变更元数据与必要的解释，不存敏感原文 |
 
 状态区别：通知 `scheduled/sync_pending/cancelled/unknown` 是**计划和设备同步状态**；`delivered/opened` 未必具有操作系统回执，不能因定时器成功注册就写“已送达”。执行 `completed/partial/postponed/skipped/unknown` 必须与通知状态严格分离。
 
@@ -107,7 +109,7 @@ erDiagram
 | --- | --- | --- |
 | `kickstart_periods` | `id`, `goal_id`, `start_date`, `planned_days`, `timezone`, `paused_days`, `end_date?`, `review_state` | 21 天是可修改的默认观察期，不是习惯养成或达标保证 |
 | `templates` | `id`, `author_id`, `title`, `visibility`, `current_version_id?`, `created_at` | 初期 `visibility=private`；与源计划隔离 |
-| `template_versions` | `id`, `template_id`, `version`, `schema_version`, `input_schema_jsonb`, `question_graph_jsonb`, `research_policy_jsonb`, `task_blueprint_jsonb`, `status` | 不包含作者的身体数据、私聊或具体行程 |
+| `template_versions` | `id`, `template_id`, `version`, `schema_version`, `input_schema_json`, `question_graph_json`, `research_policy_json`, `task_blueprint_json`, `status` | 不包含作者的身体数据、私聊或具体行程 |
 | `template_applications` | `id`, `template_version_id`, `user_id`, `goal_id`, `applied_at` | 实例化必须新建目标与计划，记录来源版本但不共享所有权 |
 
 个人计划完成 21 天之前允许创建**私人模板草稿**。公开分享资格是另外的业务状态，不应阻止个人复用自己的方法。
@@ -128,9 +130,9 @@ erDiagram
 
 ### 6.1 确认计划 / 排程
 
-1. 以验证后的 `owner_id` 查 Goal，并锁定相应 Goal 行；核对 `expected_goal_revision`。
+1. 以验证后的 `owner_id` 查 Goal，使用原子条件更新保护相应 Goal；核对 `expected_goal_revision`。
 2. 验证 `schedule_proposal` 是否未过期、属于该用户的 Goal、匹配基线版本且排程硬约束仍成立。
-3. 在同一 PostgreSQL 事务中：插入已确定的计划版本/任务/未来执行实例，切换 active 指针，递增 Goal revision；替换受影响未来旧实例的生效状态；写 `notification_intents` 和 `outbox_events`。
+3. 在同一经并发/回滚验证的 D1 原子批次中：插入已确定的计划版本/任务/未来执行实例，切换 active 指针，递增 Goal revision；替换受影响未来旧实例的生效状态；写 `notification_intents` 和 `outbox_events`。
 4. 成功后返回 `commit_id` 与 `desired_notification_revision`，客户端显示“计划已保存，设备提醒可能待同步”。
 5. 客户端撤销旧的本地通知并注册新通知，保存 OS notification id 映射并报告回执；失败可重试。
 
@@ -144,7 +146,7 @@ erDiagram
 
 ### 6.3 后台 Job 租约
 
-Worker 在**短事务**中通过 `FOR UPDATE SKIP LOCKED` 领取可运行 Job，随后释放行锁并执行网络请求；保持 lease/heartbeat，重试前检查已完成检查点，确保外部副作用和数据库确认幂等。
+后台消费者使用适配 D1 的条件 UPDATE/唯一去重标识领取 Job，并保存 lease/heartbeat/检查点。领取与确认必须具备原子条件测试；不使用 PostgreSQL 行锁或 SKIP LOCKED。持久编排/消息消费者在 M1 验证，API 请求中的内存任务不能代替可靠后台任务。
 
 ## 7. 索引、唯一性与校验建议
 
@@ -160,77 +162,23 @@ Worker 在**短事务**中通过 `FOR UPDATE SKIP LOCKED` 领取可运行 Job，
 | `notification_intents` | `(owner_id,due_at)`、`UNIQUE(dedupe_key)` | 快速查询设备待同步意图 |
 | `template_versions` | `UNIQUE(template_id,version)` | 模板版本不可混淆 |
 
-外键、`NOT NULL`、`CHECK(duration_min > 0)`、`CHECK(end_at > start_at)` 和适当的 `ON DELETE` 行为写进 Alembic。循环依赖、跨用户关联、同 Goal active 指针一致性等涉及多行状态的校验须由服务层或专门约束实现。
+外键、`NOT NULL`、`CHECK(duration_min > 0)`、`CHECK(end_at > start_at)` 和适当的 `ON DELETE` 行为写进 Wrangler SQL migrations。循环依赖、跨用户关联、同 Goal active 指针一致性等涉及多行状态的校验须由服务层或专门约束实现。
 
-## 8. 最小 SQL 设计示例（不是完整生产迁移）
+## 8. D1 迁移与权限
 
-下面片段表达约束意图。正式建库时应使用 **Alembic** 生成迁移、补充权限策略及跨表校验，不应将此片段直接视为部署脚本。
+首轮仅 Better Auth 必需表（按锁定版本生成）及 profiles/goals。D1 SQL 方言用 TEXT 主键、INTEGER UTC 毫秒、JSON TEXT；不直接使用旧 PostgreSQL SQL。为状态、revision、时长、结束晚于开始、同 Goal 计划指针及依赖所属添加 CHECK/外键/唯一约束，并在真实 D1 本地运行验证。
 
-```sql
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+D1 batch 原子提交并不自动阻止陈旧版本写入；条件、幂等提交标记与全部派生写入必须由同一受验证方案保护。不把 UPDATE 的零影响行误认为自动回滚，也不跨 HTTP 请求伪称事务。M2 提交实现须覆盖并发与失败回滚。
 
-CREATE TABLE public.profiles (
-    user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    display_name text NOT NULL DEFAULT '',
-    avatar_path text,
-    locale text NOT NULL DEFAULT 'zh-CN',
-    timezone text NOT NULL DEFAULT 'Asia/Shanghai',
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
-);
+D1 没有 PostgreSQL RLS。所有私有对象按已验证会话用户 ID 做服务端 owner 校验与关联校验；手机不直连 D1 管理 API、不持有 Cloudflare Token 或数据库/认证/模型服务端密钥。公开模板后续使用脱敏白名单投影。
 
-CREATE TABLE public.goals (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    owner_id uuid NOT NULL REFERENCES public.profiles(user_id),
-    title text NOT NULL CHECK (length(trim(title)) > 0),
-    status text NOT NULL DEFAULT 'draft',
-    active_plan_version_id uuid, -- 创建 plan_versions 后再追加外键与同 Goal 校验
-    revision bigint NOT NULL DEFAULT 0 CHECK (revision >= 0),
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_goals_owner_status
-    ON public.goals(owner_id, status, updated_at DESC);
-
-CREATE TABLE public.plan_versions (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    goal_id uuid NOT NULL REFERENCES public.goals(id),
-    version integer NOT NULL CHECK (version > 0),
-    schema_version integer NOT NULL DEFAULT 1,
-    status text NOT NULL DEFAULT 'draft',
-    assumptions_jsonb jsonb NOT NULL DEFAULT '{}'::jsonb,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    accepted_at timestamptz,
-    UNIQUE (goal_id, version),
-    UNIQUE (goal_id, id)
-);
-
--- 生效指针不能引用其他 Goal 的计划版本：
-ALTER TABLE public.goals
-    ADD CONSTRAINT fk_active_plan_same_goal
-    FOREIGN KEY (id, active_plan_version_id)
-    REFERENCES public.plan_versions(goal_id, id)
-    DEFERRABLE INITIALLY DEFERRED;
-```
-
-该示例还需要实际迁移中设定 RLS/GRANT、创建触发器或服务层 `updated_at` 维护、删除策略和业务状态 CHECK。特意使用复合外键阻止 `goals.active_plan_version_id` 指向其他目标的版本。
-
-## 9. 权限、隐私与 RLS
-
-- 认证身份由 Supabase Auth 管理；`profiles.user_id` 指向 `auth.users.id`。
-- 手机端仅与 **Supabase Auth** 交互登录/刷新，所有业务 CRUD 统一走 FastAPI；**不得把 service_role、数据库连接串、LLM/search Key 下发客户端**。
-- `goals`、`goal_slots`、`agent_messages`、`plan_versions`、`calendar_events`、`execution_records` 等所有私有数据必须有对象级授权；关联查询需校验目标所有者，不能只靠 UUID 难猜。
-- 若业务 schema 暴露给 Supabase Data API，需为相应表开启 RLS、最小化 GRANT，并以 `auth.uid()` 等真实数据库会话角色鉴权；高权限后端凭证可能绕过 RLS，因此 API 服务层必须始终执行 owner 检查。
-- 模板审核采用复制出的脱敏数据结构与明确字段白名单；原作者私有数据不因模板公开而增加读取权限。
-- 健康字段、身体参数和用药资料按敏感信息处理，明确用途、保留期、可删除性；是否进行字段级加密以及数据存储地区上线前评审。
-- 用户删号、敏感数据清除、第三方模型提供商的数据处理条款必须形成明确的可执行流程。
+字段加密、审计保留、删除策略和供应商数据地区要求发布前评审；日志不含完整对话与健康值。
 
 ## 10. 迁移策略、版本与测试
 
 **建议迁移顺序**：
 
-1. `auth.users` 关联的 `profiles`、`goals`、`goal_slots`、`agent_messages`。
+1. Better Auth 用户表 关联的 `profiles`、`goals`、`goal_slots`、`agent_messages`。
 2. `agent_runs/agent_jobs/research_evidence`，实现中断恢复。
 3. `plan_versions/tasks/task_dependencies/calendar_events/schedule_proposals`。
 4. `scheduled_occurrences/execution_records/notification_intents/notification_device_syncs/outbox_events`。
@@ -247,4 +195,4 @@ ALTER TABLE public.goals
 - 多设备通知同步冲突策略（默认每个设备可独立注册提醒，需保证跨端一致状态）。
 - 是否以及何时启用“公开模板”专用只读投影 Schema。
 
-**本设计的交付边界**：这是数据与约束设计文档，不表示 SQL 已运行、迁移已生成，或 Supabase 项目已创建。正式开发仍需根据实际 API 契约完成字段精化和迁移验收。
+**本设计的交付边界**：这是数据与约束设计文档，不表示 SQL 已运行、迁移已生成，或远程 D1/Auth 已创建。正式开发仍需根据实际 API 契约完成字段精化和迁移验收。

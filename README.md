@@ -2,7 +2,7 @@
 
 **Guidy** 是面向 iOS 的通用 AI 目标规划与执行产品。用户提出目标，Agent 在短对话中澄清必要条件、自主研究、生成有依据的可执行计划，经过确认后安排到应用内日历，通过提醒、反馈和可审阅的重规划帮助用户推进目标。未来可以将经过执行记录与审核的规划**路径**作为模板复用。
 
-> 当前状态：**M0 基础工程开发中**。Expo 三 Tab 已有演示页面与真实 API 连接检查；FastAPI 已有 `/health`、统一错误/request_id 和脱敏日志。基础 CI 配置见 `.github/workflows/ci.yml`。登录、数据库和通知尚未实现，iPhone 尚未实测。
+> 当前状态：**M0 基础工程开发中**。Expo 三 Tab 已有演示页面与真实 API 连接检查；TypeScript Worker 已有 `/health`、统一错误/request_id 和脱敏日志。基础 CI 配置见 `.github/workflows/ci.yml`。登录、数据库和通知尚未实现，用户已确认 iPhone Expo Go 基础预览可用；专项真机验收未完成。
 
 ## 产品与技术决策
 
@@ -10,8 +10,8 @@
 - 首发：**iOS（Windows 开发 + iPhone 真机验证）**。
 - 底部导航：**目标｜日历｜我的**。Agent 属于目标流程；模板从「我的 → 我的模板」进入。
 - 客户端：**React Native + Expo + TypeScript + Expo Router**。
-- 后端：**FastAPI + PydanticAI + Python 领域服务**（模块化单体）。
-- 数据：**Supabase PostgreSQL + Auth**，服务端进行对象级权限校验。
+- 后端：**Cloudflare Workers + TypeScript 领域服务**（模块化单体）。
+- 数据：**Cloudflare D1 + Better Auth**，服务端进行对象级权限校验。
 - 日程：**确定性规则排程 + 用户确认**，通知通过 iPhone 本地通知实现（需真实同步状态）。
 - 版本：**V0.1 核心闭环；V0.2 21 天观察期/私人模板；V0.3 公开模板社区**。
 
@@ -22,13 +22,13 @@
 | [docs/PRD.md](docs/PRD.md) | 产品范围、用户旅程、规则与验收条件 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 技术选型、服务分层、Agent、调度、API |
 | [docs/UI_DESIGN.md](docs/UI_DESIGN.md) | iOS 页面、导航、交互与基础视觉 |
-| [docs/DATABASE.md](docs/DATABASE.md) | 概念数据结构、约束、RLS、事务策略 |
+| [docs/DATABASE.md](docs/DATABASE.md) | 概念数据结构、对象授权与原子批次策略 |
 | [docs/TODO.md](docs/TODO.md) | M0–M4 里程碑和逐项任务 |
 | [docs/BRAND_GUIDE.md](docs/BRAND_GUIDE.md) | Guidy 黑白标识和 UI 视觉 Token |
 | [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) | Windows + iPhone 初始化与图标接入步骤 |
 | [AGENTS.md](AGENTS.md) | 给 Codex 的项目约定及实施原则 |
 | [apps/mobile/README.md](apps/mobile/README.md) | 当前前端启动、检查命令与验证边界 |
-| [backend/README.md](backend/README.md) | FastAPI 启动、API 合同、日志与后端检查 |
+| [backend/README.md](backend/README.md) | Workers 启动、API 合同、日志与后端检查 |
 
 ## 图标资源 · 已锁定最终视觉
 
@@ -69,15 +69,15 @@ npm start
 从根目录运行 `npm run typecheck`、`npm run lint`；浏览器预览用 `npm run mobile:web`。详细信息见 [移动端说明](apps/mobile/README.md)。
 
 1. 阅读 [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) 和 [examples/expo/README.md](examples/expo/README.md)。
-2. 按 `AGENTS.md` 和 `docs/TODO.md` 继续 **M0**，下一轮接 Supabase Auth 与基础迁移；iPhone 验证须另行记录。
-3. 在 Windows 启动 Expo 和 FastAPI，在 iPhone 上检查三个 Tab 和 `/health`。
+2. 按 `AGENTS.md` 和 `docs/TODO.md` 继续 **M0**，下一轮接 Better Auth 与 D1 基础迁移；iPhone 验证须另行记录。
+3. 在 Windows 启动 Expo 和 Wrangler，在 iPhone 上检查三个 Tab 和 `/health`。
 4. **每轮小任务都遵守 `AGENTS.md` 的闭环：快速测试通过 → `git commit` 实现 → 更新 `docs/TODO.md` → 单独 `git commit` TODO → `git push` 到 [私人仓库](https://github.com/Tosidxyy/Guidy)，并反馈真实 SHA 和推送结果。**
 5. M0 通过后才启动动态澄清与 Agent 研究。
 
 ## 基础 CI
 
-[GitHub Actions](https://github.com/Tosidxyy/Guidy/actions) 在 main 的相关代码 Push、PR 和手动触发时运行：前端 `npm ci`、类型/lint/API 客户端测试；后端 `uv sync --locked`、ruff 检查/格式和 pytest。Node 24.15.0、uv 0.11.32 与官方 Action SHA 固定；workflow 只有 contents:read 权限，不需要服务端密钥。纯文档 Push 不重复触发。CI 不替代 iPhone 测试，依赖审计遗留项仍保留。
+[GitHub Actions](https://github.com/Tosidxyy/Guidy/actions) 在 main 的相关代码 Push、PR 和手动触发时运行：前端 `npm ci`、类型/lint/API 客户端测试；后端 `npm ci`、类型/lint/格式、边界测试与 Wrangler dry-run。Node 24.15.0 与官方 Action SHA 固定；workflow 只有 contents:read 权限，不需要服务端密钥。纯文档 Push 不重复触发。CI 不替代 iPhone 测试，依赖审计遗留项仍保留。
 
 ## 重要安全边界
 
-不要把用户的健康数据/日历同步记录、模型密钥或 Supabase 服务角色密钥写入客户端仓库。外部检索内容与社区模板不得作为系统提示执行。任何高风险医疗/用药建议都需要单独的安全边界和人工判断。21 天仅是**启动观察期**，不是保证习惯养成的科学结论。
+不要把用户的健康数据/日历同步记录、模型密钥或 Cloudflare Token 或 Better Auth 密钥写入客户端仓库。外部检索内容与社区模板不得作为系统提示执行。任何高风险医疗/用药建议都需要单独的安全边界和人工判断。21 天仅是**启动观察期**，不是保证习惯养成的科学结论。

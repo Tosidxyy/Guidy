@@ -42,17 +42,19 @@ npm run web
 复制 `.env.example` 为不提交的 `.env`，将 `EXPO_PUBLIC_API_URL` 设置为后端 origin（不带路径、用户名、密码、查询参数）：
 
 ```dotenv
-EXPO_PUBLIC_API_URL=http://192.168.YOUR.WINDOWS_IP:8000
+EXPO_PUBLIC_API_URL=http://192.168.YOUR.WINDOWS_IP:8787
 ```
 
-上面是占位地址，须替换为实际 Windows 局域网 IP；手机不能用 `localhost` 访问 Windows 后端。后端用 `--host 0.0.0.0` 做受控局域网联调，见 [后端说明](../../backend/README.md)。修改公开环境配置后完全重载 App。未配置或无效地址只显示配置错误，不发送请求。
+上面是占位地址，须替换为实际 Windows 局域网 IP；手机不能用 `localhost` 访问 Windows 后端。后端用 `npm run dev:lan` 做受控局域网联调，见 [后端说明](../../backend/README.md)。修改公开环境配置后完全重载 App。未配置或无效地址只显示配置错误，不发送请求。
 
-浏览器本机预览可设 `EXPO_PUBLIC_API_URL=http://127.0.0.1:8000`，并在后端设置 `GUIDY_CORS_ORIGINS=["http://localhost:8082"]`，匹配 `npx expo start --localhost --port 8082`；手机原生 fetch 不需要 CORS。客户端只检查状态、Guidy 服务名、版本和请求 ID/响应头的一致性，不打印原始异常、不回显服务端失败正文，也不发送认证凭据。
+浏览器本机预览可设 `EXPO_PUBLIC_API_URL=http://127.0.0.1:8787`，并在后端设置 `GUIDY_CORS_ORIGINS=["http://localhost:8082"]`，匹配 `npx expo start --localhost --port 8082`；手机原生 fetch 不需要 CORS。客户端只检查状态、Guidy 服务名、版本和请求 ID/响应头的一致性，不打印原始异常、不回显服务端失败正文，也不发送认证凭据。
 
-禁止将模型、搜索、数据库密码或 Supabase service_role 放入客户端。所有 EXPO_PUBLIC 值都可被 App 用户读取。
+禁止将模型、搜索、Cloudflare API Token 或 Better Auth secret 放入客户端。所有 EXPO_PUBLIC 值都可被 App 用户读取。
 
 API 客户端测试使用 Node 24 的类型擦除与内置 test runner，无额外测试依赖。项目声明 ESM，ESLint 配置使用对应 import/export 语法。
 
 目前不申请通知、系统日历、位置或通讯录权限。iOS Bundle Identifier、EAS 项目与苹果签名尚未配置，不使用虚构的已注册标识。
 
 `../../MANIFEST.json` 是原始设计资源包快照，不是当前工程清单。正式品牌原图与 icon 的原始字节保持不变。
+
+用户于 2026-10-09 确认 iPhone Expo Go 基础预览可用；后端已改 TypeScript Worker，新 Worker 的手机联调与专项原生验收仍须另行记录。

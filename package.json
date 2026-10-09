@@ -5,6 +5,8 @@
   "scripts": {
     "mobile": "npm --prefix apps/mobile start",
     "mobile:web": "npm --prefix apps/mobile run web",
+    "backend": "npm --prefix backend run dev",
+    "backend:lan": "npm --prefix backend run dev:lan",
     "typecheck": "npm --prefix apps/mobile run typecheck",
     "lint": "npm --prefix apps/mobile run lint"
   }

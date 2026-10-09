@@ -387,7 +387,7 @@
 | 可靠性 | 幂等 API；持久化研究任务；重试不重复插入日程；版本确认使用乐观锁 |
 | 易恢复性 | App 重启、网络失败、后台研究服务重启后状态可恢复 |
 | 可解释性 | 研究结论有出处、变更有 diff、冲突有原因码 |
-| 数据安全 | 服务端鉴权、分层授权、数据库 RLS/最小权限、传输加密、密钥托管 |
+| 数据安全 | 服务端鉴权、分层授权、对象授权/数据库最小权限、传输加密、密钥托管 |
 | 可观测性 | 记录匿名化运行状态、Token/工具用量、错误种类，不记录敏感聊天正文 |
 | 性能 | 非 AI 页面优先流畅；Agent 阶段性进度可见，不编造固定秒级完成保证 |
 | 可用性 | iPhone 常见屏幕尺寸适配、Dynamic Type/VoiceOver 基本可达性、网络不可用提示 |
@@ -404,8 +404,8 @@
 ### M0｜项目基础可运行
 
 - Windows 启动 Expo 项目，iPhone 可以扫描预览基础页面。
-- Windows 启动 FastAPI `/health`，iPhone 完成基本请求；建立开发/测试数据库和基础迁移。
-- 完成 Supabase 登录、登出、会话恢复与服务端对象权限校验；底部仅「目标｜日历｜我的」。
+- Windows 启动 TypeScript Worker `/health`，iPhone 完成基本请求；建立开发/测试数据库和基础迁移。
+- 完成 Better Auth 登录、登出、会话恢复与服务端对象权限校验；底部仅「目标｜日历｜我的」。
 - 建立前后端基础检查与 CI；断网显示明确提示，客户端不包含服务端密钥。
 - 确认 EAS / Apple 账号与通知真机测试所需条件，列出无法仅用 Expo Go 测试的能力。
 
@@ -491,7 +491,7 @@
 参考资料：
 - 旧版基稿：`../archive/GoalPath_PRD_v1.0.md`（历史 Web-first 草稿，仅供追溯；不作为现行需求依据）。
 - Expo 文档：https://docs.expo.dev/
-- Supabase Expo 指南：https://supabase.com/docs/guides/getting-started/quickstarts/expo-react-native
+- Better Auth Expo 指南：https://better-auth.com/docs/integrations/expo
 - Apple App Review Guidelines：https://developer.apple.com/app-store/review/guidelines/
 - 习惯形成研究综述：https://pmc.ncbi.nlm.nih.gov/articles/PMC11641623/ （习惯形成时间存在较大个体差异，不支持统一的 21 天保证）。
 

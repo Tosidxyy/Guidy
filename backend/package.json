@@ -1,0 +1,23 @@
+{
+  "name": "@guidy/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --ip 127.0.0.1 --port 8787",
+    "dev:lan": "wrangler dev --local --ip 0.0.0.0 --port 8787",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "format:check": "prettier --check src tests eslint.config.js tsconfig.json wrangler.jsonc package.json"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.12.0",
+    "prettier": "3.9.9",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
+    "wrangler": "4.149.0"
+  }
+}

@@ -1,57 +1,35 @@
-# Guidy backend
+# Guidy backend · Cloudflare TypeScript
 
-M0 后端基础已可运行：FastAPI `/health`、统一错误、请求 ID 和白名单结构化日志。尚未接入 Supabase Auth、数据库或真实业务 API。
+2026-10-09 用户确认迁移。当前仅 Workers `/health`、稳定错误、请求 ID、最小 CORS 和白名单日志；D1/Auth/Agent 尚未实现或部署。Python 版本仅在 Git 历史中保留，不是当前入口。
 
-## Windows 安装和启动
-
-要求 Python 3.12+ 与 uv；本轮实际验证 Python 3.12.14、uv 0.11.32。系统默认 Python 3.11.0 不用于后端。
+## Windows 本地运行
 
 ```powershell
 cd backend
-uv sync --locked --python 3.12
-uv run --frozen uvicorn app.main:app --reload --host 127.0.0.1 --port 8000 --no-access-log
+npm ci
+npm run dev
 ```
 
-`uv sync` 创建本目录 `.venv`，使用已提交的 `uv.lock`；如果本机没有 Python 3.12，uv 可按自身设置获取兼容解释器。已有项目环境可直接使用 `.venv/Scripts/python.exe`。
+Wrangler 本地 workerd 在 http://127.0.0.1:8787/health 提供真实 Worker HTTP。`npm run dev:lan` 使用 0.0.0.0:8787，用于同一 Wi-Fi 的 iPhone；移动端 EXPO_PUBLIC_API_URL 改为 http://你的Windows局域网IP:8787 后完整重载。此轮尚未验证手机连接新 Worker。
 
-本机探活：[http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)。本地开发文档：[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)。staging/production 自动关闭 `/docs` 与 `/openapi.json`，所有环境 `debug=False`。
+复制 `.dev.vars.example` 到忽略的 `.dev.vars` 可设置 `GUIDY_CORS_ORIGINS=["http://localhost:8082"]`；默认不开放跨域，原生 fetch 不需要 CORS。服务器凭据仅 Cloudflare secrets 或本地忽略文件，不下发 App。Wrangler 本地运行无需创建远程资源。
 
-iPhone 联调时使用同一局域网的 Windows IP，并将 host 改为 `0.0.0.0`；手机上的 `localhost` 不是 Windows。只在受控局域网联调，真实手机连通性本轮未验证。
-
-## API 合同
-
-`GET /health` 无需登录，只表示 API 进程存活，不验证数据库、Auth 或模型可用性。未来业务接口统一放在 `/api/v1`。
-
-```json
-{
-  "data": {"status": "ok", "service": "guidy-api", "version": "0.1.0"},
-  "error": null,
-  "request_id": "f3d9f28d-3d5f-47e9-9ad6-24601aa54930"
-}
-```
-
-失败响应：`data=null`、`error={code,message,details}`、`request_id`。404/405/422/500 保持对应 HTTP 状态；422 details 只包含位置与错误类型，不包含 input、ctx 或任意异常消息。401 保留 Bearer 协议头，405 保留 Allow。
-
-JSON envelope 中的 request_id 与 `X-Request-ID` 响应头一致。客户端提供合法 UUID 时规范化复用，否则替换为服务端随机 UUID；不回显任意追踪文本。OpenAPI/文档是框架资源，不套业务 JSON envelope，但仍带响应追踪头。
-
-## 日志与配置
-
-- 请求日志只记录固定 event、level、request_id、method、路由模板、状态码与耗时；404 使用 `unmatched`，不记录 URL 参数、正文、Token 或个人信息。
-- 关闭 Uvicorn 原始 access log，并对 Uvicorn error log 使用白名单 formatter，避免异常原文/堆栈进入普通日志。服务端错误只输出通用信息；后续按需增加脱敏诊断字段。
-- `.env.example` 包含 `GUIDY_ENVIRONMENT=local` 与可选 CORS 来源；环境值限 local/test/staging/production，无效值阻止启动。
-- 可选 `GUIDY_CORS_ORIGINS` 是 JSON origin 列表，默认空（不开放浏览器跨域）。本机 Expo 8082 预览使用 `["http://localhost:8082"]`；拒绝通配符、路径和凭据，当前仅允许 GET，不携带 cookies，暴露 X-Request-ID 供客户端验证。原生手机请求不依赖 CORS。
-- 此轮 SQLAlchemy/Alembic 是已安装锁定的工具依赖，尚无数据库连接、迁移 env 或已执行的 SQL；后续先为 profiles/goals 建立开发/测试隔离和迁移。
-
-## 快速检查
+## 验证
 
 ```powershell
-uv run --frozen ruff check .
-uv run --frozen ruff format --check .
-uv run --frozen pytest
+npm run typecheck
+npm run lint
+npm run format:check
+npm test
+npm run build
 ```
 
-当前 30 个测试覆盖成功探活、404/405/422/500、非法 JSON、请求 ID 合法/非法与并发隔离、错误/日志私密字段保护、OpenAPI 合同、生产关闭调试/文档、配置验证及 CORS 来源/方法/凭据边界。测试辅助路由仅在测试 fixture 注册，不存在于运行应用中。
+build 为 `wrangler deploy --dry-run`，不部署、不创建 D1、不需要账号密钥。依赖以精确 package.json 和 package-lock.json 锁定。Node test 验证标准 Request/Response 边界；实际 workerd HTTP 另做 Smoke Test。CI 同样执行这些检查，不自动部署。
 
-另通过临时 Uvicorn 的真实 loopback HTTP 与 stdout/stderr 日志检查；测试后自动停止服务。Codex Windows 沙箱可能阻断 asyncio socketpair，这种情况下需要在支持本机进程通信的环境运行，不能将卡住的测试记为通过。
+health 成功合同保持 `{data:{status:"ok",service:"guidy-api",version:"0.1.0"},error:null,request_id}`；404/405/500 使用 `{data:null,error:{code,message,details:null},request_id}` 与对应 HTTP 状态，405 带 Allow。X-Request-ID 与 JSON 一致，非法客户端 ID 替换为随机 UUID。health 不代表登录或 DB 就绪。
 
-LLM、搜索、数据库密码与 Supabase service_role 仅限服务端环境变量，禁止提交真实 `.env`。
+日志只记录 event/request_id/已知 method/路由模板/status_code/duration_ms；未知路径为 unmatched，不含查询、正文、令牌或异常原文。Wrangler 自带开发访问日志与业务日志区分；云端平台的日志权限/保留策略上线前验证，配置默认关闭 Workers observability。
+
+## 后续 M0
+
+使用 D1 的本地/开发/测试隔离 SQL migrations，先 profiles/goals 和 Better Auth 所需表；实现登录/登出/恢复与跨用户权限测试。暂无远程账号、Worker URL、D1 ID 或真实会话，不能声称已部署或已登录。Cloudflare/D1 的语义与 [架构](../docs/ARCHITECTURE.md)、[数据库模型](../docs/DATABASE.md) 一致。

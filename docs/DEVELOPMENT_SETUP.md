@@ -1,103 +1,43 @@
-# Guidy｜Windows + iPhone 开发环境与启动顺序
+# Guidy｜Windows + iPhone + Cloudflare 开发环境
 
-> 当前已初始化 Expo 三 Tab 与 FastAPI `/health` 基础工程；Supabase 数据库与登录尚未实现，iPhone 尚未验证。下面的初始化步骤仅在相应目录不存在时执行；前端启动见 [移动端 README](../apps/mobile/README.md)，后端启动见 [后端 README](../backend/README.md)。
+当前客户端为 Expo，后端为 Cloudflare Workers/TypeScript。用户已确认 iPhone Expo Go 基础预览可用；具体机型、字体/VoiceOver/通知/新 Worker 联调未验证。旧 Python 启动说明见历史快照，不能作为现行操作。
 
-## 1. 工具准备
+## 工具与安装
 
-- Windows 10/11，PowerShell / Windows Terminal，VS Code，Git。
-- Node.js 当前 LTS、npm；Python >=3.12（与依赖兼容为准）；Python 虚拟环境。
-- iPhone 真机与 Expo Go（仅用于当前 Expo SDK 兼容的 UI 基础验证）；Expo 账号。
-- Apple Developer Program：**完整 iOS Development Build/TestFlight** 通常需要相关开发者签名配置，准备接入通知和系统行为真机验证时再确认开通。Windows 不能运行 Xcode 原生 iOS 模拟器。
-
-## 2. 初始化工程（建议先由 Codex 执行 M0）
-
-建议目录：
-
-```text
-Guidy/
-├── README.md
-├── AGENTS.md
-├── apps/
-│   └── mobile/                  # 已初始化 Expo + TypeScript 三 Tab 基础界面
-├── backend/                      # FastAPI 基础 API；数据库/Worker 尚未实现
-├── docs/
-│   ├── PRD.md
-│   ├── ARCHITECTURE.md
-│   ├── UI_DESIGN.md
-│   ├── DATABASE.md
-│   ├── TODO.md
-│   ├── BRAND_GUIDE.md
-│   └── DEVELOPMENT_SETUP.md
-├── assets/
-│   ├── icons/
-│   └── explorations/
-└── archive/                      # 历史草稿，不是现行规格
-```
-
-由项目根目录（推荐）：
+已验证 Node 24.15.0、npm 11.14.0、Git 2.55.0。后端不再要求 Python/uv；VS Code、EAS、Apple 签名及远程 Cloudflare 资源尚未验收。
 
 ```powershell
-# 先确认 Node.js 和 Git 可用
-node --version
-npm --version
-git --version
-
-# 若 apps/mobile 不存在，再执行
-npx create-expo-app@latest apps/mobile
-
-# iOS 真机预览前，确认项目 Expo SDK 与 iPhone 上 Expo Go 版本兼容
-cd apps/mobile
-npx expo start
+cd C:\Users\29035\Desktop\Guidy\backend
+npm ci
+npm run dev:lan
 ```
 
-在 iPhone 上通过 Expo Go 扫码运行；手机和 Windows 尽量使用同一局域网。网络障碍可按 Expo 官方说明尝试 `npx expo start --tunnel`。如果 SDK 不兼容，**不要硬改依赖来绕过**，应匹配 Expo 官方支持的版本或转用 EAS Development Build。
+默认 8787；只在受控局域网联调。后端当前不需要创建远程资源，`npm run build` 为 dry-run，无部署副作用。
 
-后端已经创建独立 `backend/.venv`，用 uv 管理和锁定 FastAPI、Pydantic v2、SQLAlchemy、Alembic、pytest、ruff；PydanticAI/Worker 按 M1 引入。API 服务不能把模型 API Key、Supabase Service Role Key 放入 Expo 客户端。
+另一 PowerShell（替换实际 Windows IP）：
 
-已检查 Windows 工具：Node 24.15.0、npm 11.14.0、Git 2.55.0、uv 0.11.32；系统默认 Python 3.11.0，后端独立环境使用已验证的 Python 3.12.14。VS Code、EAS、Apple 签名及 iPhone 环境尚未验证。
-
-## 3. iOS 图标接入
-
-**请使用最终确认的 Guidy 黑白图标，而不是旧版探索图。** 用户认可的原图存放在 `assets/icons/guidy-approved-original.png`，真正用于 iOS Expo 的版本为 `assets/icons/guidy-app-icon-ios-1024.png`（1024 × 1024，RGB，全黑铺满背景，无预先圆角）。
-
-可直接从 `examples/expo/assets/images/` 复制 `icon.png` 与 `splash-icon.png` 到 `apps/mobile/assets/images/`；参考 [`../examples/expo/README.md`](../examples/expo/README.md) 合并 `examples/expo/app.json` 的图标与 `expo-splash-screen` 配置。
-
-```json
-{
-  "expo": {
-    "name": "Guidy",
-    "slug": "guidy",
-    "icon": "./assets/images/icon.png"
-  }
-}
+```powershell
+cd C:\Users\29035\Desktop\Guidy\apps\mobile
+npm ci
+$env:EXPO_PUBLIC_API_URL = "http://你的Windows局域网IP:8787"
+npx expo login
+npx expo start --go --lan
 ```
 
-上面仅是**需要合并**到现有 Expo 配置的示意片段；`examples/expo/app.json` 还提供了黑底启动屏配置。不能把它覆盖到现有 `app.json` 造成其他字段丢失。项目 `ios.bundleIdentifier` 要在注册时选择唯一值；不要使用随意编造的已注册包名。
+iPhone 安装兼容 Expo Go、同一 Wi-Fi、登录同一 Expo 账号，用相机扫描二维码。手机不能访问 Windows localhost。允许所需本地网络/专用网络访问；不要默认开放公网。Expo Go SDK 不兼容时按官方指引匹配版本或准备 Development Build，不强改依赖。
 
-注意：**Expo Go 显示的是 Expo Go 的图标**；必须构建自己的 Development/Release Build 才能在 iPhone 主屏幕看到 Guidy 的最终图标。
+浏览器本机联调：后端复制 `.dev.vars.example` 为忽略的 `.dev.vars`，CORS 明确设置 http://localhost:8082；前端公开 API 地址可使用 http://127.0.0.1:8787，然后 `npx expo start --localhost --port 8082`。
 
-## 4. 权限与通知
+## 检查与交付
 
-- V0.1 的系统事实源是应用自己的日历；不要默认读取 Apple Calendar。
-- 本地提醒要在用户需要时再申请 iOS 通知权限，不能将权限未授权视为任务失败。
-- 后端要保存提醒意图；客户端负责将生效计划安排为本地通知并回传同步状态。
-- 正式本地通知/点击/冷启动行为必须在 **EAS Development Build 或 Release Build 的 iPhone 真机** 测试；Expo Go 不足以覆盖完整结果。
+移动端 typecheck/lint/test:api；后端 typecheck/lint/format:check/test/build。CI 是真实 GitHub job，通过后再记录进度。每轮测试 → 实现 Commit → TODO Commit → Push → 核验远程 SHA。
 
-## 5. 先做哪些事
+## 品牌、权限与发布
 
-1. `M0`：安装工具，创建 Expo 三 Tab（目标、日历、我的）和 FastAPI `/health`，在真机跑通。
-2. `M1`：目标创建、动态澄清、Agent 研究、`PlanDraft` 校验和持久化。
-3. `M2`：确定性排程、计划审批、内置日历、本地提醒与反馈。
-4. `M3`：局部重规划与版本 diff；补齐安全与隐私。
-5. V0.2 再做 21 天周期和私人模板；V0.3 才做公开社区。
+唯一正式图标 assets/icons/guidy-app-icon-ios-1024.png，原图字节不变；Expo Go 主屏图标不是最终安装包图标。EAS 云构建/苹果签名/TestFlight 尚未配置，Windows 不运行 Xcode 模拟器。
 
-每一步都按 [TODO.md](./TODO.md) 验收。**不要一次让 Codex 实现全部产品。**
+V0.1 仅内置日历，提醒首次真正使用时申请；正式通知、冷启动、点击与 deep link 在 iPhone Development/Release Build 验证。服务端通知意图与手机 schedule/cancel ACK 分开，送达不是完成。
 
-## 6. 重要官方参考（实现时再核实最新版本）
+Cloudflare 账号/资源权限、D1 本地/开发/测试迁移、Better Auth 和邮件发送待后续 M0；模型/搜索 Provider 在 M1，不能把服务端密钥放入 App。详见 [后端](../backend/README.md)、[移动端](../apps/mobile/README.md)、[架构](ARCHITECTURE.md)、[TODO](TODO.md)。
 
-- Expo 文档：https://docs.expo.dev/
-- EAS Build：https://docs.expo.dev/build/introduction/
-- Expo Notifications：https://docs.expo.dev/versions/latest/sdk/notifications/
-- Supabase Auth：https://supabase.com/docs/guides/auth
-- PydanticAI：https://ai.pydantic.dev/
-- FastAPI：https://fastapi.tiangolo.com/
+官方参考：[Expo](https://docs.expo.dev/)、[Workers](https://developers.cloudflare.com/workers/)、[D1](https://developers.cloudflare.com/d1/)、[Better Auth Expo](https://better-auth.com/docs/integrations/expo)。

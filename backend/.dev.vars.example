@@ -1,0 +1,3 @@
+# Copy to .dev.vars for local configuration. Never commit the real file.
+GUIDY_CORS_ORIGINS=["http://localhost:8082"]
+# Better Auth secrets and D1 binding are added in subsequent M0 rounds.
