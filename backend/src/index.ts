@@ -30,13 +30,23 @@ async function authResponse(
   id: string,
   origins: string[],
 ): Promise<Response> {
-  if (!isLocalHost(new URL(request.url).hostname))
-    return error(id, 503, "AUTH_NOT_CONFIGURED", "认证尚未配置。");
   let auth: ReturnType<typeof createAuth>;
   try {
     auth = createAuth(env, origins);
+    const incoming = new URL(request.url);
+    const base = new URL(env.BETTER_AUTH_URL!);
+    if (
+      !(isLocalHost(incoming.hostname) && isLocalHost(base.hostname)) &&
+      incoming.origin !== base.origin
+    )
+      throw new Error("Auth origin mismatch");
   } catch {
-    return error(id, 503, "AUTH_NOT_CONFIGURED", "请先配置本地认证服务。");
+    return new URL(request.url).pathname.startsWith("/api/auth/")
+      ? json(
+          { code: "AUTH_NOT_CONFIGURED", message: "认证服务尚未配置。" },
+          503,
+        )
+      : error(id, 503, "AUTH_NOT_CONFIGURED", "认证服务尚未配置。");
   }
   const path = new URL(request.url).pathname;
   if (path === "/api/v1/me") {
@@ -105,6 +115,18 @@ async function authResponse(
     if (path.endsWith("send-verification-otp") && body.type !== "sign-in")
       return error(id, 400, "INVALID_BODY", "仅支持登录验证码。");
     if (typeof body.email === "string") email = body.email.toLowerCase();
+    if (
+      env.GUIDY_AUTH_MODE === "resend-test" &&
+      email &&
+      email !== env.GUIDY_EMAIL_TEST_TO?.toLowerCase()
+    )
+      return json(
+        {
+          code: "TEST_RECIPIENT_ONLY",
+          message: "当前仅支持已配置的测试收件邮箱。",
+        },
+        403,
+      );
     safeRequest = new Request(request.url, {
       method: request.method,
       headers: request.headers,
@@ -112,11 +134,40 @@ async function authResponse(
     });
   }
   const response = await auth.handler(safeRequest);
-  if (response.ok && path.endsWith("sign-in/email-otp") && email) {
+  if (
+    path.endsWith("send-verification-otp") &&
+    (auth.deliveryState.status === "failed" ||
+      (response.ok && auth.deliveryState.status !== "accepted"))
+  ) {
+    return json(
+      {
+        code: "OTP_DELIVERY_FAILED",
+        message: "验证码发送未确认，请稍后重试。",
+      },
+      502,
+    );
+  }
+  if (
+    response.ok &&
+    path.endsWith("sign-in/email-otp") &&
+    email &&
+    env.GUIDY_AUTH_MODE === "local-inbox"
+  ) {
     await env
       .DB!.prepare("DELETE FROM dev_auth_inbox WHERE email=?")
       .bind(email)
       .run();
+  }
+  if (response.ok && path.endsWith("send-verification-otp")) {
+    return json(
+      {
+        ...((await response.json()) as object),
+        delivery:
+          env.GUIDY_AUTH_MODE === "local-inbox" ? "local-inbox" : "email",
+      },
+      response.status,
+      response.headers,
+    );
   }
   // SDK endpoints keep Better Auth's wire protocol; never expose raw internal errors.
   if (!response.ok) {

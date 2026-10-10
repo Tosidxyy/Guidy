@@ -40,6 +40,8 @@ export async function signOutConfirmed() {
 }
 
 export function authMessage(code: string | undefined): string {
+  if (code === 'OTP_DELIVERY_FAILED') return '验证码邮件发送失败，请稍后重试。';
+  if (code === 'TEST_RECIPIENT_ONLY') return '当前服务仅支持已配置的测试收件邮箱。';
   if (code?.includes('EXPIRED')) return '验证码已过期，请重新获取。';
   if (code?.includes('ATTEMPTS') || code?.includes('TOO_MANY')) return '尝试过于频繁，请稍后重新获取。';
   if (code?.includes('INVALID_OTP') || code?.includes('INVALID_CODE')) return '验证码不正确，请检查后重试。';

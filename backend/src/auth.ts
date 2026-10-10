@@ -2,8 +2,10 @@ import { betterAuth } from "better-auth";
 import { emailOTP } from "better-auth/plugins/email-otp";
 import { expo } from "@better-auth/expo";
 import type { D1Database } from "@cloudflare/workers-types";
+import { APIError } from "better-auth/api";
+import { sendOtpEmail, validEmail, type EmailEnv } from "./email.ts";
 
-export interface AuthEnv {
+export interface AuthEnv extends EmailEnv {
   DB?: D1Database;
   BETTER_AUTH_SECRET?: string;
   BETTER_AUTH_URL?: string;
@@ -23,7 +25,9 @@ export function isLocalHost(host: string): boolean {
 export function createAuth(env: AuthEnv, origins: string[] = []) {
   if (
     !env.DB ||
-    env.GUIDY_AUTH_MODE !== "local-inbox" ||
+    !["local-inbox", "resend-test", "resend"].includes(
+      env.GUIDY_AUTH_MODE ?? "",
+    ) ||
     !env.BETTER_AUTH_SECRET ||
     env.BETTER_AUTH_SECRET.length < 32 ||
     !env.BETTER_AUTH_URL
@@ -31,7 +35,6 @@ export function createAuth(env: AuthEnv, origins: string[] = []) {
     throw new Error("Auth not configured");
   const base = new URL(env.BETTER_AUTH_URL);
   if (
-    !isLocalHost(base.hostname) ||
     !["http:", "https:"].includes(base.protocol) ||
     base.username ||
     base.password ||
@@ -39,9 +42,37 @@ export function createAuth(env: AuthEnv, origins: string[] = []) {
     base.search ||
     base.hash
   )
-    throw new Error("Local auth only");
+    throw new Error("Invalid auth origin");
+  if (env.GUIDY_AUTH_MODE === "local-inbox" && !isLocalHost(base.hostname))
+    throw new Error("Local inbox only");
+  if (!isLocalHost(base.hostname) && base.protocol !== "https:")
+    throw new Error("HTTPS required");
+  if (env.GUIDY_AUTH_MODE !== "local-inbox") {
+    if (
+      !env.RESEND_API_KEY ||
+      !env.GUIDY_EMAIL_FROM ||
+      !validEmail(env.GUIDY_EMAIL_FROM)
+    )
+      throw new Error("Email not configured");
+    if (
+      env.GUIDY_AUTH_MODE === "resend-test" &&
+      (!env.GUIDY_EMAIL_TEST_TO ||
+        !validEmail(env.GUIDY_EMAIL_TEST_TO) ||
+        env.GUIDY_EMAIL_FROM !== "onboarding@resend.dev")
+    )
+      throw new Error("Test recipient not configured");
+    if (
+      env.GUIDY_AUTH_MODE === "resend" &&
+      env.GUIDY_EMAIL_FROM.toLowerCase().endsWith("@resend.dev")
+    )
+      throw new Error("Verified sending domain required");
+  }
   const db = env.DB;
-  return betterAuth({
+  // Better Auth suppresses callback errors; the HTTP boundary must check delivery.
+  const deliveryState: { status: "none" | "accepted" | "failed" } = {
+    status: "none",
+  };
+  const auth = betterAuth({
     appName: "Guidy",
     database: db,
     secret: env.BETTER_AUTH_SECRET,
@@ -49,7 +80,10 @@ export function createAuth(env: AuthEnv, origins: string[] = []) {
     basePath: "/api/auth",
     trustedOrigins: [base.origin, "guidy://", ...origins],
     logger: { disabled: true },
-    advanced: { database: { generateId: "uuid" } },
+    advanced: {
+      database: { generateId: "uuid" },
+      ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
+    },
     session: {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
@@ -82,6 +116,27 @@ export function createAuth(env: AuthEnv, origins: string[] = []) {
         rateLimit: { window: 60, max: 3 },
         async sendVerificationOTP({ email, otp, type }) {
           if (type !== "sign-in") throw new Error("Unsupported OTP purpose");
+          if (env.GUIDY_AUTH_MODE !== "local-inbox") {
+            if (
+              env.GUIDY_AUTH_MODE === "resend-test" &&
+              email.toLowerCase() !== env.GUIDY_EMAIL_TEST_TO?.toLowerCase()
+            )
+              throw new APIError("FORBIDDEN", {
+                code: "TEST_RECIPIENT_ONLY",
+                message: "当前仅支持已配置的测试收件邮箱。",
+              });
+            try {
+              await sendOtpEmail(env, email, otp);
+              deliveryState.status = "accepted";
+            } catch {
+              deliveryState.status = "failed";
+              throw new APIError("BAD_GATEWAY", {
+                code: "OTP_DELIVERY_FAILED",
+                message: "验证码邮件发送失败，请稍后重试。",
+              });
+            }
+            return;
+          }
           const now = Date.now();
           await db.batch([
             db
@@ -93,8 +148,10 @@ export function createAuth(env: AuthEnv, origins: string[] = []) {
               )
               .bind(email.toLowerCase(), otp, now + 300_000),
           ]);
+          deliveryState.status = "accepted";
         },
       }),
     ],
   });
+  return Object.assign(auth, { deliveryState });
 }

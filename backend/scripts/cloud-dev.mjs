@@ -19,11 +19,50 @@ if (
   config.d1_databases[0].database_name !== "guidy-development" ||
   config.d1_databases[0].database_id !==
     "6c77640e-763f-46d7-ac5a-ae383cf540e5" ||
-  config.vars.GUIDY_AUTH_MODE !== "disabled"
+  !["disabled", "resend-test", "resend"].includes(config.vars.GUIDY_AUTH_MODE)
 ) {
   throw new Error(
     "Cloud development target changed; review configuration before proceeding",
   );
+}
+if (
+  config.vars.GUIDY_AUTH_MODE !== "disabled" &&
+  (config.vars.BETTER_AUTH_URL !==
+    "https://guidy-api-development.guidy-backend.workers.dev" ||
+    !config.vars.GUIDY_EMAIL_FROM)
+)
+  throw new Error("Cloud auth origin/sender must be configured");
+if (operation === "deploy" && config.vars.GUIDY_AUTH_MODE !== "disabled") {
+  const secrets = spawnSync(
+    process.execPath,
+    [
+      fileURLToPath(
+        new URL("../node_modules/wrangler/bin/wrangler.js", import.meta.url),
+      ),
+      "secret",
+      "list",
+      "--config",
+      "wrangler.cloud.json",
+    ],
+    {
+      cwd: fileURLToPath(new URL("..", import.meta.url)),
+      encoding: "utf8",
+      env: { ...process.env, WRANGLER_SEND_METRICS: "false" },
+    },
+  );
+  if (secrets.status !== 0) throw new Error("Cannot verify cloud secret names");
+  const names = JSON.parse(secrets.stdout).map((secret) => secret.name);
+  const required = [
+    "RESEND_API_KEY",
+    "BETTER_AUTH_SECRET",
+    ...(config.vars.GUIDY_AUTH_MODE === "resend-test"
+      ? ["GUIDY_EMAIL_TEST_TO"]
+      : []),
+  ];
+  if (required.some((name) => !names.includes(name)))
+    throw new Error(
+      "Required cloud secrets are missing; keep auth disabled until configured",
+    );
 }
 const args =
   operation === "migrate"

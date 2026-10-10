@@ -225,6 +225,127 @@ test("native Expo origin and cookie authenticate without browser credentials", a
   assert.equal((await native("/api/v1/me", undefined, cookie)).status, 401);
 });
 
+test("Resend test-mode OTP creates a real session without a plaintext inbox", async (t) => {
+  const { db, env, app } = await fixture(t);
+  const cloudEnv = {
+    ...env,
+    GUIDY_AUTH_MODE: "resend-test",
+    BETTER_AUTH_URL: "https://guidy-test.example",
+    RESEND_API_KEY: "test-only-resend-key",
+    GUIDY_EMAIL_FROM: "onboarding@resend.dev",
+    GUIDY_EMAIL_TEST_TO: "receiver@example.invalid",
+  };
+  let otp;
+  let deliveries = 0;
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(url, "https://api.resend.com/emails");
+    deliveries++;
+    otp = JSON.parse(options.body).text.match(/\b\d{6}\b/)[0];
+    return globalThis.Response.json({ id: "test-message-id" });
+  });
+  const request = (path, body, cookie = "") =>
+    app.fetch(
+      new globalThis.Request(cloudEnv.BETTER_AUTH_URL + path, {
+        method: body ? "POST" : "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "expo-origin": "guidy://",
+          "CF-Connecting-IP": "192.0.2.7",
+          ...(cookie ? { cookie } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      }),
+      cloudEnv,
+    );
+  assert.equal(
+    (
+      await request("/api/auth/email-otp/send-verification-otp", {
+        email: "other@example.invalid",
+        type: "sign-in",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(deliveries, 0);
+  const sent = await request("/api/auth/email-otp/send-verification-otp", {
+    email: cloudEnv.GUIDY_EMAIL_TEST_TO,
+    type: "sign-in",
+  });
+  assert.equal(sent.status, 200);
+  assert.equal((await sent.json()).delivery, "email");
+  assert.equal(deliveries, 1);
+  assert.equal(
+    (await db.prepare("SELECT COUNT(*) AS n FROM dev_auth_inbox").first()).n,
+    0,
+  );
+  const signedIn = await request("/api/auth/sign-in/email-otp", {
+    email: cloudEnv.GUIDY_EMAIL_TEST_TO,
+    otp,
+  });
+  assert.equal(signedIn.status, 200);
+  const cookie = signedIn.headers
+    .getSetCookie()
+    .map((c) => c.split(";")[0])
+    .join("; ");
+  assert.ok(cookie.includes("__Secure-"));
+  assert.equal((await request("/api/v1/me", undefined, cookie)).status, 200);
+  assert.equal((await request("/api/auth/sign-out", {}, cookie)).status, 200);
+  assert.equal((await request("/api/v1/me", undefined, cookie)).status, 401);
+});
+
+test("failed email returns an error, never a delivered state or plaintext mailbox", async (t) => {
+  const { db, env, app } = await fixture(t);
+  const configured = {
+    ...env,
+    GUIDY_AUTH_MODE: "resend-test",
+    BETTER_AUTH_URL: "https://guidy-test.example",
+    RESEND_API_KEY: "test-only-key",
+    GUIDY_EMAIL_FROM: "onboarding@resend.dev",
+    GUIDY_EMAIL_TEST_TO: "receiver@example.invalid",
+  };
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async () =>
+      new globalThis.Response("private-provider-key-and-address", {
+        status: 403,
+      }),
+  );
+  const response = await app.fetch(
+    new globalThis.Request(
+      configured.BETTER_AUTH_URL + "/api/auth/email-otp/send-verification-otp",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "expo-origin": "guidy://",
+        },
+        body: JSON.stringify({
+          email: configured.GUIDY_EMAIL_TEST_TO,
+          type: "sign-in",
+        }),
+      },
+    ),
+    configured,
+  );
+  assert.equal(response.status, 502);
+  const result = await response.text();
+  assert.ok(result.includes("OTP_DELIVERY_FAILED"));
+  assert.ok(!result.includes("private-provider"));
+  assert.equal(
+    (await db.prepare("SELECT COUNT(*) AS n FROM dev_auth_inbox").first()).n,
+    0,
+  );
+  assert.equal(
+    (await db.prepare('SELECT COUNT(*) AS n FROM "user"').first()).n,
+    0,
+  );
+  assert.throws(() =>
+    createAuth({ ...configured, GUIDY_EMAIL_TEST_TO: undefined }),
+  );
+  assert.throws(() => createAuth({ ...configured, GUIDY_AUTH_MODE: "resend" }));
+});
+
 test("auth guards, origin rejection, rate limits and actual plugin schema", async (t) => {
   const { db, env, request } = await fixture(t);
   const migrations = await getMigrations(createAuth(env).options);

@@ -29,8 +29,8 @@ build:cloud 仅 dry-run；db:migrate:cloud 明确应用远程开发 D1；deploy:
 
 ## 正式邮件与云端登录的前置条件
 
-Cloudflare Email Service 可通过 Worker 的 send_email binding 发送验证码，但发信域名必须接入 Cloudflare DNS 并验证。任意收件人发送需要 Workers Paid；已验证测试收件地址发送有免费路径，具体能力以账号条件为准。[官方发信流程](https://developers.cloudflare.com/email-service/get-started/send-emails/) · [官方费用](https://developers.cloudflare.com/email-service/platform/pricing/)
+用户于 2026-10-10 选择 Cloudflare 收信、Resend 发信；使用 Resend API，不开通 Cloudflare Email Sending。Resend 测试发件地址只允许发给账号邮箱，向其他用户正式发信需验证自有域名；Cloudflare 自有域名收信同样需要域名。操作见 [邮件配置](EMAIL_SETUP.md)。
 
-用户尚无域名，本轮未购买域名/付费计划、未配置 Email Sending/邮件 binding、未发送真实邮件，也未开启本地收件箱的公开远程访问。后续需选定发信域名或其他邮件服务，完成域名验证与受控测试收信，再接邮件适配、云端独立 secret/HTTPS auth URL、正式认证配置，最终切换 App API 地址并验收。
+用户尚无域名，未购买域名/付费计划、未配置 Cloudflare 收信 DNS，也未开启本地收件箱的公开远程访问。Resend 发信代码已实现，云端签名 secret/HTTPS auth URL 已准备；API Key 与测试邮箱等待用户配置，实际邮件收信和云端登录尚未验收。配置齐备后先开 resend-test 受限测试，再切 App API 地址；自有域名到位后完成收信 DNS 与正式发信。
 
 远程基础库含兼容现有迁移的 dev_auth_inbox 表，但当前为空且认证关闭；后续正式邮件模式不得写入明码开发收件箱。健康数据/Goal/Task 业务仍未实现。恢复、退出、对象授权及邮件真正到达须按完整云端链路验收。

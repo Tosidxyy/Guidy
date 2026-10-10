@@ -2,6 +2,8 @@
 
 当前已有 Workers API、D1 本地迁移和 Better Auth 邮箱 OTP 登录/退出/会话恢复及受保护账号接口。独立云开发 Worker/D1 已部署；云端认证关闭，验证码仍仅投递到本地开发收件箱，正式邮件未接入。Python 版本仅在 Git 历史中保留。
 
+Resend 发信适配与仅允许注册邮箱的 resend-test 模式已实现；Cloudflare 自有域名收信等待域名。账号 secret/真实收信未验收前，云配置保持 disabled。完整操作见 [邮件配置](../docs/EMAIL_SETUP.md)。
+
 ## Windows 本地运行
 
 ```powershell

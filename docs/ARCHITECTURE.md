@@ -10,6 +10,7 @@
 | API | Cloudflare Workers / TypeScript，模块化单体 | M0 迁移中；HTTP 标准接口，按功能拆模块 |
 | 业务数据 | Cloudflare D1（SQLite 语义） | 本地开发/测试及独立云开发 D1 迁移已应用；云端认证尚未开放 |
 | 用户认证 | Better Auth + Expo 集成 | 本地 OTP/会话/退出及当前账号保护已接入；正式邮件/云部署/新真机验收待完成 |
+| 邮件 | Resend 发信 + Cloudflare Email Routing 收信 | 2026-10-10 用户选择；发信适配已实现，secret/实际投递待验收，收信域名未配置 |
 | DB 访问 | D1 binding、参数化 SQL、Wrangler SQL migrations | 本地开发/测试隔离，生产资源待配置，不下发管理凭据 |
 | Schema | TypeScript DTO + 运行时 Schema 校验（M1 选定/锁定实现） | 不把静态 TS 类型当成运行时校验 |
 | Agent | TypeScript Provider 抽象 + 结构化 PlanDraft | M1 才实现；模型/检索供应商未选定 |

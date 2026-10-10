@@ -29,6 +29,7 @@
 | [docs/IPHONE_PREVIEW.md](docs/IPHONE_PREVIEW.md) | iPhone Expo Go 与本地 Worker 联通及排查 |
 | [docs/IOS_BUILD.md](docs/IOS_BUILD.md) | EAS 开发构建、签名与 TestFlight 前置条件 |
 | [docs/CLOUDFLARE_DEPLOY.md](docs/CLOUDFLARE_DEPLOY.md) | 已部署的 Cloudflare 开发 Worker/D1 与后续邮件条件 |
+| [docs/EMAIL_SETUP.md](docs/EMAIL_SETUP.md) | Cloudflare 收信与 Resend 验证码发送配置 |
 | [AGENTS.md](AGENTS.md) | 给 Codex 的项目约定及实施原则 |
 | [apps/mobile/README.md](apps/mobile/README.md) | 当前前端启动、检查命令与验证边界 |
 | [backend/README.md](backend/README.md) | Workers 启动、API 合同、日志与后端检查 |
