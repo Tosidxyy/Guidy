@@ -22,6 +22,7 @@ if (
   config.routes?.length !== 1 ||
   config.routes[0].pattern !== "api.guidy.fun" ||
   config.routes[0].custom_domain !== true ||
+  config.vars.GUIDY_ENVIRONMENT !== "development" ||
   !["disabled", "resend-test", "resend"].includes(config.vars.GUIDY_AUTH_MODE)
 ) {
   throw new Error(

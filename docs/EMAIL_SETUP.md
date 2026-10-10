@@ -23,7 +23,9 @@ npx wrangler secret put GUIDY_EMAIL_TEST_TO --config wrangler.cloud.json
 
 ### Expo Go 来源与发信错误排查
 
-Expo Go 使用 exp:// 来源，不能仅配置正式 App 的 guidy://。本项目通过可选的 GUIDY_EXPO_PREVIEW_ORIGINS JSON 白名单允许最多四个明确的私有地址/端口（不接受通配符、公网主机或任意 exp://），只适用于 local-inbox/resend-test。当前云开发白名单独立配置在 Workers secret 中，未将个人预览地址作为认证绕过逻辑写死；换网络/端口时需更新，切换正式 resend 前删除该配置或设为 []。HTTPS API origin、浏览器 CORS 和账号会话验证继续保留。
+开放邮箱注册的 DNS 配置见 [实际发信域名记录](RESEND_DOMAIN_DNS.md)。域名 verified 前保持 resend-test；验证后计划切换为 noreply@auth.guidy.fun / resend。开发 Worker 的 GUIDY_ENVIRONMENT=development 独立于邮件模式，可在 verified-sender 模式保留明确私网预览白名单；正式环境（production 或未显式标 development 的 resend）仍拒绝非空预览来源配置。域名验证及实际任意邮箱投递成功前，不标记开放注册已完成。
+
+Expo Go 使用 exp:// 来源，不能仅配置正式 App 的 guidy://。本项目通过可选的 GUIDY_EXPO_PREVIEW_ORIGINS JSON 白名单允许最多四个明确的私有地址/端口（不接受通配符、公网主机或任意 exp://），适用于 local-inbox/resend-test，或显式 GUIDY_ENVIRONMENT=development 的 resend。当前云开发白名单独立配置在 Workers secret 中，未将个人预览地址作为认证绕过逻辑写死；换网络/端口时需更新，切换正式部署环境前删除该配置或设为 []。HTTPS API origin、浏览器 CORS 和账号会话验证继续保留。
 
 客户端不再把 INVALID_ORIGIN 显示为泛化失败。邮件发送只返回安全分类：EMAIL_PROVIDER_AUTH_FAILED（凭据）、EMAIL_PROVIDER_REJECTED（供应商拒绝）、EMAIL_PROVIDER_RATE_LIMITED、EMAIL_PROVIDER_TIMEOUT/UNAVAILABLE、EMAIL_PROVIDER_INVALID_REQUEST/INVALID_RESPONSE、EMAIL_PROVIDER_RUNTIME_ERROR；不回显供应商正文、异常原文、Key、邮箱或 OTP。供应商拒绝未必就是 Key 错误，须根据实际分类核对，不擅自重建或输出凭据。API Key 粘贴的首尾空白会去除，内部空白/非 ASCII 字符会被拒绝。
 

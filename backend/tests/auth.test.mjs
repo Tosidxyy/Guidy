@@ -89,6 +89,60 @@ async function fixture(t) {
   return { db, env, request, otp, signIn, records, app };
 }
 
+test("verified-sender mail mode accepts another email while Expo preview remains development-only", async (t) => {
+  const { app, env, db } = await fixture(t);
+  const configured = {
+    ...env,
+    GUIDY_AUTH_MODE: "resend",
+    GUIDY_ENVIRONMENT: "development",
+    RESEND_API_KEY: "test-only-key",
+    GUIDY_EMAIL_FROM: "noreply@auth.guidy.fun",
+    GUIDY_EMAIL_TEST_TO: "restricted@example.invalid",
+    GUIDY_EXPO_PREVIEW_ORIGINS: '["exp://192.168.1.55:8089"]',
+  };
+  let code;
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    const mail = JSON.parse(options.body);
+    assert.equal(mail.from, "Guidy <noreply@auth.guidy.fun>");
+    assert.deepEqual(mail.to, ["new-account@example.invalid"]);
+    code = mail.text.match(/\b\d{6}\b/)[0];
+    return globalThis.Response.json({ id: "test-only-message" });
+  });
+  const native = (path, body) =>
+    app.fetch(
+      new globalThis.Request("http://127.0.0.1:8787" + path, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "expo-origin": "exp://192.168.1.55:8089",
+        },
+        body: JSON.stringify(body),
+      }),
+      configured,
+    );
+  const send = await native("/api/auth/email-otp/send-verification-otp", {
+    email: "new-account@example.invalid",
+    type: "sign-in",
+  });
+  assert.equal(send.status, 200);
+  assert.equal((await send.json()).delivery, "email");
+  const login = await native("/api/auth/sign-in/email-otp", {
+    email: "new-account@example.invalid",
+    otp: code,
+  });
+  assert.equal(login.status, 200);
+  assert.equal(
+    (await db.prepare("SELECT count(*) AS n FROM dev_auth_inbox").first()).n,
+    0,
+  );
+  assert.throws(() =>
+    createAuth({ ...configured, GUIDY_ENVIRONMENT: "production" }),
+  );
+  assert.throws(() =>
+    createAuth({ ...configured, GUIDY_EMAIL_FROM: "onboarding@resend.dev" }),
+  );
+});
+
 test("Expo Go preview origins are explicit, private and disabled for production mail mode", async (t) => {
   const { app, env, db } = await fixture(t);
   const configured = {

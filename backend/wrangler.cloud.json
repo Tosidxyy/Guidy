@@ -8,6 +8,7 @@
   "routes": [{ "pattern": "api.guidy.fun", "custom_domain": true }],
   "observability": { "enabled": false },
   "vars": {
+    "GUIDY_ENVIRONMENT": "development",
     "GUIDY_CORS_ORIGINS": "[]",
     "GUIDY_AUTH_MODE": "resend-test",
     "BETTER_AUTH_URL": "https://api.guidy.fun",

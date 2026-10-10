@@ -16,6 +16,7 @@ export interface AuthEnv extends EmailEnv {
   BETTER_AUTH_URL?: string;
   GUIDY_AUTH_MODE?: string;
   GUIDY_EXPO_PREVIEW_ORIGINS?: string;
+  GUIDY_ENVIRONMENT?: string;
 }
 
 function previewOrigins(env: AuthEnv): string[] {
@@ -23,7 +24,9 @@ function previewOrigins(env: AuthEnv): string[] {
   if (
     !Array.isArray(value) ||
     value.length > 4 ||
-    (value.length && env.GUIDY_AUTH_MODE === "resend")
+    (value.length &&
+      env.GUIDY_AUTH_MODE === "resend" &&
+      env.GUIDY_ENVIRONMENT !== "development")
   )
     throw new Error("Invalid preview origins");
   return value.map((item: unknown) => {
