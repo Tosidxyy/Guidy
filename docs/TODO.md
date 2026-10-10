@@ -69,6 +69,8 @@
 
 ### M1-A 目标与澄清
 
+- [x] harness 条件建议首批：提取本轮原文中的 outcome/available_time/constraints，运行时 Schema/唯一键/原文依据校验；Goal 内建议审阅，用户逐项填入后显式确认保存。（真实临时 D1/受控 UI 已验证并部署；分类仍需用户核对，完整时间/预算/资源 Slot 和新 iPhone 提取交互仍待验收。）
+- [x] iPhone 聊天输入区键盘避让：输入/发送底栏独立于历史，多行内部滚动；用户 Reload 后明确确认“可以了”。（仅这项基础键盘反馈，不代表大字体/VoiceOver/所有输入页通过。）
 - [x] DeepSeek 澄清 harness 实现与测试入口：可替换 Provider、owner/版本/上下文一致快照、持久 run/message、幂等/并发/限额、Schema/执行声称边界、失效恢复；Goal 内对话页。（真实 D1 + 模拟 Provider、受控 UI 通过并已部署；真实 DeepSeek 回复和新 iPhone 交互待下项，不代表研究/计划已完成。）
 - [ ] 验收真实 DeepSeek API：iPhone 出现目标相关问题、多轮输入/重载恢复、真实用量/超时失败与模型质量；扩大评估集后完善语义重复/高风险路由。（用户已配置服务端 Key；模型真实回复待反馈。）
 - [x] 目标内用户条件确认：三步填写期望结果/可投入时间/限制条件，允许暂不确定；goal_slots 用户来源/确认时间/版本保存，详情摘要、重载恢复与冲突保留输入。（本地浏览器/真实 D1 通过并部署云端；固定输入准备，未接 AI 动态问答，iPhone 新交互尚未验证。）
@@ -624,3 +626,15 @@ flowchart TD
 - Browser plugin not available，按前端调试技能用 Playwright/Edge 与真实本地登录/目标、受控 AI 响应验证：393/320宽度×480高度，输入框及发送按钮在可视区内、长文本内部可滚动、滚动历史时输入区位置固定、无横向溢出 PASS；回复重载/失败保留输入与退出会话回归 PASS，0意外错误/警告。脚本/截图在仓库外；缩小浏览器区域不是实际 iOS 键盘模拟，不宣称真机修复验收通过。
 - 实现 Commit：a68c85889a0086fb370614f5ff1a277eb37ba49c。源码 diff/暂存范围检查 PASS；TODO 单独提交后 push origin/main 并核对远程 SHA。
 - 未验证：本轮 iPhone 键盘实际展开/收起、中文候选栏、长文本光标和大字体；保持专项验收未完成。下一步用户在 Expo Go Reload 后复核聊天输入可见性，再继续 harness 功能。
+
+### 2026-10-10 — harness v2 / 原文条件建议与用户确认
+
+- 用户明确确认上一轮聊天键盘修复“可以了”，对应基础真机项勾选；随后授权继续开发。对话存在/总体体验正常的反馈保留，不扩展为所有模型质量、用量、超时或大字体验收通过。
+- Scope：Provider 单次返回问题+可选最多三项建议；独立 suggestions Schema 限定 key/唯一/长度/严格字段，text=evidence 且逐字存在本轮用户消息，不引用历史/助手、不改写推断。仍需用户核对分类与含义；原文匹配不是语义真实性保证。输出预算从350增至650 Token，原有20秒等待/45秒lease/每日8个人20全局限额不变，不新增提取调用。
+- 新 run 标记 clarify-v2，旧 v1/回复无 suggestions 向后兼容；建议随私有 reply_json 持久存储，旧记录/迁移不重写。上下文不重复携带历史建议以控制长度，日志不含原文。模型生成后版本检查、幂等和条件表隔离保持，policy 不产生提取建议。
+- UI：聊天展示各轮原文/建议与审阅入口；通过 run ID 重新读取认证对话，与当前 Goal/run revision/draft 状态核对。条件页同时读取已保存条件和对话，owner+Goal+run 组件实例隔离；逐项主动填入或忽略，显示替换当前输入，未确认不写库。用户核对/修改后走现有条件事务，source=user、服务端 confirmed_at。旧建议禁用、并发旧版本保存仍拒绝并保留输入。
+- 快速检查：backend typecheck/lint/format、npm test43项、build:cloud PASS；mobile typecheck/lint、test:ui-state14项、export:ios PASS。首次 Node 测试扩展名解析失败，直接 .ts 导入又被 TS 配置拒绝；改为仅类型导入并重跑全部前端检查通过，未改全局构建配置或记失败为通过。
+- Browser plugin not available，Playwright/Edge：真实本地 OTP/目标/条件服务 + 受控 AI 回复，建议展示/审阅不自动填入、填入后 DB 仍0项、显式确认后真实 D1 保存用户来源和时间、旧建议禁用 PASS；此前缩小可视区输入底栏/长文本、Reload历史、502保留输入、退出撤销回归 PASS。0意外错误/警告，预期400/502；脚本/截图在仓库外。模型输出为受控数据，不当作真实提取质量证明。
+- 云端 deploy:cloud PASS，版本39648fcd-3e78-4cf7-9995-bed02aabf583；health 200/data.status=ok、新 messages GET/POST匿名401/UNAUTHORIZED PASS；没有新迁移或读取真实Key/验证码/调用公网模型。新 iPhone 条件提取、审阅编辑/保存恢复待用户体验。
+- 文档AI_HARNESS/架构/数据库/预览指南、链接、源码 diff/暂存范围检查 PASS；实现 Commit：5a1d0db977b8b9b7e455e9bdb622e2c6ba8e3649。TODO 单独提交后 push origin/main 并核对远程 SHA。
+- 下一步：完善 harness 评估样例/必要条件门槛和语义重复，再接研究 Provider/来源；完整 Slot（预算/资源/结构化时间）、研究Job/PlanDraft/排程仍未完成，不提前勾选完整M1验收。
