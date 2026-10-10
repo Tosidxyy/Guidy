@@ -69,6 +69,7 @@
 
 ### M1-A 目标与澄清
 
+- [x] 首批确定性澄清进度：已确认期望结果/可投入时间作为基础研究资料，限制条件可未知并保留提示；目标详情显示缺项/研究准备/待核对/暂停/只读。（一致 D1 快照与10个合成规则样例通过并部署；仅资料进度，完整领域安全、研究执行与计划闸门仍未实现，iPhone 新显示待验收。）
 - [x] harness 条件建议首批：提取本轮原文中的 outcome/available_time/constraints，运行时 Schema/唯一键/原文依据校验；Goal 内建议审阅，用户逐项填入后显式确认保存。（真实临时 D1/受控 UI 已验证并部署；分类仍需用户核对，完整时间/预算/资源 Slot 和新 iPhone 提取交互仍待验收。）
 - [x] iPhone 聊天输入区键盘避让：输入/发送底栏独立于历史，多行内部滚动；用户 Reload 后明确确认“可以了”。（仅这项基础键盘反馈，不代表大字体/VoiceOver/所有输入页通过。）
 - [x] DeepSeek 澄清 harness 实现与测试入口：可替换 Provider、owner/版本/上下文一致快照、持久 run/message、幂等/并发/限额、Schema/执行声称边界、失效恢复；Goal 内对话页。（真实 D1 + 模拟 Provider、受控 UI 通过并已部署；真实 DeepSeek 回复和新 iPhone 交互待下项，不代表研究/计划已完成。）
@@ -638,3 +639,15 @@ flowchart TD
 - 云端 deploy:cloud PASS，版本39648fcd-3e78-4cf7-9995-bed02aabf583；health 200/data.status=ok、新 messages GET/POST匿名401/UNAUTHORIZED PASS；没有新迁移或读取真实Key/验证码/调用公网模型。新 iPhone 条件提取、审阅编辑/保存恢复待用户体验。
 - 文档AI_HARNESS/架构/数据库/预览指南、链接、源码 diff/暂存范围检查 PASS；实现 Commit：5a1d0db977b8b9b7e455e9bdb622e2c6ba8e3649。TODO 单独提交后 push origin/main 并核对远程 SHA。
 - 下一步：完善 harness 评估样例/必要条件门槛和语义重复，再接研究 Provider/来源；完整 Slot（预算/资源/结构化时间）、研究Job/PlanDraft/排程仍未完成，不提前勾选完整M1验收。
+
+### 2026-10-10 — 基础澄清进度 / 确定性研究资料判断
+
+- Scope：GET slots 增加 readiness（schema_version/goal_revision/phase/confirmed_keys/missing_required/unknown_optional），与 owner 过滤的 Goal、条件、已有 policy 提示同一 D1 batch 读取；无新迁移、模型调用或核心状态写入。PATCH/幂等历史回执合同不改，客户端兼容无 readiness 的旧响应。
+- 首批 outcome/available_time 需用户来源、有效文本及确认时间；模型建议/unknown/无时间戳不计已确认。constraints 可未知并明确显示，不推断为无限制。phase 支持缺项/研究准备/待核对/暂停/只读；仅基础资料进度，不是领域内容完整性、安全性或计划可执行判定。研究入口/自动执行尚未开放。
+- 部分风险词或该 Goal 已有 policy 提示显示待核对，最终收紧为修改 Goal/条件版本不会自动清除历史安全提示；显式专业核对/解决流程未实现。保守词匹配有误判/漏判，不勾选完整高风险路由。目标详情展示确认数/缺项/下一步，保存/暂停继续后重新读取一致进度，旧进度不套用新版本；旧“AI尚未接入”提示更新。
+- backend/evals/clarification-readiness.json 新增10个合成规则样例：学习/健身/护肤、缺项、可选未知、专业提示、暂停与非草稿。它们是确定性状态评估，不是 DeepSeek 质量或领域方案真实测试。
+- 快速检查：backend typecheck/lint/format、npm test46项、build:cloud PASS；mobile typecheck/lint、test:ui-state15项、export:ios PASS。新增真实临时 D1 验证匿名/跨账号拒绝、明确确认后进度、policy跨版本保留、暂停优先；新样例 URL 引用首次 lint 未定义，增加显式 node:url 导入后复测；安全提示策略收紧后再次执行全部后端检查通过。
+- Browser plugin not available，沿用前端调试技能的 Playwright/Edge：真实本地 OTP/Goal/slots，缺项→显式确认→研究准备、可选未知提示、Reload恢复、暂停→继续→进度重新读取 PASS；建议不自动写库、历史/失败保留与输入底栏回归 PASS。0意外错误/警告，预期400/502；AI回复为受控数据，脚本/截图仓库外。仅删除本次生成QA账号，不影响既有用户。
+- 云端 deploy:cloud PASS，版本7fbdfd83-37c4-45b7-bd77-3848f61f9046；health 200/data.status=ok、slots匿名401/UNAUTHORIZED PASS。无真实模型调用或密钥/验证码输出；云端认证成功进度和新 iPhone 显示尚待用户体验，不扩大既有真机反馈。
+- 文档AI_HARNESS/预览指南、链接、diff/暂存范围检查 PASS；实现 Commit：9e2120482c5872e91a6ccf60e30db0d962285d1c。TODO 单独提交后 push origin/main 并核对远程 SHA。
+- 下一步接研究 Provider/来源与可恢复 Job，再生成带依据的 PlanDraft；语义重复、完整 Slot/领域安全、排程与通知仍未完成。专项真机/大字体/VoiceOver保持未验证，不勾选完整M1。
