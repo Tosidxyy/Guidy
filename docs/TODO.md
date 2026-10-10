@@ -51,6 +51,8 @@
 - [ ] 实现登录、登出、会话恢复、服务端对象所有权中间件。
 - [x] 本地真实认证链路：Better Auth/D1 OTP、登录/退出/恢复、受保护当前账号接口与身份隔离；前端替换演示账号，接官方 Expo/SecureStore。（开发收件箱由用户确认；浏览器/真实 Worker 已验收，原生新登录待确认，后续业务对象授权仍待原项。）
 - [ ] 验收新 iPhone 真实登录、完全 Reload/重启恢复、正常/断网退出与 SecureStore 行为；接入正式邮件与云端资源后完成总体认证验收。
+- [x] 实现 Resend 验证码发送适配、注册邮箱受限测试模式和动态投递提示。（模拟邮件 API + 真实临时 D1/浏览器验证通过；真实 Key/收信和云端登录未验收。）
+- [ ] 有自有域名后配置 Cloudflare Email Routing 收信与 Resend 发信域名验证，完成真实收发与云端登录验收。（用户当前无域名。）
 - [x] 验证迁移后的 CI：后端 TypeScript/ESLint/格式/边界测试/dry-run，前端类型/lint/API 测试。（真实 GitHub jobs 已通过。）
 
 **M0 验收**：iPhone 登录成功→浏览「目标/日历/我的」三 Tab→「我的」显示基础昵称/账号状态；断网能看到错误或缓存提示，不泄露后台密钥。
@@ -477,3 +479,17 @@ flowchart TD
 - 已勾选：云开发基础实际部署小项。正式邮件/云端登录保持未完成：无发信域名，Email Service 未配置/无真实收信测试；未假称邮件适配或总体认证已交付。iPhone 云端访问、原生新会话/退出与专项无障碍仍待验收。
 - TODO 提交/Push：本条单独提交后推送 origin/main，核验远程 SHA；实际 CI 在交付回复核对，不额外重复 CI 进度提交。
 - 下一步：选定/配置发信域名或合适邮件服务后接正式验证码发送，完成独立云 secret/HTTPS Auth 配置和云端认证验收，再切换 App API。此前用户“成功了”按本地取码恢复记录，不扩展为完整原生认证验收。
+
+### 2026-10-10 — M0 / Cloudflare 收信方案与 Resend OTP 发送适配
+
+- 用户选定 Cloudflare 收信、Resend 发信；用户已有 Resend 账号，正在准备服务端 Key，尚无域名。发现可用 Resend 插件并建议接入，未确认连接、未使用其发信工具。Cloudflare 收信域名/DNS 未配置，未购买任何服务。
+- 实现：固定 HTTPS Resend REST endpoint、服务端 Key、8 秒超时、随机幂等键、无原始错误回显；resend-test 仅允许私密配置的注册邮箱，正式 resend 拒绝测试 sender。原生可信 IP 只取 cf-connecting-ip，HTTPS/实际 origin 校验和现有 session/账号授权保持。邮件模式不写明码收件箱；登录页按成功响应显示查看邮箱/本地取码提示，失败保留输入。
+- 关键修正：真实测试发现 Better Auth 会抑制 callback 异常而返回 200；新增每请求投递状态检查，邮件拒绝/网络错误/异常返回不能伪装成获取成功，HTTP 返回 502。首次失败未作为通过。
+- 快速检查：backend typecheck/lint/format:check/npm test → PASS（27 项；邮件 HTTP 模拟，D1/会话真实）；build:cloud → PASS。mobile typecheck/lint/export:ios → PASS；本轮未改依赖或迁移，未重复无关数据库迁移/前端旧演示单测。
+- 浏览器：仓库外 guidy-real-auth.cjs → PASS（真实本地 Worker/D1 的登录、错误、重载恢复、退出/撤销）；guidy-email-ui.cjs → PASS（只控制投递响应，邮件提示/不显示终端命令、502 保留邮箱且不进入验证码页，1 个预期资源错误、0 pageerror）。Browser plugin not available，沿用 Playwright/Edge；截图检查通过，不当作真实邮件投递。
+- 复测记录：预览停止导致连接拒绝，重启后真实链路通过；受控 UI 预检/SSR 输入时序测试失败，补齐 CORS 并改从已可交互「我的」入口进入后通过。未改变产品需求以迁就测试。
+- 云端：独立 BETTER_AUTH_SECRET 已创建（已有时不覆盖、值不输出），sender/HTTPS origin 已准备；Resend Key/测试邮箱在最近名称检查中尚未配置，用户收到两项 secret put 指令。代码部署版本 c3a77b13-8dc8-4511-9303-b5536e7f7bf7；GUIDY_AUTH_MODE 仍 disabled，/health 200、/api/v1/me 503 系统 HTTPS 实测通过。没有发送真实邮件或切换手机 API。
+- 文档/提交检查：相对链接、实现范围、Key/私人文件扫描、git diff --check/git diff --cached --check → PASS。签名密钥和个人邮箱不写入 Git，API Key 不进入 App。
+- 实现提交：`ad345d63bedbb8f25659a7196186d2bb2fbbb70d`。
+- TODO 单独提交并 Push origin/main，核对远程 SHA/实际 CI，在交付回复报告。未完成：真实 Resend 接受与实际收信、云端登录/原生恢复、Cloudflare 收信及域名配置；当前不是完整收发交付。
+- 下一步：用户将 RESEND_API_KEY/GUIDY_EMAIL_TEST_TO 上传后，核对名称齐备，启用 resend-test、切换云 API 并由用户实际收码登录；有域名后再接 Cloudflare 收信和正式发送。
