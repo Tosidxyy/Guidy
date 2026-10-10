@@ -84,6 +84,8 @@ test("D1 auth schema matches the locked library and scoped goal tables exist", a
     tables.map((row) => row.name),
     [
       "account",
+      "agent_messages",
+      "agent_runs",
       "dev_auth_inbox",
       "goal_mutations",
       "goal_slots",

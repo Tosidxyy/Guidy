@@ -89,6 +89,383 @@ async function fixture(t) {
   return { db, env, request, otp, signIn, records, app };
 }
 
+test("harness refuses a reply when confirmed context changes during generation", async (t) => {
+  const { app, env, db, request, signIn } = await fixture(t);
+  const account = await signIn("stale-ai@example.invalid");
+  const goal = (
+    await (
+      await request(
+        "/api/v1/goals",
+        { description: "学习英语", timeframe: "" },
+        account.cookie,
+        { "Idempotency-Key": "create-stale-ai" },
+      )
+    ).json()
+  ).data;
+  let release;
+  let enter;
+  const started = new Promise((resolve) => (enter = resolve));
+  const gate = new Promise((resolve) => (release = resolve));
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    enter();
+    await gate;
+    return globalThis.Response.json({
+      choices: [
+        {
+          finish_reason: "stop",
+          message: {
+            role: "assistant",
+            content: '{"question":"每周能安排几次？","reason":"了解时间"}',
+          },
+        },
+      ],
+    });
+  });
+  const path = "http://127.0.0.1:8787/api/v1/goals/" + goal.id + "/messages";
+  const settings = {
+    ...env,
+    GUIDY_AI_ENABLED: "true",
+    GUIDY_AI_MODEL: "deepseek-flash",
+    DEEPSEEK_API_KEY: "unit-private-key",
+  };
+  const make = () =>
+    app.fetch(
+      new globalThis.Request(path, {
+        method: "POST",
+        headers: {
+          Cookie: account.cookie,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "stale-ai-key",
+        },
+        body: JSON.stringify({
+          text: "请澄清",
+          expected_chat_revision: 0,
+          expected_goal_revision: 0,
+        }),
+      }),
+      settings,
+    );
+  const pending = make();
+  await started;
+  await db
+    .prepare("UPDATE goals SET revision=1 WHERE id=?")
+    .bind(goal.id)
+    .run();
+  release();
+  assert.equal((await pending).status, 409);
+  assert.equal((await make()).status, 200);
+  assert.equal(calls, 1);
+  assert.equal(
+    (
+      await db
+        .prepare(
+          "SELECT count(*) AS n FROM agent_messages WHERE role='assistant'",
+        )
+        .first()
+    ).n,
+    0,
+  );
+  assert.equal(
+    (
+      await db
+        .prepare("SELECT error_code FROM agent_runs WHERE goal_id=?")
+        .bind(goal.id)
+        .first()
+    ).error_code,
+    "CONTEXT_CHANGED",
+  );
+});
+
+test("harness claims once, recovers history, isolates owners and leaves core conditions untouched", async (t) => {
+  const { app, env, db, request, signIn } = await fixture(t);
+  const a = await signIn("harness-a@example.invalid");
+  const b = await signIn("harness-b@example.invalid");
+  const goal = (
+    await (
+      await request(
+        "/api/v1/goals",
+        { description: "学习旅行英语", timeframe: "" },
+        a.cookie,
+        { "Idempotency-Key": "create-harness-goal" },
+      )
+    ).json()
+  ).data;
+  const path = "/api/v1/goals/" + goal.id + "/messages";
+  const settings = {
+    ...env,
+    GUIDY_AI_ENABLED: "true",
+    GUIDY_AI_MODEL: "deepseek-flash",
+    DEEPSEEK_API_KEY: "unit-private-key",
+  };
+  const post = (body, key, cookie = a.cookie) =>
+    app.fetch(
+      new globalThis.Request("http://127.0.0.1:8787" + path, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: cookie,
+          "Idempotency-Key": key,
+        },
+        body: JSON.stringify(body),
+      }),
+      settings,
+    );
+  let calls = 0;
+  let release;
+  let entered;
+  const start = new Promise((resolve) => (entered = resolve));
+  const gate = new Promise((resolve) => (release = resolve));
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    calls++;
+    const payload = JSON.parse(options.body);
+    assert.ok(!JSON.stringify(payload.messages).includes(a.body.user.id));
+    assert.ok(
+      !JSON.stringify(payload.messages).includes("harness-a@example.invalid"),
+    );
+    entered();
+    await gate;
+    return globalThis.Response.json({
+      choices: [
+        {
+          finish_reason: "stop",
+          message: {
+            role: "assistant",
+            content: JSON.stringify({
+              question:
+                calls === 1 ? "每周能安排几次？" : "希望优先练习哪类交流？",
+              reason: "了解当前条件",
+            }),
+          },
+        },
+      ],
+      usage: { prompt_tokens: 40, completion_tokens: 20 },
+    });
+  });
+  const body = {
+    text: "请帮我澄清目标",
+    expected_chat_revision: 0,
+    expected_goal_revision: 0,
+  };
+  assert.equal((await request(path)).status, 401);
+  assert.equal((await request(path, undefined, b.cookie)).status, 404);
+  assert.equal((await post(body, "unowned-harness", b.cookie)).status, 404);
+  const first = post(body, "harness-once-001");
+  await start;
+  assert.equal((await post(body, "harness-once-001")).status, 202);
+  assert.equal(calls, 1);
+  const running = (await (await request(path, undefined, a.cookie)).json())
+    .data;
+  assert.equal(running.runs[0].status, "running");
+  assert.equal(running.chat_revision, 1);
+  release();
+  assert.equal((await first).status, 200);
+  assert.equal((await post(body, "harness-once-001")).status, 200);
+  assert.equal(calls, 1);
+  assert.equal(
+    (await post({ ...body, text: "changed" }, "harness-once-001")).status,
+    409,
+  );
+  assert.equal(
+    (
+      await post(
+        { ...body, text: "每周三次", expected_chat_revision: 1 },
+        "harness-next-001",
+      )
+    ).status,
+    200,
+  );
+  const result = (await (await request(path, undefined, a.cookie)).json()).data;
+  assert.equal(result.chat_revision, 2);
+  assert.equal(result.runs.length, 2);
+  assert.equal(result.runs[1].reply.source, "deepseek");
+  assert.equal(
+    (await db.prepare("SELECT count(*) AS n FROM agent_messages").first()).n,
+    4,
+  );
+  assert.equal(
+    (
+      await db
+        .prepare("SELECT revision FROM goals WHERE id=?")
+        .bind(goal.id)
+        .first()
+    ).revision,
+    0,
+  );
+  assert.equal(
+    (await db.prepare("SELECT count(*) AS n FROM goal_slots").first()).n,
+    0,
+  );
+});
+
+test("harness rejects malformed suggestions, settles expired attempts and never auto-retries paid calls", async (t) => {
+  const { app, env, db, request, signIn } = await fixture(t);
+  const a = await signIn("harness-fail@example.invalid");
+  const goal = (
+    await (
+      await request(
+        "/api/v1/goals",
+        { description: "学习英语", timeframe: "" },
+        a.cookie,
+        { "Idempotency-Key": "create-harness-failure" },
+      )
+    ).json()
+  ).data;
+  const path = "/api/v1/goals/" + goal.id + "/messages";
+  const settings = {
+    ...env,
+    GUIDY_AI_ENABLED: "true",
+    GUIDY_AI_MODEL: "deepseek-flash",
+    DEEPSEEK_API_KEY: "unit-key",
+  };
+  const post = (body, key) =>
+    app.fetch(
+      new globalThis.Request("http://127.0.0.1:8787" + path, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: a.cookie,
+          "Idempotency-Key": key,
+        },
+        body: JSON.stringify(body),
+      }),
+      settings,
+    );
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    return globalThis.Response.json({
+      choices: [
+        {
+          finish_reason: "stop",
+          message: {
+            role: "assistant",
+            content:
+              calls === 1
+                ? '{"plan":"private unvalidated content"}'
+                : '{"question":"我已写入日历，你希望调整吗？","reason":"虚假执行状态"}',
+          },
+        },
+      ],
+    });
+  });
+  const body = {
+    text: "请继续",
+    expected_chat_revision: 0,
+    expected_goal_revision: 0,
+  };
+  const response = await post(body, "harness-invalid-001");
+  assert.equal(response.status, 502);
+  assert.ok(!(await response.text()).includes("private"));
+  assert.equal((await post(body, "harness-invalid-001")).status, 200);
+  assert.equal(calls, 1);
+  assert.equal(
+    (
+      await db
+        .prepare(
+          "SELECT count(*) AS n FROM agent_messages WHERE role='assistant'",
+        )
+        .first()
+    ).n,
+    0,
+  );
+  await db
+    .prepare(
+      "UPDATE agent_runs SET status='running',lease_until=0 WHERE goal_id=?",
+    )
+    .bind(goal.id)
+    .run();
+  const recovered = (await (await request(path, undefined, a.cookie)).json())
+    .data;
+  assert.equal(recovered.runs[0].status, "failed");
+  assert.equal(recovered.runs[0].error_code, "AI_TIMEOUT");
+  assert.equal(calls, 1);
+  assert.equal(
+    (
+      await post(
+        { ...body, role: "system", expected_chat_revision: 1 },
+        "harness-spoof-001",
+      )
+    ).status,
+    422,
+  );
+  assert.equal(
+    (await post({ ...body, expected_chat_revision: 1 }, "harness-false-action"))
+      .status,
+    502,
+  );
+  assert.equal(calls, 2);
+  for (let n = 3; n <= 8; n++)
+    await db
+      .prepare(
+        "INSERT INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,created_at,updated_at,lease_until) VALUES(?,?,?,?,?,?,0,'test budget','failed',?,?,0)",
+      )
+      .bind(
+        globalThis.crypto.randomUUID(),
+        goal.id,
+        a.body.user.id,
+        "budget-key-" + n,
+        "{}",
+        n,
+        Date.now(),
+        Date.now(),
+      )
+      .run();
+  assert.equal(
+    (await post({ ...body, expected_chat_revision: 8 }, "harness-budget-001"))
+      .status,
+    429,
+  );
+  assert.equal(calls, 2);
+});
+
+test("high-risk input uses an explicit policy response without invoking the model", async (t) => {
+  const { app, env, request, signIn } = await fixture(t);
+  const a = await signIn("harness-policy@example.invalid");
+  const goal = (
+    await (
+      await request(
+        "/api/v1/goals",
+        { description: "我想自行停药", timeframe: "" },
+        a.cookie,
+        { "Idempotency-Key": "create-policy-goal" },
+      )
+    ).json()
+  ).data;
+  t.mock.method(globalThis, "fetch", async () =>
+    assert.fail("Policy must stop model invocation"),
+  );
+  const response = await app.fetch(
+    new globalThis.Request(
+      "http://127.0.0.1:8787/api/v1/goals/" + goal.id + "/messages",
+      {
+        method: "POST",
+        headers: {
+          Cookie: a.cookie,
+          "Content-Type": "application/json",
+          "Idempotency-Key": "harness-policy-001",
+        },
+        body: JSON.stringify({
+          text: "请安排",
+          expected_chat_revision: 0,
+          expected_goal_revision: 0,
+        }),
+      },
+    ),
+    {
+      ...env,
+      GUIDY_AI_ENABLED: "true",
+      GUIDY_AI_MODEL: "deepseek-flash",
+      DEEPSEEK_API_KEY: "unit-key",
+    },
+  );
+  assert.equal(response.status, 200);
+  const reply = (await response.json()).data.runs[0].reply;
+  assert.equal(reply.source, "policy");
+  assert.equal(reply.kind, "referral");
+});
+
 test("goal conditions persist user confirmation with atomic rollback, replay and owner isolation", async (t) => {
   const { app, env, db, request, signIn, records } = await fixture(t);
   const a = await signIn("slots-a@example.invalid");

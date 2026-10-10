@@ -9,6 +9,8 @@
   "observability": { "enabled": false },
   "vars": {
     "GUIDY_ENVIRONMENT": "development",
+    "GUIDY_AI_ENABLED": "true",
+    "GUIDY_AI_MODEL": "deepseek-flash",
     "GUIDY_CORS_ORIGINS": "[]",
     "GUIDY_AUTH_MODE": "resend",
     "BETTER_AUTH_URL": "https://api.guidy.fun",

@@ -53,6 +53,8 @@ D1 不使用 PostgreSQL 行锁或 SKIP LOCKED。Job 原子 claim、lease、heart
 
 ## 5. 产品与 Agent 合同
 
+2026-10-10 用户指定先用自己的 DeepSeek API 测试，重点开发 harness。已增加独立 Provider 与短澄清 harness：owner/状态/版本、上下文一致快照、持久 run/message、调用限额、输出校验和失效恢复由服务端掌控。当前模型只生成问题，不执行 tools 或写确认条件；研究/计划的后台 jobs 尚未实现。详见 [AI harness](AI_HARNESS.md)。
+
 Goal 是根对象；Slots 保留来源/确认/敏感性；研究保存 URL、checked_at、支撑主张和限制。网页/模板都是不可信数据；工具限制 SSRF、重定向、下载量、时间和费用，不将外部文本提升为系统指令。
 
 动态澄清优先必要信息；软轮次预算不能绕过安全门槛。PlanDraft 先运行时 Schema，再领域/风险/排程校验，再用户批准。专业事实缺乏引用时标为未核实，不伪造价格、浓度或医疗结论。模型/搜索密钥不进入 App。

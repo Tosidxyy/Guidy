@@ -1,5 +1,7 @@
 # Guidy backend · Cloudflare TypeScript
 
+DeepSeek 澄清 harness：GET/POST /api/v1/goals/{id}/messages，需本人会话；POST 的目标/对话版本与 Idempotency-Key 强制校验。服务端 DEEPSEEK_API_KEY、GUIDY_AI_ENABLED/GUIDY_AI_MODEL 控制 Provider，限额/上下文/状态/恢复在 harness 内实现。模型不能改确认条件、计划/日历或执行 tools。详见 [AI harness 协议与测试](../docs/AI_HARNESS.md)。
+
 目标条件：`GET/PATCH /api/v1/goals/{id}/slots`。GET 返回 `{goal,slots}` 一致快照；PATCH 需要会话、Idempotency-Key、`{expected_revision,slots:[{key,state,text},...]}`，必须恰好包含 outcome/available_time/constraints 各一项。state=confirmed 时 text 为 1–300 字；unknown 时 text 为空。只有 draft 且无生效计划可修改；源与确认时间由服务端生成。成功原子更新三项、Goal revision+1 与不可变回执；冲突 409、其他账号 404、字段非法 422、正文超过 4KiB 为 413。先应用 0006 迁移。AI/研究/日历尚未接入。
 
 当前云开发认证已从 resend-test 升级为 resend，使用已验证的 noreply@auth.guidy.fun，支持任意有效邮箱通过验证码注册/登录；用户确认非原测试邮箱收码登录成功。GUIDY_ENVIRONMENT=development 仅决定是否允许精确 Expo Go 开发来源，不会免除验证码/会话验证。原测试收件邮箱配置不再作为白名单，后文初始测试阶段说明为历史记录。

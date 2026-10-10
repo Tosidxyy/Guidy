@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import { apiOrigin, authClient } from '../auth/client';
 import { checkedSlots, type SavedSlot, type SlotInput } from './clarification';
+import { checkedDialogue, dialogueError, type Dialogue } from './dialogue';
 
 export type AccountGoal = { id: string; title: string; description: string; timeframe_note: string; status: string; revision: number };
 export class GoalApiError extends Error {
@@ -16,11 +17,12 @@ async function request(method: 'GET' | 'POST' | 'PATCH', body?: Record<string, u
   const cancel = () => controller.abort();
   signal?.addEventListener('abort', cancel, { once: true });
   if (signal?.aborted) controller.abort();
-  const timer = setTimeout(cancel, 10_000);
+  const timer = setTimeout(cancel, path.endsWith('/messages') ? 30_000 : 10_000);
   try {
     const response = await fetch(`${apiOrigin}/api/v1/goals${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: Platform.OS === 'web' ? 'include' : 'omit', signal: controller.signal });
     const payload = await response.json();
     if (!response.ok) {
+      if(path.endsWith('/messages') && response.status!==401 && response.status!==404)throw new GoalApiError(dialogueError(payload.error?.code??''),payload.error?.code??'AI_UNAVAILABLE');
       if (response.status === 401) throw new Error('登录已失效，请重新登录。请求失败不会清空输入。');
       if (response.status === 409) throw new GoalApiError('目标已改变，请读取最新版本后再决定是否保存。你的输入仍保留。', payload.error?.code ?? 'CONFLICT');
       if (response.status === 404) throw new Error('目标不存在或当前账号无法访问。');
@@ -70,4 +72,14 @@ export async function getConditions(id: string, signal: AbortSignal): Promise<Go
 export async function saveConditions(id: string, body: { expected_revision: number; slots: SlotInput[] }, key: string): Promise<GoalConditions> {
   if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('目标地址不正确。');
   return checkedConditions(await request('PATCH', body, key, undefined, `/${id}/slots`));
+}
+export async function getDialogue(id:string,signal:AbortSignal):Promise<Dialogue>{
+  if(!/^[0-9a-f-]{36}$/.test(id))throw new Error('目标地址不正确。');
+  const data=checkedDialogue(await request('GET',undefined,undefined,signal,`/${id}/messages`));
+  return {...data,goal:checkedGoal(data.goal)};
+}
+export async function sendDialogue(id:string,body:{text:string;expected_chat_revision:number;expected_goal_revision:number},key:string):Promise<Dialogue>{
+  if(!/^[0-9a-f-]{36}$/.test(id))throw new Error('目标地址不正确。');
+  const data=checkedDialogue(await request('POST',body,key,undefined,`/${id}/messages`));
+  return {...data,goal:checkedGoal(data.goal)};
 }

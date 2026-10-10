@@ -58,6 +58,7 @@ if (operation === "deploy" && config.vars.GUIDY_AUTH_MODE !== "disabled") {
   const required = [
     "RESEND_API_KEY",
     "BETTER_AUTH_SECRET",
+    ...(config.vars.GUIDY_AI_ENABLED === "true" ? ["DEEPSEEK_API_KEY"] : []),
     ...(config.vars.GUIDY_AUTH_MODE === "resend-test"
       ? ["GUIDY_EMAIL_TEST_TO"]
       : []),

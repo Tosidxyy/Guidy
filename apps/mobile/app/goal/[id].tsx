@@ -100,6 +100,7 @@ export default function GoalDetail() {
           {questions.map(item => { const saved = record.slots.find(s => s.key === item.key); return <AppText key={item.key}>{item.label}：{saved?.value.state === 'confirmed' ? saved.value.text : '暂不确定'}</AppText>; })}
         </Card>}
         {editable && <>
+          <Action label="与 AI 澄清目标" secondary disabled={saving || loading || conflict || dirty} onPress={() => router.push({ pathname: '/goal/[id]/chat', params: { id } })} />
           <Action label="澄清目标与条件" secondary disabled={saving || loading || conflict || dirty} onPress={() => router.push({ pathname: '/goal/[id]/clarify', params: { id } })} />
           <Action label={saving ? '正在保存…' : '保存修改'} disabled={saving || loading || conflict} onPress={() => save(goal.status as 'draft' | 'paused')} />
           <Action label={goal.status === 'paused' ? '继续目标' : '暂停目标'} secondary disabled={saving || loading || conflict || dirty} onPress={() => save(goal.status === 'paused' ? 'draft' : 'paused')} />
