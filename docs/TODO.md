@@ -53,7 +53,7 @@
 - [ ] 验收新 iPhone 真实登录、完全 Reload/重启恢复、正常/断网退出与 SecureStore 行为；接入正式邮件与云端资源后完成总体认证验收。
 - [x] 实现 Resend 验证码发送适配、注册邮箱受限测试模式和动态投递提示。（模拟邮件 API + 真实临时 D1/浏览器验证通过；真实 Key/收信和云端登录未验收。）
 - [x] 配置并开启云端 resend-test，核对必需 secret 名称，验证实际匿名会话/账号拒绝，手机预览使用云 HTTPS origin。（真实收码/登录未验收。）
-- [ ] 有自有域名后配置 Cloudflare Email Routing 收信与 Resend 发信域名验证，完成真实收发与云端登录验收。（用户当前无域名。）
+- [ ] 有自有域名后配置 Cloudflare Email Routing 收信与 Resend 发信域名验证，完成真实收发与云端登录验收。（用户已购买 guidy.fun，正在等待域名审核/接入；手机 workers.dev 不可访问，自有 API 域名未绑定。）
 - [x] 验证迁移后的 CI：后端 TypeScript/ESLint/格式/边界测试/dry-run，前端类型/lint/API 测试。（真实 GitHub jobs 已通过。）
 
 **M0 验收**：iPhone 登录成功→浏览「目标/日历/我的」三 Tab→「我的」显示基础昵称/账号状态；断网能看到错误或缓存提示，不泄露后台密钥。
@@ -64,6 +64,7 @@
 
 ### M1-A 目标与澄清
 
+- [x] 离线目标输入准备：一份本机草稿的创建、编辑、持久保存、首页展示和确认删除。（用户要求域名等待期间先开发内部功能；原生 SecureStore、Web localStorage，不属于账号 Goal，不自动上传；浏览器验证通过，iPhone 持久保存/键盘未验证。）
 - [ ] 创建 `goals/goal_slots/agent_messages/agent_runs/agent_jobs` 表及索引。
 - [ ] 完成 `POST/GET/PATCH /goals`，支持草稿、暂停、继续和版本号。
 - [ ] 实现首页 Goal 卡：状态、下一动作、未确认草稿提示。
@@ -505,3 +506,13 @@ flowchart TD
 - 文档相对链接、配置/暂存范围与 git diff --check/git diff --cached --check → PASS。实现提交：`62ef9c0cf13b2c672069a00017ffc87629e06781`。
 - TODO 单独提交后 Push origin/main，核验远程 SHA/实际 CI，在交付回复报告；不为记录 CI 额外重复提交。
 - 未完成：API Key 真实有效性、邮件接受/最终到达、iPhone 收码登录/重启恢复/退出、Cloudflare 自有域名收信与正式发送。下一步由用户在云预览「我的 → 登录」输入 Resend 注册邮箱请求真实验证码。
+
+### 2026-10-10 — 内部功能 / 离线目标草稿
+
+- 用户要求域名审核期间先推进内部功能。本轮仅实现创建目标输入与本机草稿；不将 M1 目标 API、AI 澄清或账号同步勾为完成，未改变三 Tab、品牌与模板版本边界。
+- 受影响：目标首页、新建目标路由、草稿格式/存储、状态测试脚本。沿用 design/prototypes/02-agent-chat.png 的黑白卡片和主按钮；当前页面是输入准备，未展示虚假 AI 问答或保存状态。
+- 一份设备草稿，明确与账号独立；原生 SecureStore、Web localStorage。支持可选期望时间、更新、确认删除；读取失败禁止覆盖，保存失败保留输入。没有新依赖、服务端密钥、目标 API 或日历操作。
+- 快速测试：npm run typecheck、npm run lint、npm --prefix apps/mobile run test:ui-state（8 项）、npm --prefix apps/mobile run export:ios、git diff --check/git diff --cached --check → PASS。首次 Hermes 临时输出受沙箱阻断，正常环境复测通过，不将首次失败视为通过。
+- Browser plugin not available，使用现有 Playwright/Edge，http://localhost:8090/goals，393×852：空输入拦截→保存→首页→Reload 恢复→编辑更新→取消删除→确认删除→Reload 无旧草稿 PASS；0 pageerror，页面标题/路由、非空和截图复核通过。浏览器认证请求受控为匿名，不代表云端认证通过；首次浏览器/服务沙箱环境与冷编译超时后复测通过。
+- 实现 Commit：bc75e951231670807ab040d0430ae8ab45932fb5。TODO 单独提交后 push origin/main 并核对远程 SHA。
+- 未验证：iPhone SecureStore 保存/重启恢复、键盘/深色/VoiceOver、大字体、真实存储失败；云端登录与域名审核仍待完成。下一步：按 M1 接入账号目标 API 和对象所有权/版本控制，再把用户确认的本机草稿保存为账号 Goal；AI 动态澄清单独实现。
