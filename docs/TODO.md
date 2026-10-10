@@ -64,6 +64,7 @@
 
 ### M1-A 目标与澄清
 
+- [x] 草稿目标详情/编辑/暂停继续：PATCH /api/v1/goals/{id}、expected_revision 条件写入、原子修改回执与幂等重放；首页进入详情、冲突保留输入并显式重新读取。（本地 D1/浏览器通过；只支持未有生效计划的 draft/paused，研究/执行中状态的暂停继续仍待后续，iPhone/云端未验证。）
 - [x] 账号目标创建/列表/单项读取：POST/GET /api/v1/goals、GET /api/v1/goals/{id}，真实会话归属、创建幂等、revision=0；App 从本机草稿提交、展示/恢复账号目标。（本地 Worker/D1 浏览器端到端通过；PATCH/暂停继续、云部署及 iPhone 真机待完成，原完整 API 项保持未完成。）
 - [x] 离线目标输入准备：一份本机草稿的创建、编辑、持久保存、首页展示和确认删除。（用户要求域名等待期间先开发内部功能；原生 SecureStore、Web localStorage，不属于账号 Goal，不自动上传；浏览器验证通过，iPhone 持久保存/键盘未验证。）
 - [ ] 创建 `goals/goal_slots/agent_messages/agent_runs/agent_jobs` 表及索引。
@@ -529,3 +530,14 @@ flowchart TD
 - docs/DATABASE、backend README 和 iPhone 本地体验指南同步；相对文件链接、git diff --check/git diff --cached --check 和新增文件凭据模式检查 PASS。实现 Commit：bf365369b46e77737900b187f4fcbc072d11ad77。
 - TODO 独立提交后 Push origin/main，远程 SHA 与本地 HEAD 一致性在交付时核对。云 D1/Worker 没有升级，iPhone 新增保存/重启/断网与 SecureStore 尚未验证；原云网络问题继续等待 guidy.fun 激活。
 - 下一步：目标内编辑/暂停/继续与 revision 并发校验，之后接目标内澄清对话。真实 AI/研究 Provider 仍未选定，不制造 AI 回复。
+
+### 2026-10-10 — M1 小步 / 目标详情与版本安全编辑
+
+- 范围：首页查看账号目标→详情编辑并保存→暂停/继续 draft 目标；只允许 draft/paused 且无生效计划，未提供已执行目标的直接覆写/强制降级。保持三 Tab、品牌、AI/日历/通知边界。
+- 0005 增量迁移：goals 最近修改标识、账号范围 goal_mutations 不可变回执、同账号目标复合外键；已应用独立本地开发/测试 D1，云端没有迁移/部署。D1 batch 条件 UPDATE 与回执 INSERT 原子提交，不把 UPDATE 0 行当作批事务回滚。每次成功 revision+1，旧版本/非法状态 409，同键不同内容 409，同键相同内容重放历史结果而不覆盖后续版本。
+- UI：详情仅本账号可见，加载/错误/重试，离页取消读取并丢弃旧响应；错误和版本冲突保留页面输入，读取新版本后仍需核对再保存。未保存内容只在当前页面，「返回目标」要求确认放弃，原生系统手势尚未验证。草稿内容有修改时先保存再暂停/继续。
+- 快速检查：mobile typecheck/lint、export:ios PASS；backend typecheck/lint/format:check、npm test 29 项、build dry-run PASS；本地两套迁移 0005 PASS。首轮前端 lifecycle lint、测试 Request 全局名 lint 失败，修正后复查通过；未把失败记为通过。测试包含回执 INSERT 故意失败使 UPDATE 回滚、并发去重/旧版本竞争、跨账号/匿名拒绝、非法字段/状态、后续修改后历史请求重放不再写入。
+- Browser plugin not available；现有 Playwright/Edge，localhost:8090→真实本地 Worker/D1，393×852：创建/登录→详情编辑→Reload 内容恢复→另页写入导致 409→输入保留→读取最新版本→再次显式保存→暂停/继续 PASS；模拟服务端已提交但响应丢失，复用请求键重试后 revision 仅增加一次 PASS。0 意外控制台错误/警告，验证码 400/版本 409/断网资源错误为预期；页面标题/路径/非空、无错误覆盖层、截图复核通过。只清理生成的 QA 账号及级联目标/回执，未清理用户数据。
+- backend README、数据库和 iPhone 本地指南同步。文档相对链接/凭据模式检查 PASS；初次文档末尾空行未正确阻止提交，修复后 diff 与暂存 diff 检查通过，amend 尚未推送的实现提交；不修改远程历史。最终实现 Commit：89dfd36e9f1de203c0b83351e87009a34bd3d6be。
+- TODO 单独提交后 Push origin/main 并核对远程 SHA。未验证：iPhone 新详情键盘/安全区/系统返回/深色/VoiceOver、云端数据库/手机新 API。已在本地完成，当前默认手机云地址需按指南切换到本地 API 才能体验。
+- 下一步：Goal 内澄清输入与已确认条件，再接真实 Agent Provider；后续研究/计划状态暂停恢复需设计 Job/提醒一致性，不能沿用本轮 draft→paused→draft 规则。
