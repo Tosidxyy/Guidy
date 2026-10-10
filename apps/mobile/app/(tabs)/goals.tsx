@@ -1,13 +1,31 @@
 import { View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import type { GoalDraft } from '../../src/goals/draft';
+import { readDraft } from '../../src/goals/storage';
 import { Action, AppText, Badge, Caption, Card, Screen, SectionTitle, styles } from '../../src/components/ui';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
 export default function GoalsScreen() {
   const { colors } = useTheme();
+  const [draft, setDraft] = useState<GoalDraft | null>(null);
+  const [draftError, setDraftError] = useState(false);
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    readDraft().then(value => { if (active) { setDraft(value); setDraftError(false); } }).catch(() => { if (active) { setDraft(null); setDraftError(true); } });
+    return () => { active = false; };
+  }, []));
   return (
     <Screen title="Guidy">
       <View><AppText accessibilityRole="header" style={styles.hero}>今天，向前一点。</AppText><Caption>有想法，就让它发生。Chat &amp; Do It.</Caption></View>
-      <Action label="＋ 创建新目标 · M1 开放" disabled />
+      <Action label={draft ? '继续编辑本机草稿' : '＋ 创建目标草稿'} onPress={() => router.push('/goal/new')} />
+      {draftError && <AppText accessibilityRole="alert">本机草稿读取失败，请进入草稿页重试。</AppText>}
+      {draft && <Card>
+        <Badge>草稿 · 仅此设备</Badge>
+        <AppText style={{ fontWeight: '600' }}>{draft.description}</AppText>
+        <Caption>期望时间：{draft.timeframe || '暂不确定'}</Caption>
+        <Caption>下一步 · 继续补充目标。AI 澄清与云端同步尚未接入。</Caption>
+      </Card>}
       <Caption>M0 界面预览 · 下方为演示数据，不是实际计划或执行记录。</Caption>
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <Card style={{ flex: 1 }}><Caption>今日待办 · 演示</Caption><AppText style={styles.hero}>2</AppText></Card>
