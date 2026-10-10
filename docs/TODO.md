@@ -43,6 +43,9 @@
 
 ### M0-B 后端/数据基础
 
+- [x] 用户确认 iPhone 云端验证码登录可用。（此前收信已确认；仅首次登录成功，不包括重启恢复/退出与目标写入。）
+- [x] 开放邮箱注册准备：Resend 创建 auth.guidy.fun，保存实际公开 DNS 记录；已验证正式 sender 模式接受新邮箱并在开发环境保留精确 Expo Go 白名单。（代码/真实 D1 测试通过；后续 DNS 验证与云部署见下项。）
+- [x] 在 Cloudflare 添加 [auth.guidy.fun 发信 DNS](RESEND_DOMAIN_DNS.md)，Resend 验证通过后切换 noreply@auth.guidy.fun / resend，并验证非测试邮箱收码注册。（用户添加 DNS，Resend 四项 verified；已部署，用户确认新邮箱收码并登录成功。）
 - [x] 修复 Expo Go 云登录来源与 workerd 发信参数，真实云端验证码请求 200/email，用户确认测试邮件收到。（精确私网预览白名单、非 2xx 拒绝、安全错误分类；App 输入验证码/登录恢复仍未验收，正式自有域名邮件未配置。）
 - [x] 绑定自有 API 域名 api.guidy.fun，云开发 D1 升级到 0005 并部署目标创建/详情编辑服务，App 默认 origin 切换。（电脑 HTTPS/匿名拒绝验证通过；用户确认 iPhone Safari /health 显示 ok，App 收码登录/目标写入仍未验证。）
 - [x] 初始化 TypeScript Worker、Wrangler、类型/ESLint/格式检查与有效边界测试。（D1 与 Auth 仍在下方待办。）
@@ -55,7 +58,7 @@
 - [ ] 验收新 iPhone 真实登录、完全 Reload/重启恢复、正常/断网退出与 SecureStore 行为；接入正式邮件与云端资源后完成总体认证验收。
 - [x] 实现 Resend 验证码发送适配、注册邮箱受限测试模式和动态投递提示。（模拟邮件 API + 真实临时 D1/浏览器验证通过；真实 Key/收信和云端登录未验收。）
 - [x] 配置并开启云端 resend-test，核对必需 secret 名称，验证实际匿名会话/账号拒绝，手机预览使用云 HTTPS origin。（真实收码/登录未验收。）
-- [ ] 有自有域名后配置 Cloudflare Email Routing 收信与 Resend 发信域名验证，完成真实收发与云端登录验收。（guidy.fun 已激活，api.guidy.fun 已绑定且用户确认手机 Safari 探活可用；邮件 DNS/发信域名尚未配置，仍为受限测试 sender。）
+- [ ] 有自有域名后配置 Cloudflare Email Routing 收信与 Resend 发信域名验证，完成真实收发与云端登录验收。（api.guidy.fun 与 auth.guidy.fun 发信已完成，多邮箱收码登录已确认；Cloudflare 根域收信/转发尚未配置，不将该组合项标为完成。）
 - [x] 验证迁移后的 CI：后端 TypeScript/ESLint/格式/边界测试/dry-run，前端类型/lint/API 测试。（真实 GitHub jobs 已通过。）
 
 **M0 验收**：iPhone 登录成功→浏览「目标/日历/我的」三 Tab→「我的」显示基础昵称/账号状态；断网能看到错误或缓存提示，不泄露后台密钥。
@@ -565,3 +568,22 @@ flowchart TD
 - 云端：最终部署版本 400f246d-c508-4b7c-a741-9ed0a8286b28。部署完成后实际 Expo Go 来源请求返回 200 / delivery=email，用户随后明确确认收到邮件；已验证真实受限测试投递，不代表 App 登录、恢复或目标写入。中间版本诊断仍失败，部署未完成时的请求不当作最终结果。Resend 插件仅只读查看请求元数据，未获取邮件正文。
 - 文档链接、diff/暂存检查及修改范围 PASS。实现 Commit：e4ab7d36085599072b769e8babd50f30a967e30a。TODO 单独提交后 Push origin/main 并核对远程 SHA。
 - 未验证：iPhone 最新 UI 错误提示、输入验证码成功登录、原生恢复/退出和云目标写入；正式邮件域名/Cloudflare 收信仍待配置。下一步用户 Reload 后重新获取验证码，用最新邮件码登录，不在聊天发送验证码。
+
+### 2026-10-10 — 开放邮箱注册准备 / 发信域名待 DNS
+
+- 用户确认云端登录成功，并要求任意邮箱注册。Resend 原无域名，通过连接插件创建 auth.guidy.fun（Sending enabled、Receiving disabled、打开/点击追踪关闭），状态 not_started；实际返回四条公开 DKIM/SPF/MX/CNAME 记录已完整显示并保存到 docs/RESEND_DOMAIN_DNS.md。尚未触发 verified，不切换线上 sender/mode，不开通付费服务或改根域 MX。
+- 外部阻塞：浏览器 inventory/新 tab 连接失败；现有 Wrangler OAuth zone 查询确认 guidy.fun active，但 DNS API 403，缺少 DNS 管理 scope。凭据只在内存使用，不输出 Token；没有索取管理 Token。用户收到 DNS 添加问题/完整记录文件，公开 DNS 查询四项尚未出现，等待用户配置。
+- 代码准备：增加 GUIDY_ENVIRONMENT=development 与固定云开发 guard。邮件 resend 模式可在显式开发环境继续用精确私网预览来源，正式/未知环境仍拒绝非空预览白名单；发送验证仍需要正式 sender，onboarding 不允许。当前云配置仍 resend-test/onboarding，新增准备代码尚未部署；不会因开发预览需求关闭 origin 校验。
+- 快速检查：backend typecheck/lint/format:check、npm test 35 项、build:cloud dry-run PASS。新增真实临时 D1 测试覆盖不同于测试收件邮箱的新账号发送/登录、无明码收件箱、正式环境拒绝 Expo 预览与测试 sender；邮件供应商 HTTP 被模拟，不当作真实新域名投递验收。没有前端或迁移变更，未重复 UI/iOS 导出。
+- 文档链接/路径与 diff/暂存检查 PASS；README 文本替换误改被发现，从前版恢复并精确修改，amend 尚未推送提交后语义 diff 复核通过。最终实现 Commit：a04410b5801499698215b2d5b08d4550df55fd7a。
+- TODO 单独提交后 Push origin/main 并核对远程 SHA。本轮只完成可验收准备项，任意邮箱开放/正式域名投递保持未完成；目前需要用户在 Cloudflare 添加记录后继续。后续域名 verified→切换 sender/mode→部署→真实非测试邮箱收码/注册验收；现有登录仍可使用测试模式。
+
+### 2026-10-10 — auth.guidy.fun 已验证 / 任意邮箱注册开放
+
+- 用户确认四条 DNS 已添加。Resend verify-domain/get-domain 确认 auth.guidy.fun verified、Sending enabled、Receiving disabled，DKIM/MX/SPF TXT/CNAME 全部 verified；无跟踪、未改根域收信，不购买服务。此前 DNS 403 的配置阻塞已由用户操作解除。
+- 自动审批曾因账号用量耗尽未执行 TODO 提交/推送；没有绕过检查。用户明确确认用量已恢复后继续部署与 Git 操作，先前本地准备提交及待提交 TODO 保留并一并同步。
+- 云配置切换 noreply@auth.guidy.fun / resend，GUIDY_ENVIRONMENT=development 保留精确私网 Expo Go 预览，不关闭验证码/限流/会话/所有权验证；未显式 development 的正式环境禁止预览白名单。旧测试收件邮箱不再作为注册限制。发送成功后新邮箱通过 OTP 验证由 Better Auth 建号/创建 profile，未验证邮箱不能成为登录账号。
+- 快速检查：准备实现 backend typecheck/lint/format、35 项完整测试/build:cloud PASS；最终 sender/mode 配置 typecheck/lint/format、cloud guard 2 项 PASS。dry-run 首次有沙箱日志写入 EPERM 提示，改用工作区忽略日志路径后完整 dry-run PASS；没有借此绕过 Git/部署审批，也没有修改远程状态的替代操作。无客户端/迁移变更，未重复 UI/iOS 导出。
+- 最终云部署版本 3b1656de-0c49-44bf-a27c-c20b0044bae4；固定账号/Worker/D1 guard 校验通过。实际 verified sender 请求 200 / delivery=email；随后用户明确确认原测试邮箱之外的新邮箱收到验证码并登录成功，真实开放注册链路验收通过。邮箱/OTP/密钥不进入 Git 或测试输出。
+- 实现提交：准备 a04410b5801499698215b2d5b08d4550df55fd7a；开放配置 0f42ab112700aec7a0552d1b42207c39a50342d8。所有本轮文件范围/文档链接/diff 与暂存检查 PASS。TODO 单独提交后将所有待推送提交同步 origin/main，核对远程 SHA。
+- 剩余：Cloudflare 根域收信/转发、原生重启恢复/断网退出/多设备、云端目标写入尚未完成；公开 iOS 安装仍需构建签名流程。下一轮回到目标内澄清与条件确认；开放注册不等于 App Store 发布。
