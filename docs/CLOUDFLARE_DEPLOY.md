@@ -1,5 +1,7 @@
 # Guidy · Cloudflare 开发环境
 
+目标条件版本：`b0d5a1ef-c396-459d-b7cf-ae635b91bef1`，云开发 D1 已应用 0006 goal_slots；受保护 GET/PATCH /goals/{id}/slots、用户确认/未知状态与原子版本回执已部署。本地浏览器完整保存/恢复/冲突/摘要通过，云端匿名拒绝检查通过；iPhone 新条件输入与已登录云端保存仍待真机验收。发信/开放注册配置继续保留。
+
 当前开放注册部署：`3b1656de-0c49-44bf-a27c-c20b0044bae4`。Resend 发信域名 auth.guidy.fun verified，sender 为 noreply@auth.guidy.fun，模式 resend；用户确认原测试邮箱以外的新邮箱收码并登录成功。GUIDY_ENVIRONMENT=development 允许精确 Expo Go 预览白名单，正式环境仍禁止这些开发来源。下方此前受限测试记录属于历史 readiness 阶段，不代表当前仍限制为测试邮箱。
 
 最新认证修复版本：`400f246d-c508-4b7c-a741-9ed0a8286b28`。已配置独立、精确的 Expo Go 私网来源白名单；真实验证码请求 200 / delivery=email，用户确认测试邮件收到。此前域名部署版本和 readiness 检查为历史记录；App 内成功登录、重启恢复和目标写入仍待验收。测试 sender/收件邮箱限制继续保留，未开放正式自有域名发信。

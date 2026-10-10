@@ -2,6 +2,8 @@
 
 ## 当前云端预览（api.guidy.fun）
 
+目标条件体验：App Reload 后登录，保存一份账号目标，进入「查看目标 → 澄清目标与条件」。依次填写期望结果、可投入时间、限制条件，或选择暂不确定，最后点「确认并保存条件」；重载后应恢复，返回详情能查看摘要。条件来自用户，当前尚无 AI 动态提问/研究/计划。暂停草稿为只读，先继续目标再修改；时间只保存为说明，不自动写日历。
+
 2026-10-10 用户确认 iPhone Safari [云端 /health](https://api.guidy.fun/health) 显示 ok。App 默认公开地址现在为 https://api.guidy.fun；若终端此前设置过本地 EXPO_PUBLIC_API_URL，先移除覆盖项并重启预览：
 
 ```powershell

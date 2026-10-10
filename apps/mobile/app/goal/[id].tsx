@@ -4,14 +4,15 @@ import { KeyboardAvoidingView, Platform, TextInput } from 'react-native';
 import { Action, AppText, Badge, Caption, Card, Screen } from '../../src/components/ui';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { useAccount } from '../../src/auth/AuthProvider';
-import { getGoal, GoalApiError, updateGoal, type AccountGoal } from '../../src/goals/api';
+import { getConditions, GoalApiError, updateGoal, type AccountGoal } from '../../src/goals/api';
+import { questions, type SavedSlot } from '../../src/goals/clarification';
 
 export default function GoalDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user, pending } = useAccount();
   const owner = user?.id;
   const { colors } = useTheme();
-  const [record, setRecord] = useState<{owner: string; goal: AccountGoal} | null>(null);
+  const [record, setRecord] = useState<{owner: string; goal: AccountGoal; slots: SavedSlot[]} | null>(null);
   const [description, setDescription] = useState('');
   const [timeframe, setTimeframe] = useState('');
   const [error, setError] = useState('');
@@ -35,9 +36,10 @@ export default function GoalDetail() {
     setNotice('');
     setLoading(!!owner);
     setRecord(null);
-    if (owner) getGoal(id, controller.signal).then(value => {
+    if (owner) getConditions(id, controller.signal).then(result => {
+      const value = result.goal;
       if (controller.signal.aborted) return;
-      setRecord({owner,goal:value});
+      setRecord({owner,goal:value,slots:result.slots});
       if (!preserve.current) { setDescription(value.description || value.title); setTimeframe(value.timeframe_note); }
       else setNotice('已读取最新版本，保留了你的输入。请核对后再保存。');
       preserve.current = false;
@@ -62,7 +64,7 @@ export default function GoalDetail() {
     try {
       const result = await updateGoal(goal.id,body,operation.current.key);
       if (current !== generation.current) return;
-      setRecord({owner:owner!,goal:result}); setDescription(result.description); setTimeframe(result.timeframe_note);
+      setRecord(previous => ({owner:owner!,goal:result,slots:previous && previous.owner === owner ? previous.slots : []})); setDescription(result.description); setTimeframe(result.timeframe_note);
       setNotice(status === 'paused' ? '目标已暂停。' : goal.status === 'paused' ? '目标已恢复为待澄清草稿。' : '修改已保存。');
       operation.current = null;
     } catch(err) {
@@ -93,7 +95,12 @@ export default function GoalDetail() {
           <AppText>期望时间（可不填）</AppText>
           <TextInput accessibilityLabel="账号期望时间" maxLength={80} value={timeframe} onChangeText={setTimeframe} editable={editable && !saving && !loading} style={inputStyle} />
         </Card>
+        {!!record?.slots.length && <Card>
+          <AppText>已保存的条件 · 来自你</AppText>
+          {questions.map(item => { const saved = record.slots.find(s => s.key === item.key); return <AppText key={item.key}>{item.label}：{saved?.value.state === 'confirmed' ? saved.value.text : '暂不确定'}</AppText>; })}
+        </Card>}
         {editable && <>
+          <Action label="澄清目标与条件" secondary disabled={saving || loading || conflict || dirty} onPress={() => router.push({ pathname: '/goal/[id]/clarify', params: { id } })} />
           <Action label={saving ? '正在保存…' : '保存修改'} disabled={saving || loading || conflict} onPress={() => save(goal.status as 'draft' | 'paused')} />
           <Action label={goal.status === 'paused' ? '继续目标' : '暂停目标'} secondary disabled={saving || loading || conflict || dirty} onPress={() => save(goal.status === 'paused' ? 'draft' : 'paused')} />
           {dirty && <Caption>内容有修改，请先保存，再暂停或继续。</Caption>}

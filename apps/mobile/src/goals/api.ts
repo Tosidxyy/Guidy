@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { apiOrigin, authClient } from '../auth/client';
+import { checkedSlots, type SavedSlot, type SlotInput } from './clarification';
 
 export type AccountGoal = { id: string; title: string; description: string; timeframe_note: string; status: string; revision: number };
 export class GoalApiError extends Error {
@@ -55,4 +56,18 @@ export async function getGoal(id: string, signal: AbortSignal): Promise<AccountG
 export async function updateGoal(id: string, body: { description: string; timeframe: string; status: 'draft' | 'paused'; expected_revision: number }, key: string): Promise<AccountGoal> {
   if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('目标地址不正确。');
   return checkedGoal(await request('PATCH', body, key, undefined, `/${id}`));
+}
+
+export type GoalConditions = { goal: AccountGoal; slots: SavedSlot[] };
+function checkedConditions(result: GoalConditions): GoalConditions {
+  if (!result) throw new Error('条件响应格式不正确。');
+  return { goal: checkedGoal(result.goal), slots: checkedSlots(result.slots) };
+}
+export async function getConditions(id: string, signal: AbortSignal): Promise<GoalConditions> {
+  if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('目标地址不正确。');
+  return checkedConditions(await request('GET', undefined, undefined, signal, `/${id}/slots`));
+}
+export async function saveConditions(id: string, body: { expected_revision: number; slots: SlotInput[] }, key: string): Promise<GoalConditions> {
+  if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('目标地址不正确。');
+  return checkedConditions(await request('PATCH', body, key, undefined, `/${id}/slots`));
 }

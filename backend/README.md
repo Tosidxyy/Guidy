@@ -1,5 +1,7 @@
 # Guidy backend · Cloudflare TypeScript
 
+目标条件：`GET/PATCH /api/v1/goals/{id}/slots`。GET 返回 `{goal,slots}` 一致快照；PATCH 需要会话、Idempotency-Key、`{expected_revision,slots:[{key,state,text},...]}`，必须恰好包含 outcome/available_time/constraints 各一项。state=confirmed 时 text 为 1–300 字；unknown 时 text 为空。只有 draft 且无生效计划可修改；源与确认时间由服务端生成。成功原子更新三项、Goal revision+1 与不可变回执；冲突 409、其他账号 404、字段非法 422、正文超过 4KiB 为 413。先应用 0006 迁移。AI/研究/日历尚未接入。
+
 当前云开发认证已从 resend-test 升级为 resend，使用已验证的 noreply@auth.guidy.fun，支持任意有效邮箱通过验证码注册/登录；用户确认非原测试邮箱收码登录成功。GUIDY_ENVIRONMENT=development 仅决定是否允许精确 Expo Go 开发来源，不会免除验证码/会话验证。原测试收件邮箱配置不再作为白名单，后文初始测试阶段说明为历史记录。
 
 Expo Go 认证预览需可选 GUIDY_EXPO_PREVIEW_ORIGINS JSON 白名单（仅明确的 exp:// 私有主机+端口，最多四项）；local-inbox/resend-test 可使用；resend 仅在显式 GUIDY_ENVIRONMENT=development 时保留预览白名单，正式环境不得保留。云端以独立 secret 配置，不改变 CORS 或关闭 origin 验证。邮件发送错误返回固定分类而不回显提供方正文/异常原文；真实发送成功须实测，参见 [邮件配置](../docs/EMAIL_SETUP.md)。

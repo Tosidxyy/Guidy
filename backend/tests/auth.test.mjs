@@ -89,6 +89,157 @@ async function fixture(t) {
   return { db, env, request, otp, signIn, records, app };
 }
 
+test("goal conditions persist user confirmation with atomic rollback, replay and owner isolation", async (t) => {
+  const { app, env, db, request, signIn, records } = await fixture(t);
+  const a = await signIn("slots-a@example.invalid");
+  const b = await signIn("slots-b@example.invalid");
+  const goal = (
+    await (
+      await request(
+        "/api/v1/goals",
+        { description: "测试澄清目标", timeframe: "" },
+        a.cookie,
+        { "Idempotency-Key": "create-slots-goal" },
+      )
+    ).json()
+  ).data;
+  const path = "/api/v1/goals/" + goal.id + "/slots";
+  const input = {
+    expected_revision: 0,
+    slots: [
+      { key: "outcome", state: "confirmed", text: "旅行时交流" },
+      { key: "available_time", state: "unknown", text: "" },
+      { key: "constraints", state: "confirmed", text: "只用免费资源" },
+    ],
+  };
+  const patch = (body, key, cookie = a.cookie) =>
+    app.fetch(
+      new globalThis.Request("http://127.0.0.1:8787" + path, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": key,
+          Cookie: cookie,
+        },
+        body: JSON.stringify(body),
+      }),
+      env,
+    );
+  assert.equal((await request(path)).status, 401);
+  assert.equal((await request(path, undefined, b.cookie)).status, 404);
+  assert.equal((await patch(input, "unowned-slots", b.cookie)).status, 404);
+  assert.deepEqual(
+    (await (await request(path, undefined, a.cookie)).json()).data.slots,
+    [],
+  );
+  for (const slots of [
+    input.slots.slice(0, 2),
+    [input.slots[0], input.slots[0], input.slots[2]],
+    [{ ...input.slots[0], source: "agent" }, ...input.slots.slice(1)],
+    [
+      input.slots[0],
+      { ...input.slots[1], text: "unconfirmed" },
+      input.slots[2],
+    ],
+  ])
+    assert.equal(
+      (await patch({ ...input, slots }, "invalid-slots-key")).status,
+      422,
+    );
+  await db
+    .prepare(
+      "CREATE TRIGGER reject_last_slot BEFORE INSERT ON goal_slots WHEN NEW.key='constraints' BEGIN SELECT RAISE(ABORT,'test-only rollback'); END",
+    )
+    .run();
+  assert.equal((await patch(input, "slots-save-001")).status, 500);
+  assert.equal(
+    (
+      await db
+        .prepare("SELECT revision FROM goals WHERE id=?")
+        .bind(goal.id)
+        .first()
+    ).revision,
+    0,
+  );
+  assert.equal(
+    (await db.prepare("SELECT count(*) AS n FROM goal_slots").first()).n,
+    0,
+  );
+  await db.prepare("DROP TRIGGER reject_last_slot").run();
+  const saves = await Promise.all([
+    patch(input, "slots-save-001"),
+    patch(input, "slots-save-001"),
+  ]);
+  assert.deepEqual(
+    saves.map((r) => r.status),
+    [200, 200],
+  );
+  const saved = (await saves[0].json()).data;
+  assert.equal(saved.goal.revision, 1);
+  assert.equal(saved.slots.length, 3);
+  const unknown = saved.slots.find((s) => s.key === "available_time");
+  assert.equal(unknown.value.state, "unknown");
+  assert.equal(unknown.confirmed_at, null);
+  const confirmed = saved.slots.find((s) => s.key === "outcome");
+  assert.equal(confirmed.source, "user");
+  assert.equal(confirmed.value.schema_version, 1);
+  assert.ok(confirmed.confirmed_at > 0);
+  assert.equal((await patch(input, "stale-slots-key")).status, 409);
+  assert.equal(
+    (
+      await patch(
+        {
+          ...input,
+          slots: input.slots.map((s) =>
+            s.key === "outcome" ? { ...s, text: "changed" } : s,
+          ),
+        },
+        "slots-save-001",
+      )
+    ).status,
+    409,
+  );
+  const later = {
+    ...input,
+    expected_revision: 1,
+    slots: input.slots.map((s) =>
+      s.key === "outcome" ? { ...s, text: "新的确认结果" } : s,
+    ),
+  };
+  const race = await Promise.all([
+    patch(later, "slots-next-001"),
+    patch({ ...later, slots: input.slots }, "slots-next-002"),
+  ]);
+  assert.deepEqual(race.map((r) => r.status).sort(), [200, 409]);
+  assert.equal(
+    (await (await patch(input, "slots-save-001")).json()).data.goal.revision,
+    1,
+  );
+  const current = (await (await request(path, undefined, a.cookie)).json())
+    .data;
+  assert.equal(current.goal.revision, 2);
+  assert.equal(
+    (await db.prepare("SELECT count(*) AS n FROM goal_slots").first()).n,
+    3,
+  );
+  await db
+    .prepare("UPDATE goals SET status='paused' WHERE id=?")
+    .bind(goal.id)
+    .run();
+  assert.equal(
+    (await patch({ ...input, expected_revision: 2 }, "paused-slots-key"))
+      .status,
+    409,
+  );
+  await assert.rejects(
+    db
+      .prepare("UPDATE goal_slots SET value_json='{}' WHERE goal_id=?")
+      .bind(goal.id)
+      .run(),
+  );
+  assert.ok(!JSON.stringify(records).includes("旅行时交流"));
+});
+
 test("verified-sender mail mode accepts another email while Expo preview remains development-only", async (t) => {
   const { app, env, db } = await fixture(t);
   const configured = {

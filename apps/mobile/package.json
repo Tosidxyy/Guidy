@@ -41,7 +41,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
     "test:api": "node --experimental-strip-types --test tests/health.test.mjs",
-    "test:ui-state": "node --experimental-strip-types --test tests/demo-challenge.test.mjs tests/demo-input.test.mjs tests/goal-draft.test.mjs",
+    "test:ui-state": "node --experimental-strip-types --test tests/demo-challenge.test.mjs tests/demo-input.test.mjs tests/goal-draft.test.mjs tests/goal-conditions.test.mjs",
     "export:ios": "expo export --platform ios",
     "export:web": "expo export --platform web"
   },
