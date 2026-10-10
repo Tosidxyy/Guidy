@@ -43,6 +43,7 @@
 
 ### M0-B 后端/数据基础
 
+- [x] 绑定自有 API 域名 api.guidy.fun，云开发 D1 升级到 0005 并部署目标创建/详情编辑服务，App 默认 origin 切换。（电脑 HTTPS/匿名拒绝验证通过；用户确认 iPhone Safari /health 显示 ok，App 收码登录/目标写入仍未验证。）
 - [x] 初始化 TypeScript Worker、Wrangler、类型/ESLint/格式检查与有效边界测试。（D1 与 Auth 仍在下方待办。）
 - [x] 实现 `/health`、统一错误格式、request_id 和服务端日志脱敏。
 - [ ] 创建 Cloudflare 开发 Worker/D1 资源，接入 Better Auth；验证会话、过期、撤销与受保护 API。
@@ -53,7 +54,7 @@
 - [ ] 验收新 iPhone 真实登录、完全 Reload/重启恢复、正常/断网退出与 SecureStore 行为；接入正式邮件与云端资源后完成总体认证验收。
 - [x] 实现 Resend 验证码发送适配、注册邮箱受限测试模式和动态投递提示。（模拟邮件 API + 真实临时 D1/浏览器验证通过；真实 Key/收信和云端登录未验收。）
 - [x] 配置并开启云端 resend-test，核对必需 secret 名称，验证实际匿名会话/账号拒绝，手机预览使用云 HTTPS origin。（真实收码/登录未验收。）
-- [ ] 有自有域名后配置 Cloudflare Email Routing 收信与 Resend 发信域名验证，完成真实收发与云端登录验收。（用户已购买 guidy.fun，正在等待域名审核/接入；手机 workers.dev 不可访问，自有 API 域名未绑定。）
+- [ ] 有自有域名后配置 Cloudflare Email Routing 收信与 Resend 发信域名验证，完成真实收发与云端登录验收。（guidy.fun 已激活，api.guidy.fun 已绑定且用户确认手机 Safari 探活可用；邮件 DNS/发信域名尚未配置，仍为受限测试 sender。）
 - [x] 验证迁移后的 CI：后端 TypeScript/ESLint/格式/边界测试/dry-run，前端类型/lint/API 测试。（真实 GitHub jobs 已通过。）
 
 **M0 验收**：iPhone 登录成功→浏览「目标/日历/我的」三 Tab→「我的」显示基础昵称/账号状态；断网能看到错误或缓存提示，不泄露后台密钥。
@@ -541,3 +542,13 @@ flowchart TD
 - backend README、数据库和 iPhone 本地指南同步。文档相对链接/凭据模式检查 PASS；初次文档末尾空行未正确阻止提交，修复后 diff 与暂存 diff 检查通过，amend 尚未推送的实现提交；不修改远程历史。最终实现 Commit：89dfd36e9f1de203c0b83351e87009a34bd3d6be。
 - TODO 单独提交后 Push origin/main 并核对远程 SHA。未验证：iPhone 新详情键盘/安全区/系统返回/深色/VoiceOver、云端数据库/手机新 API。已在本地完成，当前默认手机云地址需按指南切换到本地 API 才能体验。
 - 下一步：Goal 内澄清输入与已确认条件，再接真实 Agent Provider；后续研究/计划状态暂停恢复需设计 Job/提醒一致性，不能沿用本轮 draft→paused→draft 规则。
+
+### 2026-10-10 — 自有 API 域名 / guidy.fun 云端连接
+
+- 用户确认域名接入，截图为 Cloudflare 已保护；DNS NS 实测为 Cloudflare，api 子域名没有查到既有 CNAME。按官方 Worker Custom Domain 配置 api.guidy.fun，自动管理 DNS/证书，Better Auth URL 与域名一致；固定账号/Worker/D1 guard 增加精确域名路由校验，不接受任意目标覆盖。
+- 云开发 D1 应用 0004/0005 两份已验证的增量迁移 PASS；部署版本 c01811d9-6803-4525-b3ee-5f7514eae54e，Wrangler 确认 api.guidy.fun custom domain。现有目标创建/读取/草稿编辑/暂停继续已部署；没有复制本地用户、目标或验证码。Secret 名称由现有 guard 捕获核对，不打印值/完整 secret 列表，resend-test 和 onboarding 测试 sender 保持。
+- 快速检查：backend lint/typecheck/format:check PASS；cloud guard 2 项 PASS；build:cloud dry-run PASS；db:migrate:cloud/deploy:cloud PASS。核心业务源码未改，沿用上一轮 29 项 D1/认证/版本/幂等测试，不重复无关 UI/打包检查。
+- 实际系统 HTTPS：新域名 /health GET 200 正确合同、get-session GET 200/null、me GET 401、goals GET/POST 401 且 UNAUTHORIZED 和 request_id 一致，PASS。系统网络可能经过既有代理，不将电脑结果当作手机结论。用户随后明确确认 iPhone Safari /health 可以打开且显示 ok，手机自有域名探活验收通过；没有自行发邮件、读取 OTP 或创建云端登录会话。
+- App .env.example 与忽略 .env 默认改为新 origin；.env 被 Git 忽略检查 PASS，未写入服务端 Key。新 origin 使用不同原生会话存储，需重登；本地与云端账号/数据继续独立。试图启动在线手机预览 8089 时现有进程占用，启动未完成；未强杀用户服务，指南要求在旧终端 Ctrl+C 后重启并取消旧 URL/离线环境覆盖。
+- README/数据库/云部署/邮件配置/iPhone 指南同步，文档链接、diff/暂存检查与新增配置凭据模式检查 PASS。实现 Commit：6a31518163c1fd9b4867e8a3213cfe6abd27027a。
+- TODO 单独提交后 Push origin/main 并核对远程 SHA。未验证：App 新地址实际连通、邮件接受/到达、云端登录/恢复/退出、登录后目标读写，Cloudflare 收信和 Resend 自有发信域名验证。下一步重启预览，用配置的测试邮箱真实登录，再配置独立收信/发信 DNS。
