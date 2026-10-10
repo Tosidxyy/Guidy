@@ -108,6 +108,7 @@ export default function GoalDetail() {
           <AppText>已保存的条件 · 来自你</AppText>
           {questions.map(item => { const saved = record.slots.find(s => s.key === item.key); return <AppText key={item.key}>{item.label}：{saved?.value.state === 'confirmed' ? saved.value.text : '暂不确定'}</AppText>; })}
         </Card>}
+        <Action label="研究资料与来源" secondary disabled={saving||loading||conflict||dirty} onPress={()=>router.push({pathname:'/goal/[id]/research',params:{id}})}/>
         {editable && <>
           <Action label="与 AI 澄清目标" secondary disabled={saving || loading || conflict || dirty} onPress={() => router.push({ pathname: '/goal/[id]/chat', params: { id } })} />
           <Action label="澄清目标与条件" secondary disabled={saving || loading || conflict || dirty} onPress={() => router.push({ pathname: '/goal/[id]/clarify', params: { id } })} />

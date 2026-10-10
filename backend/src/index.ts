@@ -1,6 +1,7 @@
 import { createAuth, isLocalHost, type AuthEnv } from "./auth.ts";
 import { goalsResponse } from "./goals.ts";
 import { slotsResponse } from "./slots.ts";
+import { researchResponse } from "./research/service.ts";
 import { dialogueResponse } from "./agent/harness.ts";
 import type { AgentEnv } from "./agent/provider.ts";
 
@@ -55,7 +56,9 @@ async function authResponse(
   const path = new URL(request.url).pathname;
   if (
     path === "/api/v1/goals" ||
-    /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:slots|messages))?$/.test(path)
+    /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:slots|messages|evidence))?$/.test(
+      path,
+    )
   ) {
     const origin = request.headers.get("Origin");
     if (
@@ -66,6 +69,8 @@ async function authResponse(
       return error(id, 403, "ORIGIN_REJECTED", "请求来源未获允许。");
     const session = await auth.api.getSession({ headers: request.headers });
     if (!session) return error(id, 401, "UNAUTHORIZED", "请重新登录。");
+    if (path.endsWith("/evidence"))
+      return researchResponse(request, env.DB!, session.user.id, id);
     if (path.endsWith("/messages"))
       return dialogueResponse(request, env.DB!, session.user.id, id, env);
     return path.endsWith("/slots")
@@ -289,17 +294,21 @@ export function createApp({
       const path = new URL(request.url).pathname;
       const isGoals =
         path === "/api/v1/goals" ||
-        /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:slots|messages))?$/.test(path);
+        /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:slots|messages|evidence))?$/.test(
+          path,
+        );
       const isAuth =
         path.startsWith("/api/auth/") || path === "/api/v1/me" || isGoals;
       const route = isAuth
         ? {
             path: isGoals
-              ? path.endsWith("/messages")
-                ? "/api/v1/goals/:id/messages"
-                : path.endsWith("/slots")
-                  ? "/api/v1/goals/:id/slots"
-                  : "/api/v1/goals/:id?"
+              ? path.endsWith("/evidence")
+                ? "/api/v1/goals/:id/evidence"
+                : path.endsWith("/messages")
+                  ? "/api/v1/goals/:id/messages"
+                  : path.endsWith("/slots")
+                    ? "/api/v1/goals/:id/slots"
+                    : "/api/v1/goals/:id?"
               : path === "/api/v1/me"
                 ? path
                 : "/api/auth/*",

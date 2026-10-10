@@ -3,6 +3,7 @@ import { apiOrigin, authClient } from '../auth/client';
 import { checkedSlots, type SavedSlot, type SlotInput } from './clarification';
 import { checkedDialogue, dialogueError, type Dialogue } from './dialogue';
 import { checkedReadiness, type Readiness } from './readiness';
+import { checkedEvidence, sourceError, type Evidence } from './research';
 
 export type AccountGoal = { id: string; title: string; description: string; timeframe_note: string; status: string; revision: number };
 export class GoalApiError extends Error {
@@ -18,7 +19,7 @@ async function request(method: 'GET' | 'POST' | 'PATCH', body?: Record<string, u
   const cancel = () => controller.abort();
   signal?.addEventListener('abort', cancel, { once: true });
   if (signal?.aborted) controller.abort();
-  const timer = setTimeout(cancel, path.endsWith('/messages') ? 30_000 : 10_000);
+  const timer = setTimeout(cancel, path.endsWith('/messages')||path.endsWith('/evidence') ? 30_000 : 10_000);
   try {
     const response = await fetch(`${apiOrigin}/api/v1/goals${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: Platform.OS === 'web' ? 'include' : 'omit', signal: controller.signal });
     const payload = await response.json();
@@ -84,4 +85,12 @@ export async function sendDialogue(id:string,body:{text:string;expected_chat_rev
   if(!/^[0-9a-f-]{36}$/.test(id))throw new Error('目标地址不正确。');
   const data=checkedDialogue(await request('POST',body,key,undefined,`/${id}/messages`));
   return {...data,goal:checkedGoal(data.goal)};
+}
+export type Research = {goal:AccountGoal;evidence:Evidence[]};
+function checkedResearch(result:Research):Research{return {goal:checkedGoal(result.goal),evidence:checkedEvidence(result.evidence)};}
+export async function getResearch(id:string,signal:AbortSignal):Promise<Research>{if(!/^[0-9a-f-]{36}$/.test(id))throw new Error('目标地址不正确。');return checkedResearch(await request('GET',undefined,undefined,signal,`/${id}/evidence`));}
+export async function addSource(id:string,body:{url:string;claim:string;caveat:string;expected_revision:number},key:string):Promise<Research>{
+  if(!/^[0-9a-f-]{36}$/.test(id))throw new Error('目标地址不正确。');
+  try{return checkedResearch(await request('POST',body,key,undefined,`/${id}/evidence`));}
+  catch(error){if(error instanceof GoalApiError&&error.code.startsWith('SOURCE_'))throw new Error(sourceError(error.code));throw error;}
 }
