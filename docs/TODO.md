@@ -88,6 +88,7 @@
 
 ### M1-B 可恢复研究与结构化计划
 
+- [x] 首批来源准备：独立网页 ResearchProvider、精确官网HTTPS白名单、大小/超时/跳转/类型限制；用户指定来源与待核对问题，D1保存短摘录/访问时间/限制/unverified，Goal内恢复/失败明确重试。（本地真实D1+受控UI、电脑实际公开网页读取通过并部署；不是自动搜索/事实核验或后台研究Job，iPhone云端来源读取仍待验收。）
 - [ ] 实现搜索/网页提取 Provider 抽象；保存来源 URL、获取时间、适用条件、未知项。
 - [ ] 增加外部网页不可信输入隔离与 SSRF/超时/重定向限制。
 - [ ] 使用 TypeScript Agent Provider 生成 `PlanDraft`，按运行时 Schema 与领域规则两次校验。
@@ -651,3 +652,16 @@ flowchart TD
 - 云端 deploy:cloud PASS，版本7fbdfd83-37c4-45b7-bd77-3848f61f9046；health 200/data.status=ok、slots匿名401/UNAUTHORIZED PASS。无真实模型调用或密钥/验证码输出；云端认证成功进度和新 iPhone 显示尚待用户体验，不扩大既有真机反馈。
 - 文档AI_HARNESS/预览指南、链接、diff/暂存范围检查 PASS；实现 Commit：9e2120482c5872e91a6ccf60e30db0d962285d1c。TODO 单独提交后 push origin/main 并核对远程 SHA。
 - 下一步接研究 Provider/来源与可恢复 Job，再生成带依据的 PlanDraft；语义重复、完整 Slot/领域安全、排程与通知仍未完成。专项真机/大字体/VoiceOver保持未验证，不勾选完整M1。
+
+### 2026-10-10 — 来源准备 / 有限网页读取与私人存档
+
+- Scope：目标详情进入研究资料与来源，用户提供有限官网URL/待核对问题/可选限制；服务端单次短网页读取，保存/恢复来源与失败状态。没有自动搜索、后台研究、LLM事实核验或PlanDraft，不将网页读取伪装成研究完成。参考黑白原型03-plan-detail卡片/徽标与设计系统，来源表单复用独立键盘底栏，导航/品牌不变。
+- 新0008 research_evidence：goal/owner复合FK、唯一账号请求键、目标版本、URL/问题/限制、fetching/available/failed、固定unverified、标题/摘录/访问时间/lease；available必须有时间/非空摘录，其余无摘录。Goal删除级联，原始HTML不存，不修改Goal/Slot/计划/日历。新增迁移本地dev/test/云开发应用PASS，旧迁移未改；CHECK在首次应用前加入，最终真实D1针对性复测通过。
+- Provider：仅British Council LearnEnglish/NHS/WHO/AAD精确HTTPS域名，拒绝其他域名/IP/子域伪装/凭据/非默认端口/查询；依赖有限官方域名DNS管理，不冒充任意公网DNS/IP SSRF防护。GET/redirect manual、不转发用户cookie或Key；仅HTML，正文256KiB、10秒、标题160/摘录1200。网页指令作为普通不可信文字显示，本轮不送LLM，不执行脚本/外部工具。
+- API GET/POST evidence验证会话与owner；POST expected_revision+Idempotency-Key原子占用，仅draft，同Goal一条fetching；每Goal20条尝试、账号每日20/全局50（UTC含失败），lease30秒。相同键运行202/结束200，不重复读取；不同内容409，完成时版本变更拒绝旧摘录，过期GET结算失败不自动重试。失败输入/记录保留，填回后新键明确重试；旧版本来源标明需重新核对。
+- 快速检查：backend typecheck/lint/format、npm test49项、build:cloud PASS；新增URL/私网/伪域/凭据/跳转/文件/过大边界、真实D1并发/幂等/owner/旧版本/核心表不变，最终CHECK/级联针对性1项PASS。首次控制字符regex lint失败、旧表清单断言未包含新表，修正后全部复测通过。入口修改初次路径误用未编辑成功，改为精确patch并复核diff。
+- mobile typecheck/lint、test:ui-state16项、export:ios PASS；改为独立底栏后一次lint进程异常退出，重跑完整前端检查通过，不记异常为通过。响应拒绝verified/不合规链接/available无时间摘录，owner+Goal输入隔离，离页读取取消和旧响应丢弃。
+- Browser plugin not available，沿用前端调试/React最佳实践：Playwright/Edge真实本地登录/目标+受控来源响应，私网URL实际422、成功未核实/Reload、失败保留输入/状态、320×480底栏可见PASS；原聊天/退出回归PASS，0意外错误/警告、预期400/422/502。旧8090预览超时，核对Guidy进程后重启；刚启动未Ready时连接拒绝，监听确认后重测通过。脚本/截图仓库外，仅清理生成QA账号。
+- 电脑实际Provider读取British Council present-simple公开页成功：title29/excerpt1200字符，10秒限制内；无凭据/个人数据，不当作事实核验或真实云Worker获取成功。云0008迁移/deploy PASS，版本1a1ab796-49ee-4fb3-8193-c16502307962，health正常；evidence匿名GET401，初次POST检查不符未留原始正文，再独立核对GET/POST均401/UNAUTHORIZED PASS，原因未复现。
+- 文档来源说明/架构/数据库/UI/预览、链接、diff/暂存范围PASS；实现Commit：8ed5c12bf8633fd867fcbc0c6380e08d8844dd39。TODO单独提交后push origin/main并核对远程SHA。
+- 未验证：iPhone新增表单键盘/来源读取保存、真实云Worker供应商访问、VoiceOver/大字体。来源生命周期/删除接口、自动搜索、持久Job与消费者、事实支撑claim/时效核验、PlanDraft仍待实现；完整M1-B项目保持未勾选。下一步将来源准备接入可恢复研究任务与结构化计划，不直接开放日历执行。
