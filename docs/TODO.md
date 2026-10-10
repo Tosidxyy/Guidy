@@ -64,6 +64,7 @@
 
 ### M1-A 目标与澄清
 
+- [x] 账号目标创建/列表/单项读取：POST/GET /api/v1/goals、GET /api/v1/goals/{id}，真实会话归属、创建幂等、revision=0；App 从本机草稿提交、展示/恢复账号目标。（本地 Worker/D1 浏览器端到端通过；PATCH/暂停继续、云部署及 iPhone 真机待完成，原完整 API 项保持未完成。）
 - [x] 离线目标输入准备：一份本机草稿的创建、编辑、持久保存、首页展示和确认删除。（用户要求域名等待期间先开发内部功能；原生 SecureStore、Web localStorage，不属于账号 Goal，不自动上传；浏览器验证通过，iPhone 持久保存/键盘未验证。）
 - [ ] 创建 `goals/goal_slots/agent_messages/agent_runs/agent_jobs` 表及索引。
 - [ ] 完成 `POST/GET/PATCH /goals`，支持草稿、暂停、继续和版本号。
@@ -516,3 +517,15 @@ flowchart TD
 - Browser plugin not available，使用现有 Playwright/Edge，http://localhost:8090/goals，393×852：空输入拦截→保存→首页→Reload 恢复→编辑更新→取消删除→确认删除→Reload 无旧草稿 PASS；0 pageerror，页面标题/路由、非空和截图复核通过。浏览器认证请求受控为匿名，不代表云端认证通过；首次浏览器/服务沙箱环境与冷编译超时后复测通过。
 - 实现 Commit：bc75e951231670807ab040d0430ae8ab45932fb5。TODO 单独提交后 push origin/main 并核对远程 SHA。
 - 未验证：iPhone SecureStore 保存/重启恢复、键盘/深色/VoiceOver、大字体、真实存储失败；云端登录与域名审核仍待完成。下一步：按 M1 接入账号目标 API 和对象所有权/版本控制，再把用户确认的本机草稿保存为账号 Goal；AI 动态澄清单独实现。
+
+### 2026-10-10 — M1 小步 / 真实账号目标创建与读取
+
+- 范围：域名等待期间推进内部功能。新增 goals 创建/列表/单项读取，App 显式将本机草稿保存到当前账号；修改草稿后提交会创建另一目标，不冒充账号编辑、暂停/继续、AI 澄清或计划。
+- 迁移 0004 在现有 goals 增量添加原始描述/期望时间说明/账号范围创建键与唯一索引，已应用本地开发/测试 D1；旧迁移不改写。期望时间不擅自转为截止日期或日历。
+- 安全/一致性：身份仅取验证会话，读取附 owner；其他账号目标返回 404，伪造 owner 字段拒绝。并发 INSERT ON CONFLICT 去重，同键同内容 200、首次 201、同键不同内容 409；draft/revision=0，日志无目标文本/凭据。流式正文 4KiB 上限、显式字段和长度校验；目标跨域写请求检查 Origin。
+- App：本机先持久保存创建键，再发送；断网/重启可复用键重试，不丢输入；登录后首页独立显示账号目标，离页取消列表请求，账号切换不显示旧账号列表。当前列表最近 100 项并显示截断提示。未自动上传/清除设备草稿，未更改三 Tab 和品牌。
+- 快速检查：mobile typecheck/lint（最终无警告）、test:ui-state 9 项、export:ios PASS；backend typecheck/lint/format:check、npm test 28 项、build dry-run PASS；db:migrate/dev 与 db:migrate:test/0004 PASS。初次前端 hook 依赖警告已修正后复查。
+- Browser plugin not available，现有 Playwright/Edge：http://localhost:8090，393×852；真实本地 OTP→Worker/D1→保存目标→重复提交只一条→列表/Reload 恢复→退出/旧 cookie 401 PASS；断网模拟目标 POST 中断后保留输入→恢复重试→仍只一条 PASS。0 意外控制台错误/警告，错误验证码 400 和断网资源错误为预期。临时测试账号及其目标清理，仅操作生成的 QA 数据；截图复核未见空白/覆盖层/明显遮挡。截图/脚本置仓库外。
+- docs/DATABASE、backend README 和 iPhone 本地体验指南同步；相对文件链接、git diff --check/git diff --cached --check 和新增文件凭据模式检查 PASS。实现 Commit：bf365369b46e77737900b187f4fcbc072d11ad77。
+- TODO 独立提交后 Push origin/main，远程 SHA 与本地 HEAD 一致性在交付时核对。云 D1/Worker 没有升级，iPhone 新增保存/重启/断网与 SecureStore 尚未验证；原云网络问题继续等待 guidy.fun 激活。
+- 下一步：目标内编辑/暂停/继续与 revision 并发校验，之后接目标内澄清对话。真实 AI/研究 Provider 仍未选定，不制造 AI 回复。
