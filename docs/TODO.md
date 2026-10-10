@@ -615,3 +615,12 @@ flowchart TD
 - 云端：0007应用PASS；最终部署c57d256b-739b-40a0-bf3e-63198d7b0ff0（只读部署API再次核对最新版本），新messages GET/POST匿名401合同PASS；secret名称guard确认配置。没有在无授权会话的公网增加模型probe后门；真实DeepSeek Key有效性/回复由用户在App点击验收，已发起问题，当前无反馈，不宣称真实模型调用通过。
 - 文档AI_HARNESS/架构/预览/README、相对链接、diff/暂存范围检查PASS；实现Commit：f506c9492b9c2170272887c7aa98ccf69194a5c0。TODO单独提交后push origin/main并核对远程SHA。
 - 下一步：真实Provider验收后完善离线eval/语义重复/风险场景、待确认Slot建议和受控工具registry；agent_jobs、研究来源、PlanDraft/排程仍未实现，不提前开放执行。
+
+### 2026-10-10 — 聊天输入区 / iPhone 键盘遮挡修复
+
+- 用户反馈对话记录存在、粗略体验正常，但键盘展开遮挡输入文字；这属于用户实际体验反馈，未据此扩大为全部 Provider/条件/原生验收通过。
+- 范围仅 chat.tsx 与通用 Screen：新增可选独立 footer，聊天输入和发送/未知按钮移到滚动历史之外；保留 iOS KeyboardAvoidingView padding、底部安全区和黑白视觉。输入高度固定104、启用多行内部滚动；历史增多不再把输入区推到列表末尾。参考 02-agent-chat.png 的独立底部操作区，没有导航/品牌/后端变化。
+- 快速检查：mobile typecheck/lint PASS；test:ui-state 13 项 PASS；export:ios 首次沙箱 Hermes 临时文件写入 permission denied，正常 Windows 环境重新执行 PASS。没有修改请求/会话/AI逻辑，未重复后端测试或部署。
+- Browser plugin not available，按前端调试技能用 Playwright/Edge 与真实本地登录/目标、受控 AI 响应验证：393/320宽度×480高度，输入框及发送按钮在可视区内、长文本内部可滚动、滚动历史时输入区位置固定、无横向溢出 PASS；回复重载/失败保留输入与退出会话回归 PASS，0意外错误/警告。脚本/截图在仓库外；缩小浏览器区域不是实际 iOS 键盘模拟，不宣称真机修复验收通过。
+- 实现 Commit：a68c85889a0086fb370614f5ff1a277eb37ba49c。源码 diff/暂存范围检查 PASS；TODO 单独提交后 push origin/main 并核对远程 SHA。
+- 未验证：本轮 iPhone 键盘实际展开/收起、中文候选栏、长文本光标和大字体；保持专项验收未完成。下一步用户在 Expo Go Reload 后复核聊天输入可见性，再继续 harness 功能。
