@@ -1,4 +1,5 @@
 import { createAuth, isLocalHost, type AuthEnv } from "./auth.ts";
+import { goalsResponse } from "./goals.ts";
 
 export interface Env extends AuthEnv {
   GUIDY_CORS_ORIGINS?: string;
@@ -49,6 +50,21 @@ async function authResponse(
       : error(id, 503, "AUTH_NOT_CONFIGURED", "认证服务尚未配置。");
   }
   const path = new URL(request.url).pathname;
+  if (
+    path === "/api/v1/goals" ||
+    /^\/api\/v1\/goals\/[0-9a-f-]{36}$/.test(path)
+  ) {
+    const origin = request.headers.get("Origin");
+    if (
+      origin &&
+      origin !== new URL(env.BETTER_AUTH_URL!).origin &&
+      !origins.includes(origin)
+    )
+      return error(id, 403, "ORIGIN_REJECTED", "请求来源未获允许。");
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session) return error(id, 401, "UNAUTHORIZED", "请重新登录。");
+    return goalsResponse(request, env.DB!, session.user.id, id);
+  }
   if (path === "/api/v1/me") {
     if (request.method !== "GET")
       return error(id, 405, "METHOD_NOT_ALLOWED", "此接口不支持该请求方法。", {
@@ -264,10 +280,18 @@ export function createApp({
       const id = requestId(request.headers.get("X-Request-ID"));
       const started = performance.now();
       const path = new URL(request.url).pathname;
-      const isAuth = path.startsWith("/api/auth/") || path === "/api/v1/me";
+      const isGoals =
+        path === "/api/v1/goals" ||
+        /^\/api\/v1\/goals\/[0-9a-f-]{36}$/.test(path);
+      const isAuth =
+        path.startsWith("/api/auth/") || path === "/api/v1/me" || isGoals;
       const route = isAuth
         ? {
-            path: path === "/api/v1/me" ? path : "/api/auth/*",
+            path: isGoals
+              ? "/api/v1/goals/:id?"
+              : path === "/api/v1/me"
+                ? path
+                : "/api/auth/*",
             method: authPaths.get(path) ?? "GET",
             handle: (requestId: string) =>
               authResponse(
@@ -305,7 +329,12 @@ export function createApp({
               (h) =>
                 !(
                   isAuth
-                    ? ["x-request-id", "content-type", "expo-origin"]
+                    ? [
+                        "x-request-id",
+                        "content-type",
+                        "expo-origin",
+                        ...(isGoals ? ["idempotency-key"] : []),
+                      ]
                     : ["x-request-id"]
                 ).includes(h),
             )
@@ -317,7 +346,7 @@ export function createApp({
               headers: {
                 "Access-Control-Allow-Methods": isAuth ? "GET, POST" : "GET",
                 "Access-Control-Allow-Headers": isAuth
-                  ? "Content-Type, Expo-Origin, X-Request-ID"
+                  ? `Content-Type, Expo-Origin, X-Request-ID${isGoals ? ", Idempotency-Key" : ""}`
                   : "X-Request-ID",
               },
             });

@@ -15,3 +15,9 @@ test('blank or excessive inputs cannot create a draft', () => {
 test('corrupted or unsupported storage must not silently become empty', () => {
   for (const raw of ['bad', '{}', 'null', JSON.stringify({ ...createDraft('学习', ''), version: 2 }), JSON.stringify({ ...createDraft('学习', ''), updatedAt: 'bad' })]) assert.throws(() => parseDraft(raw));
 });
+
+test('a persisted submission key survives reload but malformed keys fail closed', () => {
+  const draft = { ...createDraft('学习', ''), submissionKey: 'goal_retry_key_001' };
+  assert.equal(parseDraft(JSON.stringify(draft)).submissionKey, draft.submissionKey);
+  assert.throws(() => parseDraft(JSON.stringify({ ...draft, submissionKey: 'invalid key' })));
+});

@@ -4,6 +4,8 @@
 
 # Guidy｜数据库设计与数据生命周期
 
+2026-10-10 内部目标开发：增量迁移 `0004_goal_input.sql` 在现有 goals 增加 `description`（最多 300 字）、`timeframe_note`（最多 80 字）和 `creation_key`。期望时间为用户原始意图，不解析为截止日期或日历事件；旧目标默认空描述/时间说明。`owner_id + creation_key` 唯一索引保证并发创建去重，同键不同内容返回 409；键绑定账号，不接受客户端指定归属。创建返回 draft/revision=0，修改和状态 API 尚未实现。当前只在本地开发/测试应用，云端尚未应用此迁移。
+
 > **版本**：v0.1 数据模型草案（2026-10-09）  
 > **状态**：M0 本地基础迁移通过；完整模型仍待后续实现和生产验证  
 > **数据库**：Cloudflare D1（SQLite 语义）；参数化 SQL + Wrangler migrations  

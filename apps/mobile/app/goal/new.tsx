@@ -4,10 +4,14 @@ import { KeyboardAvoidingView, Platform, TextInput } from 'react-native';
 import { Action, AppText, Badge, Caption, Card, Screen, styles } from '../../src/components/ui';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { createDraft } from '../../src/goals/draft';
+import type { GoalDraft } from '../../src/goals/draft';
+import { createGoal } from '../../src/goals/api';
+import { useAccount } from '../../src/auth/AuthProvider';
 import { deleteDraft, readDraft, saveDraft } from '../../src/goals/storage';
 
 export default function NewGoalScreen() {
   const { colors } = useTheme();
+  const { user } = useAccount();
   const [description, setDescription] = useState('');
   const [timeframe, setTimeframe] = useState('');
   const [ready, setReady] = useState(false);
@@ -15,6 +19,8 @@ export default function NewGoalScreen() {
   const [error, setError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [hasDraft, setHasDraft] = useState(false);
+  const [notice, setNotice] = useState('');
+  const persisted = useRef<GoalDraft | null>(null);
   const busy = useRef(false);
   useEffect(() => {
     let active = true;
@@ -23,6 +29,7 @@ export default function NewGoalScreen() {
       setDescription(draft?.description ?? '');
       setTimeframe(draft?.timeframe ?? '');
       setHasDraft(!!draft);
+      persisted.current = draft;
       setReady(true);
     }).catch(() => { if (active) setError('无法读取本机草稿，请返回后重试。原记录没有被覆盖。'); });
     return () => { active = false; };
@@ -33,6 +40,7 @@ export default function NewGoalScreen() {
     let draft;
     try { draft = createDraft(description, timeframe); }
     catch { setError('请先写下你想完成的目标。'); return; }
+    if (persisted.current?.description === draft.description && persisted.current.timeframe === draft.timeframe) draft.submissionKey = persisted.current.submissionKey;
     busy.current = true;
     setSaving(true);
     setError('');
@@ -42,6 +50,30 @@ export default function NewGoalScreen() {
     } catch {
       setError('草稿未保存成功，你的输入仍在这里，请重试。');
     } finally { busy.current = false; setSaving(false); }
+  }
+  async function submit() {
+    if (!user || !ready || busy.current) return;
+    let draft: GoalDraft;
+    try { draft = createDraft(description, timeframe); }
+    catch { setError('请先写下你想完成的目标。'); return; }
+    const previous = persisted.current;
+    draft.submissionKey = previous?.description === draft.description && previous.timeframe === draft.timeframe
+      ? previous.submissionKey
+      : undefined;
+    draft.submissionKey ??= `goal_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+    busy.current = true;
+    setSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      // Persist the key before sending; a timeout/restart can safely retry.
+      await saveDraft(draft);
+      persisted.current = draft;
+      setHasDraft(true);
+      await createGoal({ description: draft.description, timeframe: draft.timeframe }, draft.submissionKey);
+      setNotice('已保存为账号目标，可返回首页查看。本机草稿仍保留。');
+    } catch (error) { setError(error instanceof Error ? error.message : '保存失败，请重试。'); }
+    finally { busy.current = false; setSaving(false); }
   }
   async function remove() {
     if (busy.current) return;
@@ -67,7 +99,13 @@ export default function NewGoalScreen() {
           <TextInput accessibilityLabel="期望时间" placeholder="例如：三个月内；暂不确定也可以" placeholderTextColor={colors.secondary} maxLength={80} editable={ready && !saving} value={timeframe} onChangeText={setTimeframe} style={inputStyle} />
         </Card>
         {!!error && <AppText accessibilityRole="alert" accessibilityLiveRegion="polite">{error}</AppText>}
+        {!!notice && <AppText accessibilityLiveRegion="polite">{notice}</AppText>}
         <Action label={saving ? '正在保存…' : '保存草稿'} disabled={!ready || saving} onPress={save} />
+        {user ? <Card>
+          <Caption>保存到当前账号：{user.email}</Caption>
+          <Action label="保存为账号目标" disabled={!ready || saving} onPress={submit} />
+          <Caption>保存后为待澄清目标，不会生成计划或安排日历。修改输入后再次提交会创建另一目标。</Caption>
+        </Card> : <Caption>登录后可将草稿保存为账号目标；当前仍可离线保存。</Caption>}
         {hasDraft && (confirmDelete ? <Card>
           <AppText>确定删除这份本机草稿？删除后无法恢复。</AppText>
           <Action label="确认删除草稿" disabled={saving} onPress={remove} />

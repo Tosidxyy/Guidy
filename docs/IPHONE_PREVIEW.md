@@ -4,6 +4,21 @@
 
 ## 0. 确认 Expo 登录
 
+### 域名等待期间：本地账号目标体验
+
+已配置本地 Better Auth 的情况下，在项目根目录启动 `npm run backend:lan`。另开一个 PowerShell 终端，用电脑当前 Wi-Fi IPv4 替换下方示例地址（手机和电脑同一网络）：
+
+```powershell
+cd C:\Users\29035\Desktop\Guidy
+Remove-Item Env:EXPO_OFFLINE -ErrorAction SilentlyContinue
+$env:EXPO_PUBLIC_API_URL='http://192.168.10.222:8787'
+npm --prefix apps/mobile run start:go -- --port 8089 --clear
+```
+
+此环境变量只影响当前终端，不改云端地址配置。电脑/手机 Expo 账号一致后扫描新二维码；「我的 → 登录」请求验证码，通过 `npm --prefix backend run auth:inbox -- 你输入的邮箱` 在本地查看验证码，回 App 登录。随后「目标 → 创建/继续编辑本机草稿 → 保存为账号目标 → 返回目标」，应出现独立的账号目标卡。重载后列表重新从本地 Worker/D1 读取；停止后端后请求失败应保留本机草稿。账号数据属于电脑本地 D1，和云端数据库独立。账号目标现在只能创建/读取，修改草稿后再次提交会创建另一目标；AI 对话和日历尚未接入。
+
+不要用根目录 `npm run mobile -- --port ...` 转发参数：该脚本嵌套调用 npm，参数可能被内层当作配置/项目路径；使用上述直接针对 mobile 的命令。
+
 当前 iOS Expo Go 要求电脑 Expo CLI 与手机 Expo Go 登录同一个 Expo 账号；仅有账号还不够。电脑在 `apps/mobile` 运行 `npx expo whoami` 检查；未登录时运行 `npx expo login`，按官方登录流程操作。手机 Expo Go 首页右上角头像处登录同一个账号。不要在聊天或 Git 中提供密码/Token。[Expo 官方登录要求](https://expo.dev/changelog/expo-go-57-login)
 
 如果手机报 Expo CLI 未登录，先核对两端账号，再取消终端的 `EXPO_OFFLINE`，重启 Metro 后打开新的预览。离线模式用于部分本地构建检查，不作为本流程的默认手机启动方式。2026-10-09 用户在取消离线启动并重新打开后确认预览可用；这一反馈仅验证打开预览，不代表 `/health` 已真机通过。

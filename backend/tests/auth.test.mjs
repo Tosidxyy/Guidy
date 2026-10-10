@@ -89,6 +89,93 @@ async function fixture(t) {
   return { db, env, request, otp, signIn, records, app };
 }
 
+test("account goals require sessions, isolate owners and deduplicate concurrent writes", async (t) => {
+  const { request, signIn, db, records } = await fixture(t);
+  assert.equal((await request("/api/v1/goals")).status, 401);
+  const a = await signIn("goal-a@example.invalid");
+  const b = await signIn("goal-b@example.invalid");
+  const key = { "Idempotency-Key": "test-create-key-001" };
+  const input = { description: "每天练习英语", timeframe: "三个月" };
+  const responses = await Promise.all([
+    request("/api/v1/goals", input, a.cookie, key),
+    request("/api/v1/goals", input, a.cookie, key),
+  ]);
+  assert.deepEqual(responses.map((r) => r.status).sort(), [200, 201]);
+  const goal = (await responses[0].json()).data;
+  assert.equal(goal.revision, 0);
+  assert.equal(goal.status, "draft");
+  assert.equal(goal.owner_id, undefined);
+  assert.equal(
+    (await db.prepare("SELECT count(*) AS n FROM goals").first()).n,
+    1,
+  );
+  assert.equal(
+    (await request("/api/v1/goals/" + goal.id, undefined, b.cookie)).status,
+    404,
+  );
+  assert.equal(
+    (await request("/api/v1/goals/" + goal.id, undefined, a.cookie)).status,
+    200,
+  );
+  const other = await request("/api/v1/goals", undefined, b.cookie, {
+    "X-User-ID": a.body.user.id,
+  });
+  assert.deepEqual((await other.json()).data.goals, []);
+  assert.equal(
+    (
+      await request(
+        "/api/v1/goals",
+        { ...input, description: "changed" },
+        a.cookie,
+        key,
+      )
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await request(
+        "/api/v1/goals",
+        { ...input, owner_id: b.body.user.id },
+        a.cookie,
+        { "Idempotency-Key": "test-create-key-002" },
+      )
+    ).status,
+    422,
+  );
+  assert.equal((await request("/api/v1/goals", input, a.cookie)).status, 422);
+  assert.equal(
+    (
+      await request(
+        "/api/v1/goals",
+        { description: " ", timeframe: "" },
+        a.cookie,
+        key,
+      )
+    ).status,
+    422,
+  );
+  assert.equal(
+    (
+      await request("/api/v1/goals", input, a.cookie, {
+        ...key,
+        Origin: "https://untrusted.invalid",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await request("/api/v1/goals", input, b.cookie, key)).status,
+    201,
+  );
+  assert.ok(!JSON.stringify(records).includes(input.description));
+  await request("/api/auth/sign-out", {}, a.cookie);
+  assert.equal(
+    (await request("/api/v1/goals", undefined, a.cookie)).status,
+    401,
+  );
+});
+
 test("real D1 OTP login, hashed verifier, profile, recovery, logout and revoked cookie", async (t) => {
   const { db, request, otp, records } = await fixture(t);
   const email = "alpha@example.invalid";

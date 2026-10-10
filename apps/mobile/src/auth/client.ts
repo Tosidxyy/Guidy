@@ -12,6 +12,7 @@ function configuredOrigin(): string | null {
   } catch { return null; }
 }
 const origin = configuredOrigin();
+export const apiOrigin = origin;
 export const authClient = origin ? createAuthClient({
   baseURL: `${origin}/api/auth`,
   plugins: [emailOTPClient(), expoClient({ scheme: 'guidy', storagePrefix: `guidy_${origin.replace(/[^a-zA-Z0-9]/g, '_')}`, storage: SecureStore, disableCache: true })],
