@@ -52,6 +52,7 @@
 - [x] 本地真实认证链路：Better Auth/D1 OTP、登录/退出/恢复、受保护当前账号接口与身份隔离；前端替换演示账号，接官方 Expo/SecureStore。（开发收件箱由用户确认；浏览器/真实 Worker 已验收，原生新登录待确认，后续业务对象授权仍待原项。）
 - [ ] 验收新 iPhone 真实登录、完全 Reload/重启恢复、正常/断网退出与 SecureStore 行为；接入正式邮件与云端资源后完成总体认证验收。
 - [x] 实现 Resend 验证码发送适配、注册邮箱受限测试模式和动态投递提示。（模拟邮件 API + 真实临时 D1/浏览器验证通过；真实 Key/收信和云端登录未验收。）
+- [x] 配置并开启云端 resend-test，核对必需 secret 名称，验证实际匿名会话/账号拒绝，手机预览使用云 HTTPS origin。（真实收码/登录未验收。）
 - [ ] 有自有域名后配置 Cloudflare Email Routing 收信与 Resend 发信域名验证，完成真实收发与云端登录验收。（用户当前无域名。）
 - [x] 验证迁移后的 CI：后端 TypeScript/ESLint/格式/边界测试/dry-run，前端类型/lint/API 测试。（真实 GitHub jobs 已通过。）
 
@@ -493,3 +494,14 @@ flowchart TD
 - 实现提交：`ad345d63bedbb8f25659a7196186d2bb2fbbb70d`。
 - TODO 单独提交并 Push origin/main，核对远程 SHA/实际 CI，在交付回复报告。未完成：真实 Resend 接受与实际收信、云端登录/原生恢复、Cloudflare 收信及域名配置；当前不是完整收发交付。
 - 下一步：用户将 RESEND_API_KEY/GUIDY_EMAIL_TEST_TO 上传后，核对名称齐备，启用 resend-test、切换云 API 并由用户实际收码登录；有域名后再接 Cloudflare 收信和正式发送。
+
+### 2026-10-10 — M0 / 开启注册邮箱受限的云端认证
+
+- 用户确认修正 Resend 配置后，名称存在检查 PASS：RESEND_API_KEY、GUIDY_EMAIL_TEST_TO、BETTER_AUTH_SECRET 全部齐备。名称存在不等于 provider 权限/实际送达通过；未读取值或在日志重显误建凭据名称。
+- 实现：云配置从 disabled 改为 resend-test；默认公开 API 示例、忽略 .env、手机 8089 Metro 改为当前云 HTTPS origin。测试接收者仍为私密服务端配置的注册邮箱，未开放任意用户。云 D1 与本地数据继续独立，未迁移本地账号。
+- 快速检查：配置 Prettier、build:cloud dry-run、cloud-dev 参数边界测试 → PASS（1 项）；部署 guard 核对 secret 名称后 deploy:cloud → PASS，启用部署版本 cf29a442-e33b-463c-9a03-7379251ec8f8。随后清理 1 个未被代码使用的错误凭据名称绑定，复核正确三项保留；不声称已撤销 Resend 平台旧 Key。
+- 实际 HTTPS：/health 200、/api/auth/get-session 200 且 body 为 null、/api/v1/me 401 且 UNAUTHORIZED envelope → PASS。没有发送邮件、读取明码 OTP/邮箱或生成测试登录会话。请求发送邮箱的信息为可选用户输入，尚未收到，所以真实发信/收码保持未验证。
+- 手机准备：当前 WLAN 地址与 8089 端口检查，在线 Expo Go --clear 启动至 Waiting，使用云 API；只将公开 URL 写入忽略 .env，没有服务端 Key 进入客户端。浏览器/原生源码未改，本轮未重复类型/lint/资源导出及既有认证回归。
+- 文档相对链接、配置/暂存范围与 git diff --check/git diff --cached --check → PASS。实现提交：`62ef9c0cf13b2c672069a00017ffc87629e06781`。
+- TODO 单独提交后 Push origin/main，核验远程 SHA/实际 CI，在交付回复报告；不为记录 CI 额外重复提交。
+- 未完成：API Key 真实有效性、邮件接受/最终到达、iPhone 收码登录/重启恢复/退出、Cloudflare 自有域名收信与正式发送。下一步由用户在云预览「我的 → 登录」输入 Resend 注册邮箱请求真实验证码。
