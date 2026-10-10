@@ -43,6 +43,7 @@
 
 ### M0-B 后端/数据基础
 
+- [x] 修复 Expo Go 云登录来源与 workerd 发信参数，真实云端验证码请求 200/email，用户确认测试邮件收到。（精确私网预览白名单、非 2xx 拒绝、安全错误分类；App 输入验证码/登录恢复仍未验收，正式自有域名邮件未配置。）
 - [x] 绑定自有 API 域名 api.guidy.fun，云开发 D1 升级到 0005 并部署目标创建/详情编辑服务，App 默认 origin 切换。（电脑 HTTPS/匿名拒绝验证通过；用户确认 iPhone Safari /health 显示 ok，App 收码登录/目标写入仍未验证。）
 - [x] 初始化 TypeScript Worker、Wrangler、类型/ESLint/格式检查与有效边界测试。（D1 与 Auth 仍在下方待办。）
 - [x] 实现 `/health`、统一错误格式、request_id 和服务端日志脱敏。
@@ -552,3 +553,15 @@ flowchart TD
 - App .env.example 与忽略 .env 默认改为新 origin；.env 被 Git 忽略检查 PASS，未写入服务端 Key。新 origin 使用不同原生会话存储，需重登；本地与云端账号/数据继续独立。试图启动在线手机预览 8089 时现有进程占用，启动未完成；未强杀用户服务，指南要求在旧终端 Ctrl+C 后重启并取消旧 URL/离线环境覆盖。
 - README/数据库/云部署/邮件配置/iPhone 指南同步，文档链接、diff/暂存检查与新增配置凭据模式检查 PASS。实现 Commit：6a31518163c1fd9b4867e8a3213cfe6abd27027a。
 - TODO 单独提交后 Push origin/main 并核对远程 SHA。未验证：App 新地址实际连通、邮件接受/到达、云端登录/恢复/退出、登录后目标读写，Cloudflare 收信和 Resend 自有发信域名验证。下一步重启预览，用配置的测试邮箱真实登录，再配置独立收信/发信 DNS。
+
+### 2026-10-10 — 云端验证码故障 / Expo Go 与真实 Worker 发信
+
+- 用户确认 App 实际邮箱拼写正确，先前聊天拼写不可当作 App 输入事实。本轮用用户提供的正确测试邮箱复现，未打印/读取 OTP，未更换现有 Resend Key。
+- 根因一：SDK 在 Expo Go 发送 exp:// 来源，后端只配正式 guidy://，实际 403 INVALID_ORIGIN 被客户端泛化。新增可选 GUIDY_EXPO_PREVIEW_ORIGINS：最多四个明确私网主机+端口，仅 local-inbox/resend-test；通配符/公网/生产 resend 非空配置拒绝。当前电脑两个预览端口独立上传 cloud secret，具体预览值不写入 Git；没有关闭 origin/CORS/会话验证。
+- 根因二：真实 workerd 不接受 redirect:error，邮件 fetch 在发出前 TypeError，Node mock 未覆盖。新增真实 Miniflare/workerd 默认 transport 测试，首次复现 500；使用纯假 Key/邮箱的仓库外诊断获取运行时错误后改为 manual，所有非 2xx（包括跳转）仍拒绝，不转发 Authorization。最终真实 runtime 测试通过。
+- 邮件状态细分为固定安全代码，供应商正文和异常原文不返回；HTTP callback 投递状态继续防止失败假成功。API Key 首尾空白去除，内部空白/非 ASCII 拒绝，不读取或输出真实云 Key。客户端显示来源、凭据、拒绝、限流、超时等具体提示。
+- 快速检查：backend typecheck/lint/format:check、npm test 34 项、build:cloud/deploy:cloud PASS；mobile typecheck/lint PASS。第一版 TS 参数属性被 Node strip-only 拒绝，改为普通字段后复测；真实 workerd 初次测试失败后修正参数，未将失败记为通过。核心业务无迁移变化，本轮未重复 iOS 导出。
+- 浏览器：Browser plugin not available，现有 Playwright/Edge localhost:8090、393×852；控制邮件成功/502 凭据错误响应，提示正确、邮箱保留、失败不进入验证码页 PASS，0 pageerror、1 预期 502 资源错误；这是受控 UI 验证，不当作实际邮件证据。截图/测试脚本在仓库外。
+- 云端：最终部署版本 400f246d-c508-4b7c-a741-9ed0a8286b28。部署完成后实际 Expo Go 来源请求返回 200 / delivery=email，用户随后明确确认收到邮件；已验证真实受限测试投递，不代表 App 登录、恢复或目标写入。中间版本诊断仍失败，部署未完成时的请求不当作最终结果。Resend 插件仅只读查看请求元数据，未获取邮件正文。
+- 文档链接、diff/暂存检查及修改范围 PASS。实现 Commit：e4ab7d36085599072b769e8babd50f30a967e30a。TODO 单独提交后 Push origin/main 并核对远程 SHA。
+- 未验证：iPhone 最新 UI 错误提示、输入验证码成功登录、原生恢复/退出和云目标写入；正式邮件域名/Cloudflare 收信仍待配置。下一步用户 Reload 后重新获取验证码，用最新邮件码登录，不在聊天发送验证码。
