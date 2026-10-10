@@ -5,11 +5,12 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-09",
   "workers_dev": true,
+  "routes": [{ "pattern": "api.guidy.fun", "custom_domain": true }],
   "observability": { "enabled": false },
   "vars": {
     "GUIDY_CORS_ORIGINS": "[]",
     "GUIDY_AUTH_MODE": "resend-test",
-    "BETTER_AUTH_URL": "https://guidy-api-development.guidy-backend.workers.dev",
+    "BETTER_AUTH_URL": "https://api.guidy.fun",
     "GUIDY_EMAIL_FROM": "onboarding@resend.dev"
   },
   "d1_databases": [

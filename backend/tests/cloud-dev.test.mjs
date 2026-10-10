@@ -3,6 +3,20 @@ import { spawnSync } from "node:child_process";
 import process from "node:process";
 import { test } from "node:test";
 import { fileURLToPath, URL } from "node:url";
+import { readFileSync } from "node:fs";
+
+test("cloud origin and exact custom domain share the expected development target", () => {
+  const config = JSON.parse(
+    readFileSync(new URL("../wrangler.cloud.json", import.meta.url), "utf8"),
+  );
+  assert.deepEqual(config.routes, [
+    { pattern: "api.guidy.fun", custom_domain: true },
+  ]);
+  assert.equal(config.vars.BETTER_AUTH_URL, "https://api.guidy.fun");
+  assert.equal(config.name, "guidy-api-development");
+  assert.equal(config.vars.GUIDY_AUTH_MODE, "resend-test");
+  assert.equal(config.d1_databases[0].database_name, "guidy-development");
+});
 
 test("cloud wrapper rejects target overrides and unsupported operations before invoking Wrangler", () => {
   const script = fileURLToPath(

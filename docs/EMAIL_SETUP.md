@@ -1,6 +1,6 @@
 # Guidy · Cloudflare 收信 / Resend 发信
 
-2026-10-10 用户选定：Cloudflare Email Routing 负责自有域名收信/转发，Resend 负责验证码发送。Worker/D1 继续在 Cloudflare。当前尚无自有域名；先用 Resend 的测试发件地址，只发给 Resend 注册邮箱。Cloudflare 收信暂待域名，不能将该方案说明当成已完成 DNS/收信配置。
+2026-10-10 用户选定：Cloudflare Email Routing 负责自有域名收信/转发，Resend 负责验证码发送。Worker/D1 继续在 Cloudflare。guidy.fun 已购买并激活，api.guidy.fun 已绑定；仍先用 Resend 的测试发件地址，只发给 Resend 注册邮箱。Cloudflare 收信与 Resend 发信域名验证尚未配置，不能将 API 域名激活当成已完成邮件 DNS/收信配置。
 
 ## 先准备 Resend 测试发信
 

@@ -1,5 +1,18 @@
 # Guidy · iPhone 与本地 Worker 联通
 
+## 当前云端预览（api.guidy.fun）
+
+2026-10-10 用户确认 iPhone Safari [云端 /health](https://api.guidy.fun/health) 显示 ok。App 默认公开地址现在为 https://api.guidy.fun；若终端此前设置过本地 EXPO_PUBLIC_API_URL，先移除覆盖项并重启预览：
+
+```powershell
+cd C:\Users\29035\Desktop\Guidy
+Remove-Item Env:EXPO_PUBLIC_API_URL -ErrorAction SilentlyContinue
+Remove-Item Env:EXPO_OFFLINE -ErrorAction SilentlyContinue
+npm --prefix apps/mobile run start:go -- --port 8089 --clear
+```
+
+如该端口已有旧 Metro，先在旧终端 Ctrl+C 再启动。电脑/手机同 Wi-Fi、Expo 账号一致后扫描新二维码。新 API origin 使用独立原生会话存储，需重新登录；本地开发账号/目标不会自动复制到云端。「我的 → 连接状态」应显示服务可用，再用已配置的 Resend 测试邮箱登录。「目标」可保存/查看账号目标及编辑/暂停草稿。云端仍 resend-test，其他邮箱不开放；本轮仅手机 Safari 连通确认，App 登录/收码/目标写入验收仍待完成。
+
 本流程仅验证 Expo Go 预览和公开 `/health`。接口可用不代表登录、D1、云部署或业务同步完成。Windows 与 iPhone 必须位于可相互访问的同一局域网；访客 Wi-Fi、设备隔离或 VPN 路由可能阻断连接。
 
 ## 0. 确认 Expo 登录

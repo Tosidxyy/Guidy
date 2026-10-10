@@ -19,6 +19,9 @@ if (
   config.d1_databases[0].database_name !== "guidy-development" ||
   config.d1_databases[0].database_id !==
     "6c77640e-763f-46d7-ac5a-ae383cf540e5" ||
+  config.routes?.length !== 1 ||
+  config.routes[0].pattern !== "api.guidy.fun" ||
+  config.routes[0].custom_domain !== true ||
   !["disabled", "resend-test", "resend"].includes(config.vars.GUIDY_AUTH_MODE)
 ) {
   throw new Error(
@@ -27,8 +30,7 @@ if (
 }
 if (
   config.vars.GUIDY_AUTH_MODE !== "disabled" &&
-  (config.vars.BETTER_AUTH_URL !==
-    "https://guidy-api-development.guidy-backend.workers.dev" ||
+  (config.vars.BETTER_AUTH_URL !== "https://api.guidy.fun" ||
     !config.vars.GUIDY_EMAIL_FROM)
 )
   throw new Error("Cloud auth origin/sender must be configured");
