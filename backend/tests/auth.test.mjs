@@ -89,6 +89,89 @@ async function fixture(t) {
   return { db, env, request, otp, signIn, records, app };
 }
 
+test("Expo Go preview origins are explicit, private and disabled for production mail mode", async (t) => {
+  const { app, env, db } = await fixture(t);
+  const configured = {
+    ...env,
+    GUIDY_EXPO_PREVIEW_ORIGINS: '["exp://192.168.1.55:8089"]',
+  };
+  const native = (path, body, origin, settings = configured) =>
+    app.fetch(
+      new globalThis.Request("http://127.0.0.1:8787" + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "expo-origin": origin },
+        body: JSON.stringify(body),
+      }),
+      settings,
+    );
+  const body = { email: "preview@example.invalid", type: "sign-in" };
+  assert.equal(
+    (
+      await native(
+        "/api/auth/email-otp/send-verification-otp",
+        body,
+        "exp://192.168.1.55:8089",
+        env,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await native(
+        "/api/auth/email-otp/send-verification-otp",
+        body,
+        "exp://192.168.1.55:8089",
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await native(
+        "/api/auth/email-otp/send-verification-otp",
+        body,
+        "exp://192.168.1.56:8089",
+      )
+    ).status,
+    403,
+  );
+  const code = (
+    await db
+      .prepare("SELECT otp FROM dev_auth_inbox WHERE email=?")
+      .bind(body.email)
+      .first()
+  ).otp;
+  assert.equal(
+    (
+      await native(
+        "/api/auth/sign-in/email-otp",
+        { email: body.email, otp: code },
+        "exp://192.168.1.55:8089/--/",
+      )
+    ).status,
+    200,
+  );
+  for (const value of [
+    '["exp://"]',
+    '["exp://**"]',
+    '["exp://public.invalid:8089"]',
+    '["https://192.168.1.55:8089"]',
+    '["exp://192.168.1.55:8089?x=y"]',
+  ])
+    assert.throws(() =>
+      createAuth({ ...env, GUIDY_EXPO_PREVIEW_ORIGINS: value }),
+    );
+  assert.throws(() =>
+    createAuth({
+      ...configured,
+      GUIDY_AUTH_MODE: "resend",
+      RESEND_API_KEY: "test-key",
+      GUIDY_EMAIL_FROM: "noreply@verified.invalid",
+    }),
+  );
+});
+
 test("goal edits atomically record results, reject stale versions and preserve ownership", async (t) => {
   const { request, signIn, db, app, env } = await fixture(t);
   const a = await signIn("edit-a@example.invalid");
@@ -563,7 +646,7 @@ test("failed email returns an error, never a delivered state or plaintext mailbo
   );
   assert.equal(response.status, 502);
   const result = await response.text();
-  assert.ok(result.includes("OTP_DELIVERY_FAILED"));
+  assert.ok(result.includes("EMAIL_PROVIDER_REJECTED"));
   assert.ok(!result.includes("private-provider"));
   assert.equal(
     (await db.prepare("SELECT COUNT(*) AS n FROM dev_auth_inbox").first()).n,

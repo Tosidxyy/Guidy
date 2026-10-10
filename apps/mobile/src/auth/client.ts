@@ -41,6 +41,13 @@ export async function signOutConfirmed() {
 }
 
 export function authMessage(code: string | undefined): string {
+  if (code === 'INVALID_ORIGIN') return '开发预览的登录来源未获允许，请更新后端预览配置后重试。';
+  if (code === 'EMAIL_PROVIDER_AUTH_FAILED') return '邮件服务凭据无效，请先更新服务端发信配置。';
+  if (code === 'EMAIL_PROVIDER_REJECTED') return '邮件服务拒绝发送，请检查测试邮箱、发信权限和域名配置。';
+  if (code === 'EMAIL_PROVIDER_RATE_LIMITED') return '邮件发送过于频繁，请稍后重试。';
+  if (code === 'EMAIL_PROVIDER_INVALID_REQUEST' || code === 'EMAIL_PROVIDER_INVALID_RESPONSE') return '邮件服务配置或响应不正确，请检查服务端发信配置。';
+  if (code === 'EMAIL_PROVIDER_RUNTIME_ERROR') return '邮件发送运行异常，请更新服务端后重试。';
+  if (code === 'EMAIL_PROVIDER_UNAVAILABLE' || code === 'EMAIL_PROVIDER_TIMEOUT') return '邮件服务暂时不可用，请稍后重试。';
   if (code === 'OTP_DELIVERY_FAILED') return '验证码邮件发送失败，请稍后重试。';
   if (code === 'TEST_RECIPIENT_ONLY') return '当前服务仅支持已配置的测试收件邮箱。';
   if (code?.includes('EXPIRED')) return '验证码已过期，请重新获取。';

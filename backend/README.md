@@ -1,5 +1,7 @@
 # Guidy backend · Cloudflare TypeScript
 
+Expo Go 认证预览需可选 GUIDY_EXPO_PREVIEW_ORIGINS JSON 白名单（仅明确的 exp:// 私有主机+端口，最多四项）；只允许 local-inbox/resend-test，正式 resend 配置不得保留非空预览白名单。云端以独立 secret 配置，不改变 CORS 或关闭 origin 验证。邮件发送错误返回固定分类而不回显提供方正文/异常原文；真实发送成功须实测，参见 [邮件配置](../docs/EMAIL_SETUP.md)。
+
 目标编辑：`PATCH /api/v1/goals/{id}` 需要会话、Idempotency-Key 和 JSON `{description,timeframe,status,expected_revision}`。status 仅 draft/paused，只有当前 draft/paused 且无生效计划可编辑；每次成功修改 revision + 1。返回 200；版本冲突/同键不同内容 409、非法字段 422、其他账号对象 404。重复提交重放当次回执，即使随后目标已有其他修改也不再次写入。本地与云开发 D1 已应用迁移 0005；后续 Agent/计划相关状态的暂停恢复需另行实现，不开放强制改为 draft。
 
 内部目标功能（本地已验证并部署到云开发环境）：`GET /api/v1/goals` 返回当前账号最近 100 个目标及 `has_more`；`GET /api/v1/goals/{id}` 仅返回本人目标，不存在/其他账号返回 404。`POST /api/v1/goals` 必须有已验证会话、JSON `{description,timeframe}` 和 8–128 位字母/数字/短横线/下划线 `Idempotency-Key`；description 1–300 字，timeframe 0–80 字。首次 201，同键同内容 200 并返回同目标，同键不同内容 409。所有业务响应使用 data/error/request_id 合同。状态固定 draft、revision=0；期望时间仅为说明，未转为截止日期/计划。本地与云开发 D1 已应用 0004，当前云 API 为 https://api.guidy.fun；云端登录后的目标写入仍待验证。

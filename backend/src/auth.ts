@@ -3,13 +3,45 @@ import { emailOTP } from "better-auth/plugins/email-otp";
 import { expo } from "@better-auth/expo";
 import type { D1Database } from "@cloudflare/workers-types";
 import { APIError } from "better-auth/api";
-import { sendOtpEmail, validEmail, type EmailEnv } from "./email.ts";
+import {
+  EmailDeliveryError,
+  sendOtpEmail,
+  validEmail,
+  type EmailEnv,
+} from "./email.ts";
 
 export interface AuthEnv extends EmailEnv {
   DB?: D1Database;
   BETTER_AUTH_SECRET?: string;
   BETTER_AUTH_URL?: string;
   GUIDY_AUTH_MODE?: string;
+  GUIDY_EXPO_PREVIEW_ORIGINS?: string;
+}
+
+function previewOrigins(env: AuthEnv): string[] {
+  const value: unknown = JSON.parse(env.GUIDY_EXPO_PREVIEW_ORIGINS ?? "[]");
+  if (
+    !Array.isArray(value) ||
+    value.length > 4 ||
+    (value.length && env.GUIDY_AUTH_MODE === "resend")
+  )
+    throw new Error("Invalid preview origins");
+  return value.map((item: unknown) => {
+    if (typeof item !== "string") throw new Error("Invalid preview origin");
+    const url = new URL(item);
+    if (
+      url.protocol !== "exp:" ||
+      !isLocalHost(url.hostname) ||
+      !url.port ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      !["", "/"].includes(url.pathname)
+    )
+      throw new Error("Invalid preview origin");
+    return `exp://${url.host}`;
+  });
 }
 
 export function isLocalHost(host: string): boolean {
@@ -69,7 +101,10 @@ export function createAuth(env: AuthEnv, origins: string[] = []) {
   }
   const db = env.DB;
   // Better Auth suppresses callback errors; the HTTP boundary must check delivery.
-  const deliveryState: { status: "none" | "accepted" | "failed" } = {
+  const deliveryState: {
+    status: "none" | "accepted" | "failed";
+    code?: string;
+  } = {
     status: "none",
   };
   const auth = betterAuth({
@@ -78,7 +113,12 @@ export function createAuth(env: AuthEnv, origins: string[] = []) {
     secret: env.BETTER_AUTH_SECRET,
     baseURL: base.origin,
     basePath: "/api/auth",
-    trustedOrigins: [base.origin, "guidy://", ...origins],
+    trustedOrigins: [
+      base.origin,
+      "guidy://",
+      ...origins,
+      ...previewOrigins(env),
+    ],
     logger: { disabled: true },
     advanced: {
       database: { generateId: "uuid" },
@@ -128,8 +168,12 @@ export function createAuth(env: AuthEnv, origins: string[] = []) {
             try {
               await sendOtpEmail(env, email, otp);
               deliveryState.status = "accepted";
-            } catch {
+            } catch (err) {
               deliveryState.status = "failed";
+              deliveryState.code =
+                err instanceof EmailDeliveryError
+                  ? err.code
+                  : "OTP_DELIVERY_FAILED";
               throw new APIError("BAD_GATEWAY", {
                 code: "OTP_DELIVERY_FAILED",
                 message: "验证码邮件发送失败，请稍后重试。",

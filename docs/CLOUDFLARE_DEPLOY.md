@@ -1,5 +1,7 @@
 # Guidy · Cloudflare 开发环境
 
+最新认证修复版本：`400f246d-c508-4b7c-a741-9ed0a8286b28`。已配置独立、精确的 Expo Go 私网来源白名单；真实验证码请求 200 / delivery=email，用户确认测试邮件收到。此前域名部署版本和 readiness 检查为历史记录；App 内成功登录、重启恢复和目标写入仍待验收。测试 sender/收件邮箱限制继续保留，未开放正式自有域名发信。
+
 2026-10-10 已创建独立云开发资源并开启 resend-test，只允许私密配置的 Resend 注册邮箱。guidy.fun 已激活，现有 Worker 已绑定 api.guidy.fun；电脑 HTTPS 合同检查通过，用户确认 iPhone Safari /health 显示 ok。真实收码和完整登录仍待验证；本地 D1/开发收件箱保持独立，不把测试模式当作正式开放邮件或完整认证验收。
 
 ## 已创建的资源

@@ -3,6 +3,13 @@ export interface EmailEnv {
   GUIDY_EMAIL_FROM?: string;
   GUIDY_EMAIL_TEST_TO?: string;
 }
+export class EmailDeliveryError extends Error {
+  readonly code: string;
+  constructor(code: string = "OTP_DELIVERY_FAILED") {
+    super("OTP email delivery failed");
+    this.code = code;
+  }
+}
 export function validEmail(value: string): boolean {
   return value.length <= 254 && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(value);
 }
@@ -10,7 +17,7 @@ export async function sendOtpEmail(
   env: EmailEnv,
   email: string,
   otp: string,
-  fetcher: typeof fetch = fetch,
+  fetcher: typeof fetch = (...args) => fetch(...args),
 ): Promise<void> {
   if (
     !env.RESEND_API_KEY ||
@@ -20,15 +27,20 @@ export async function sendOtpEmail(
     !/^\d{6}$/.test(otp)
   )
     throw new Error("Email not configured");
+  const key = env.RESEND_API_KEY.trim();
+  if (!key || /[^\x21-\x7e]/.test(key))
+    throw new EmailDeliveryError("EMAIL_PROVIDER_AUTH_FAILED");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
+  let received = false;
   try {
     const response = await fetcher("https://api.resend.com/emails", {
       method: "POST",
       signal: controller.signal,
-      redirect: "error",
+      // workerd supports follow/manual only. Non-2xx (including redirects) fail below.
+      redirect: "manual",
       headers: {
-        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
         "Idempotency-Key": `guidy-otp-${crypto.randomUUID()}`,
       },
@@ -39,7 +51,21 @@ export async function sendOtpEmail(
         text: `你的登录验证码是 ${otp}，5 分钟内有效。请勿分享验证码。如果不是你本人操作，请忽略本邮件。\n\nGuidy · Chat & Do It.`,
       }),
     });
-    if (!response.ok) throw new Error("Delivery rejected");
+    received = true;
+    if (!response.ok) {
+      // Classify status only. Provider bodies can contain credentials and addresses.
+      const code =
+        response.status === 401
+          ? "EMAIL_PROVIDER_AUTH_FAILED"
+          : response.status === 403
+            ? "EMAIL_PROVIDER_REJECTED"
+            : response.status === 429
+              ? "EMAIL_PROVIDER_RATE_LIMITED"
+              : response.status >= 500
+                ? "EMAIL_PROVIDER_UNAVAILABLE"
+                : "EMAIL_PROVIDER_INVALID_REQUEST";
+      throw new EmailDeliveryError(code);
+    }
     const result: unknown = await response.json();
     if (
       !result ||
@@ -49,9 +75,23 @@ export async function sendOtpEmail(
       !result.id
     )
       throw new Error("Invalid delivery response");
-  } catch {
+  } catch (err) {
     // Provider response bodies may contain addresses, credentials or message content.
-    throw new Error("OTP email delivery failed");
+    if (err instanceof EmailDeliveryError) throw err;
+    const runtimeFailure =
+      err instanceof Error &&
+      /illegal invocation|incorrect this|different request|outside.*request/i.test(
+        err.message,
+      );
+    throw new EmailDeliveryError(
+      controller.signal.aborted
+        ? "EMAIL_PROVIDER_TIMEOUT"
+        : received
+          ? "EMAIL_PROVIDER_INVALID_RESPONSE"
+          : runtimeFailure
+            ? "EMAIL_PROVIDER_RUNTIME_ERROR"
+            : "EMAIL_PROVIDER_UNAVAILABLE",
+    );
   } finally {
     clearTimeout(timer);
   }

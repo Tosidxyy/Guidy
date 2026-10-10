@@ -157,7 +157,7 @@ async function authResponse(
   ) {
     return json(
       {
-        code: "OTP_DELIVERY_FAILED",
+        code: auth.deliveryState.code ?? "OTP_DELIVERY_FAILED",
         message: "验证码发送未确认，请稍后重试。",
       },
       502,
