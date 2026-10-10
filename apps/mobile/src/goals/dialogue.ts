@@ -1,6 +1,8 @@
 import type { AccountGoal } from './api';
-export type DialogueReply = { schema_version: 1; kind: 'question'|'referral'; question: string; reason: string; source: 'deepseek'|'policy' };
-export type DialogueRun = { id:string;turn_index:number;user_text:string;status:'running'|'succeeded'|'failed';reply:DialogueReply|null;error_code:string|null };
+import type { SlotInput } from './clarification';
+export type SlotSuggestion = { key: SlotInput['key']; text: string; evidence: string };
+export type DialogueReply = { schema_version: 1; kind: 'question'|'referral'; question: string; reason: string; source: 'deepseek'|'policy'; suggestions?: SlotSuggestion[] };
+export type DialogueRun = { id:string;turn_index:number;user_text:string;status:'running'|'succeeded'|'failed';reply:DialogueReply|null;error_code:string|null;goal_revision?:number };
 export type Dialogue = { goal:AccountGoal;chat_revision:number;runs:DialogueRun[] };
 export function checkedDialogue(value: Dialogue): Dialogue {
   if(!value||!Number.isSafeInteger(value.chat_revision)||value.chat_revision<0||!Array.isArray(value.runs)||value.runs.length>30)throw new Error('对话响应格式不正确。');
@@ -9,9 +11,22 @@ export function checkedDialogue(value: Dialogue): Dialogue {
     if(run.status==='succeeded'){
       const r=run.reply;
       if(!r||r.schema_version!==1||!['question','referral'].includes(r.kind)||!['deepseek','policy'].includes(r.source)||typeof r.question!=='string'||!r.question.trim()||r.question.length>240||typeof r.reason!=='string'||r.reason.length>160||(r.kind==='question'?r.source!=='deepseek':r.source!=='policy'))throw new Error('AI 回复未通过校验。');
+      if(r.suggestions!==undefined){
+        if(r.source!=='deepseek'||!Array.isArray(r.suggestions)||r.suggestions.length>3)throw new Error('条件建议格式不正确。');
+        const seen=new Set<string>();
+        for(const s of r.suggestions){
+          if(!s||!['outcome','available_time','constraints'].includes(s.key)||seen.has(s.key)||typeof s.text!=='string'||!s.text.trim()||s.text!==s.text.trim()||s.text.length>300||s.evidence!==s.text||!run.user_text.includes(s.evidence))throw new Error('条件建议缺少有效原文依据。');
+          seen.add(s.key);
+        }
+      }
     }else if(run.reply!==null)throw new Error('对话状态不正确。');
   }
   return value;
+}
+export function reviewSuggestions(dialogue:Dialogue,runId:string,goalRevision:number):SlotSuggestion[]{
+  const run=dialogue.runs.find(r=>r.id===runId);
+  if(dialogue.goal.status!=='draft'||dialogue.goal.revision!==goalRevision||run?.goal_revision!==goalRevision||run.status!=='succeeded'||run.reply?.source!=='deepseek')throw new Error('这条建议对应的目标已改变，请返回对话重新澄清。');
+  return run.reply.suggestions??[];
 }
 export function dialogueError(code:string):string {
   if(code==='AI_NOT_CONFIGURED')return 'AI 服务尚未配置，请先完成服务端设置。';

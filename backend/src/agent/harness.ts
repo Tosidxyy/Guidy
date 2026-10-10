@@ -1,4 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types";
+import { checkedSuggestions, type SlotSuggestion } from "./suggestions.ts";
 import {
   AgentError,
   deepseekProvider,
@@ -12,8 +13,9 @@ type Reply = {
   question: string;
   reason: string;
   source: "deepseek" | "policy";
+  suggestions?: SlotSuggestion[];
 };
-function validateReply(content: string): Reply {
+function validateReply(content: string, userText: string): Reply {
   let value;
   try {
     value = JSON.parse(content);
@@ -24,7 +26,9 @@ function validateReply(content: string): Reply {
     !value ||
     Array.isArray(value) ||
     typeof value !== "object" ||
-    Object.keys(value).some((k) => !["question", "reason"].includes(k)) ||
+    Object.keys(value).some(
+      (k) => !["question", "reason", "suggestions"].includes(k),
+    ) ||
     typeof value.question !== "string" ||
     !value.question.trim() ||
     value.question.length > 240 ||
@@ -46,6 +50,7 @@ function validateReply(content: string): Reply {
     question: value.question.trim(),
     reason: value.reason.trim(),
     source: "deepseek",
+    suggestions: checkedSuggestions(value.suggestions, userText),
   };
 }
 export async function dialogueResponse(
@@ -196,7 +201,7 @@ export async function dialogueResponse(
   const claimed = await db.batch([
     db
       .prepare(
-        `INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running',?,?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=?)=? AND (SELECT count(*) FROM agent_runs WHERE owner_id=? AND created_at>=?)<8 AND (SELECT count(*) FROM agent_runs WHERE created_at>=?)<20`,
+        `INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running','clarify-v2',?,?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=?)=? AND (SELECT count(*) FROM agent_runs WHERE owner_id=? AND created_at>=?)<8 AND (SELECT count(*) FROM agent_runs WHERE created_at>=?)<20`,
       )
       .bind(
         id,
@@ -291,7 +296,14 @@ export async function dialogueResponse(
       })),
       recent_dialogue: history.results.reverse().map((r) => ({
         user: r.user_text,
-        assistant: JSON.parse(r.reply_json as string),
+        assistant: (() => {
+          const rply = JSON.parse(r.reply_json as string);
+          return {
+            question: rply.question,
+            reason: rply.reason,
+            source: rply.source,
+          };
+        })(),
       })),
       user_message: text,
     });
@@ -330,7 +342,7 @@ export async function dialogueResponse(
         model.complete(context, controller.signal),
         timeout,
       ]);
-      reply = validateReply(completion.content);
+      reply = validateReply(completion.content, text);
       inputTokens = completion.inputTokens;
       outputTokens = completion.outputTokens;
       const normalized = (s: string) => s.replace(/[\s，。?？!！]/g, "");

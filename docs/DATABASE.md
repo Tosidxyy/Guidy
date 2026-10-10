@@ -4,7 +4,7 @@
 
 # Guidy｜数据库设计与数据生命周期
 
-迁移 `0006_goal_slots.sql` 实现第一批用户条件（outcome/available_time/constraints）：value_json 带 schema_version=1、state=confirmed/unknown、text；source 固定 user，sensitivity 固定 private。unknown 必须空文本且 confirmed_at=NULL，confirmed 必须有效文本与服务端确认时间；数据库与运行时双层校验。草稿阶段 PATCH /goals/{id}/slots 带 expected_revision/Idempotency-Key，原子更新三项条件、Goal revision 和命名空间化修改回执；暂停/已生效目标只读。GET 通过 D1 batch 读取一致的目标/条件快照并按 owner 过滤。此阶段不让模型写确认条件，不保存 Agent 回复或自动生成计划。
+迁移 `0006_goal_slots.sql` 实现第一批用户条件（outcome/available_time/constraints）：value_json 带 schema_version=1、state=confirmed/unknown、text；source 固定 user，sensitivity 固定 private。unknown 必须空文本且 confirmed_at=NULL，confirmed 必须有效文本与服务端确认时间；数据库与运行时双层校验。草稿阶段 PATCH /goals/{id}/slots 带 expected_revision/Idempotency-Key，原子更新三项条件、Goal revision 和命名空间化修改回执；暂停/已生效目标只读。GET 通过 D1 batch 读取一致的目标/条件快照并按 owner 过滤。后续 0007 保存 Agent run/message；clarify-v2 条件建议只存在私有 reply_json，用户审阅并确认后才走原有条件保存事务，模型不直接写确认条件或生成生效计划。
 
 增量迁移 `0005_goal_mutations.sql` 新增账号范围的 `goal_mutations` 修改回执及 goals 最近修改标识。PATCH 仅允许没有生效计划的 draft/paused 目标，携带 expected_revision 和 Idempotency-Key；D1 batch 条件 UPDATE 与回执 INSERT 原子完成。标识确保条件 UPDATE 失败后不会给其他请求的修改创建错误回执；回执和同账号 Goal 通过复合外键关联。回执保存原始请求与当次结果，后续重复请求只重放历史结果，不重写当前目标。同键不同内容、旧版本或不可编辑状态返回 409。目标描述/期望时间为私人数据，不记录到请求日志；回执随目标删除级联清理，尚无目标删除 API。已在本地开发/测试及独立云开发 D1 应用；云端 API 部署于 api.guidy.fun，认证目标成功路径仍待验证。
 

@@ -236,6 +236,16 @@ test("harness claims once, recovers history, isolates owners and leaves core con
               question:
                 calls === 1 ? "每周能安排几次？" : "希望优先练习哪类交流？",
               reason: "了解当前条件",
+              suggestions:
+                calls === 1
+                  ? []
+                  : [
+                      {
+                        key: "available_time",
+                        text: "每周三次",
+                        evidence: "每周三次",
+                      },
+                    ],
             }),
           },
         },
@@ -280,6 +290,10 @@ test("harness claims once, recovers history, isolates owners and leaves core con
   assert.equal(result.chat_revision, 2);
   assert.equal(result.runs.length, 2);
   assert.equal(result.runs[1].reply.source, "deepseek");
+  assert.equal(result.runs[1].harness_version, "clarify-v2");
+  assert.deepEqual(result.runs[1].reply.suggestions, [
+    { key: "available_time", text: "每周三次", evidence: "每周三次" },
+  ]);
   assert.equal(
     (await db.prepare("SELECT count(*) AS n FROM agent_messages").first()).n,
     4,

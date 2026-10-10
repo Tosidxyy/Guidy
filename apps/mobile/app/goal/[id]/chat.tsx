@@ -6,6 +6,7 @@ import { useAccount } from '../../../src/auth/AuthProvider';
 import { useTheme } from '../../../src/theme/ThemeProvider';
 import { getDialogue, sendDialogue } from '../../../src/goals/api';
 import { dialogueError, type Dialogue } from '../../../src/goals/dialogue';
+import { questions } from '../../../src/goals/clarification';
 
 export default function GoalChat(){
   const {id}=useLocalSearchParams<{id:string}>();const {user}=useAccount();
@@ -65,6 +66,12 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
           <Card style={{backgroundColor:colors.action}}><AppText style={{color:colors.onAction}}>{run.user_text}</AppText></Card>
           {run.status==='running'?<Caption>正在生成建议，你的消息已保存。</Caption>:run.status==='failed'?<Card><AppText>这次生成未完成</AppText><Caption>{dialogueError(run.error_code??'')}</Caption><Action label="把这条消息填回输入框" secondary disabled={sending||active} onPress={()=>setText(run.user_text)}/></Card>:run.reply&&<Card><Badge>{run.reply.source==='policy'?'系统安全提示':'AI 建议 · 待确认'}</Badge><AppText style={{fontSize:21,fontWeight:'600'}}>{run.reply.question}</AppText><Caption>{run.reply.reason}</Caption></Card>}
         </View>)}
+        {data.runs.filter(run=>run.status==='succeeded'&&!!run.reply?.suggestions?.length).map(run=><Card key={`suggestions:${run.id}`}>
+          <Badge>第 {run.turn_index} 轮条件建议 · 待你确认</Badge>
+          {run.reply!.suggestions!.map(s=><View key={s.key}><AppText>{questions.find(q=>q.key===s.key)?.label}</AppText><Caption>原文：{s.evidence}</Caption></View>)}
+          <Action label="审阅这轮条件建议" secondary disabled={sending||active||!enabled||run.goal_revision!==data.goal.revision} onPress={()=>router.push({pathname:'/goal/[id]/clarify',params:{id,suggestionRun:run.id}})}/>
+          {run.goal_revision!==data.goal.revision&&<Caption>目标条件已改变，此建议仅保留为历史记录。</Caption>}
+        </Card>)}
         {!enabled&&<Caption>当前目标只读，暂停草稿请先在详情页继续。</Caption>}
         <Caption>回答保存在当前目标内。需要确认或修改条件时，返回「澄清目标与条件」；当前不生成计划或执行操作。</Caption>
       </>}

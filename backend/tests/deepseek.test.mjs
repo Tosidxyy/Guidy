@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { deepseekProvider } from "../src/agent/provider.ts";
+import { checkedSuggestions } from "../src/agent/suggestions.ts";
 const env = {
   GUIDY_AI_ENABLED: "true",
   GUIDY_AI_MODEL: "deepseek-flash",
@@ -13,7 +14,7 @@ test("DeepSeek adapter bounds transport and returns content without reasoning or
     assert.equal(options.headers.Authorization, "Bearer unit-test-private-key");
     const body = JSON.parse(options.body);
     assert.equal(body.thinking.type, "disabled");
-    assert.equal(body.max_tokens, 350);
+    assert.equal(body.max_tokens, 650);
     assert.equal(body.stream, false);
     assert.equal(body.response_format.type, "json_object");
     assert.deepEqual(
@@ -41,6 +42,27 @@ test("DeepSeek adapter bounds transport and returns content without reasoning or
   );
   assert.equal(result.inputTokens, 12);
   assert.ok(!JSON.stringify(result).includes("private reasoning"));
+});
+
+test("slot suggestions require this user's exact evidence and a bounded unique schema", () => {
+  const valid = {
+    key: "available_time",
+    text: "每晚20分钟",
+    evidence: "每晚20分钟",
+  };
+  assert.deepEqual(checkedSuggestions([valid], "我能每晚20分钟"), [valid]);
+  assert.deepEqual(checkedSuggestions(undefined, "不知道"), []);
+  for (const value of [
+    [{ ...valid, text: "每晚一小时" }],
+    [{ ...valid, evidence: "旧消息" }],
+    [{ ...valid, key: "owner_id" }],
+    [{ ...valid, confirmed: true }],
+    [valid, valid],
+    [{ ...valid, text: " ", evidence: " " }],
+    { suggestions: [valid] },
+  ])
+    assert.throws(() => checkedSuggestions(value, "我能每晚20分钟"));
+  assert.throws(() => checkedSuggestions([valid], "当前消息没有这项信息"));
 });
 test("provider failures, tool calls and truncated replies fail without echoing upstream bodies", async () => {
   for (const response of [

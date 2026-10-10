@@ -1,12 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { checkedDialogue, dialogueError } from '../src/goals/dialogue.ts';
+import { checkedDialogue, dialogueError, reviewSuggestions } from '../src/goals/dialogue.ts';
 const base={goal:{id:'00000000-0000-0000-0000-000000000001',title:'test',description:'test',timeframe_note:'',status:'draft',revision:0},chat_revision:1,runs:[{id:'fixture-run',turn_index:1,user_text:'test',status:'succeeded',error_code:null,reply:{schema_version:1,kind:'question',question:'每周几次？',reason:'了解时间',source:'deepseek'}}]};
 test('dialogue provenance and completion state cannot be forged',()=>{
   assert.equal(checkedDialogue(base).runs[0].reply.source,'deepseek');
   for(const reply of [{...base.runs[0].reply,source:'policy'},{...base.runs[0].reply,schema_version:2},null])assert.throws(()=>checkedDialogue({...base,runs:[{...base.runs[0],reply}]}));
   assert.throws(()=>checkedDialogue({...base,runs:[{...base.runs[0],status:'running'}]}));
   assert.equal(checkedDialogue({...base,runs:[{...base.runs[0],status:'running',reply:null}]}).runs[0].status,'running');
+});
+test('suggestions are quoted, unconfirmed and bound to the same goal revision',()=>{
+  const suggestions=[{key:'available_time',text:'每晚20分钟',evidence:'每晚20分钟'}];
+  const value={...base,runs:[{...base.runs[0],user_text:'每晚20分钟',goal_revision:0,reply:{...base.runs[0].reply,suggestions}}]};
+  const checked=checkedDialogue(value);
+  assert.deepEqual(reviewSuggestions(checked,'fixture-run',0),suggestions);
+  assert.throws(()=>reviewSuggestions(checked,'fixture-run',1));
+  assert.throws(()=>reviewSuggestions({...checked,goal:{...checked.goal,status:'paused'}},'fixture-run',0));
+  assert.throws(()=>reviewSuggestions(checked,'other-run',0));
+  assert.throws(()=>checkedDialogue({...value,runs:[{...value.runs[0],user_text:'不同消息'}]}));
+  assert.throws(()=>checkedDialogue({...value,runs:[{...value.runs[0],reply:{...value.runs[0].reply,suggestions:[...suggestions,...suggestions]}}]}));
 });
 test('failure messages describe retained state without exposing raw provider errors',()=>{
   assert.match(dialogueError('AI_TIMEOUT'),/消息已保存/);

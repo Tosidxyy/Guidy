@@ -12,7 +12,11 @@
 | D1 agent_messages | 关联运行的用户消息与已通过校验的回复；同一 run/role 唯一、同 Goal 复合外键、随目标删除级联 |
 | Goal 内对话页 | 展示建议/系统边界，输入、失败保留、恢复/状态读取；账号/目标切换不复用私有输入 |
 
-AI 只输出一个澄清问题和简短理由，不能写 goal_slots、PlanVersion、Calendar 或通知，也不提供 tools 列表。已确认条件由用户在条件页修改；对话回答只是对话，不自动变成确认 Slot。
+AI 输出一个澄清问题、简短理由和可选的条件建议，不能写 goal_slots、PlanVersion、Calendar 或通知，也不提供 tools 列表。对话回答不自动变成确认 Slot。
+
+`clarify-v2` 的 `suggestions` 最多三项，key 仅 outcome/available_time/constraints 且唯一。text/evidence 必须相同、最多300字、逐字存在于本次用户消息；模型不能改写或用历史/助手文字充当依据。分类仍可能有误，原文匹配并不证明语义正确。旧回复无 suggestions 时作为空建议兼容，旧 run/version 不改写；policy 不提供条件建议。建议随已校验 reply_json 私有保存，无需新迁移，不附加独立模型请求。
+
+聊天页「审阅这轮条件建议」进入条件页，仅通过 run ID 从已认证对话重新读取；目标/当前 run 版本必须匹配且仍为草稿。显示原文和已有输入，用户逐项填入或忽略，填入仅修改本页草稿；在原有三步页核对/修改并「确认并保存条件」后，走原有 owner/expected_revision/Idempotency-Key 原子保存，source=user、confirmed_at=服务端时间。已确认条件不被模型自动覆盖。旧建议不再适用时保留历史、禁止套用；并发保存失败继续保留用户输入。最近30轮之外的建议暂无审阅入口。
 
 ## 运行协议
 
@@ -24,7 +28,7 @@ AI 只输出一个澄清问题和简短理由，不能写 goal_slots、PlanVersi
 
 ## 测试限额与恢复
 
-- DeepSeek 输出最多 350 Token，HTTP/harness 等待最多 20 秒，运行 lease 45 秒，App 等待最多 30 秒。
+- DeepSeek 输出最多 650 Token（包含条件建议），HTTP/harness 等待最多 20 秒，运行 lease 45 秒，App 等待最多 30 秒。
 - 每账号每天最多 8 次、全局每天最多 20 次新请求，包含失败尝试；重复同键不重复计入。按 UTC 日期重置，即北京时间每日 08:00。此为请求数量上限，不是金额预算。
 - 历史/GET 只读取和结算过期状态，不自动重启模型。超时/崩溃后保留失败状态与输入，由用户明确开启新请求；中止等待不保证供应商未消耗 Token。
 - 本轮是短澄清请求，不是后台长时研究 Job；不承诺关闭 App 后继续研究。agent_jobs、搜索与持久后台编排后续单独实现。
