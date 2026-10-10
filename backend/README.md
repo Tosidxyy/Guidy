@@ -1,5 +1,7 @@
 # Guidy backend · Cloudflare TypeScript
 
+当前云开发认证已从 resend-test 升级为 resend，使用已验证的 noreply@auth.guidy.fun，支持任意有效邮箱通过验证码注册/登录；用户确认非原测试邮箱收码登录成功。GUIDY_ENVIRONMENT=development 仅决定是否允许精确 Expo Go 开发来源，不会免除验证码/会话验证。原测试收件邮箱配置不再作为白名单，后文初始测试阶段说明为历史记录。
+
 Expo Go 认证预览需可选 GUIDY_EXPO_PREVIEW_ORIGINS JSON 白名单（仅明确的 exp:// 私有主机+端口，最多四项）；local-inbox/resend-test 可使用；resend 仅在显式 GUIDY_ENVIRONMENT=development 时保留预览白名单，正式环境不得保留。云端以独立 secret 配置，不改变 CORS 或关闭 origin 验证。邮件发送错误返回固定分类而不回显提供方正文/异常原文；真实发送成功须实测，参见 [邮件配置](../docs/EMAIL_SETUP.md)。
 
 目标编辑：`PATCH /api/v1/goals/{id}` 需要会话、Idempotency-Key 和 JSON `{description,timeframe,status,expected_revision}`。status 仅 draft/paused，只有当前 draft/paused 且无生效计划可编辑；每次成功修改 revision + 1。返回 200；版本冲突/同键不同内容 409、非法字段 422、其他账号对象 404。重复提交重放当次回执，即使随后目标已有其他修改也不再次写入。本地与云开发 D1 已应用迁移 0005；后续 Agent/计划相关状态的暂停恢复需另行实现，不开放强制改为 draft。

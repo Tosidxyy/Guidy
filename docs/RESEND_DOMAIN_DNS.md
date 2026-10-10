@@ -17,6 +17,6 @@ DKIM TXT 内容（完整复制，不加引号或换行）：
 p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDGERTekqQUcCSVeIJWOYem13+3jYke0FkbA2Uct3FeTOpEBl6vuNF/Fp2Hah2IPKV5pxCAF/zZvOiE8cXXamWtTH7Kz4/hz3RywdtqtrP79Jduvf/8CDiVmI8eh4HBlORRLF2X3ty3Jh5o1LM5vw7tLb97dmUTHgaKNtrbFxOMvQIDAQAB
 ```
 
-不替换根域名的 MX，不修改 api.guidy.fun。记录添加后告诉开发助手「DNS 已添加」；助手将触发 Resend 验证，确认 verified 后再切换 Worker 发信地址和开放邮箱注册。当前仍为受限测试模式，创建域名不等于验证成功。
+不替换根域名的 MX，不修改 api.guidy.fun。只有 Resend 确认 verified 后才可切换 Worker 发信地址和开放邮箱注册；创建域名不等于验证成功。本项目已完成此验证与切换。
 
-2026-10-10：已有 Wrangler OAuth 可以查询 zone，但 DNS 查询返回 403，不能代用户写入 DNS；浏览器连接不可用。没有要求提供 API Token，四条记录待用户在 Cloudflare 添加。配置完成后的真实多邮箱收信/登录仍须验收。
+2026-10-10：已有 Wrangler OAuth 可以查询 zone，但 DNS 查询返回 403，不能代用户写入 DNS；浏览器连接不可用。用户已添加记录，Resend 验证结果为 verified，Sending enabled，四条记录均 verified。没有要求提供 API Token。云端已部署 noreply@auth.guidy.fun / resend，用户确认非原测试邮箱收信并登录成功；根域收信/转发不在本轮范围。

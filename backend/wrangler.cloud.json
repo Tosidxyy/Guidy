@@ -10,9 +10,9 @@
   "vars": {
     "GUIDY_ENVIRONMENT": "development",
     "GUIDY_CORS_ORIGINS": "[]",
-    "GUIDY_AUTH_MODE": "resend-test",
+    "GUIDY_AUTH_MODE": "resend",
     "BETTER_AUTH_URL": "https://api.guidy.fun",
-    "GUIDY_EMAIL_FROM": "onboarding@resend.dev"
+    "GUIDY_EMAIL_FROM": "noreply@auth.guidy.fun"
   },
   "d1_databases": [
     {

@@ -15,7 +15,8 @@ test("cloud origin and exact custom domain share the expected development target
   assert.equal(config.vars.BETTER_AUTH_URL, "https://api.guidy.fun");
   assert.equal(config.name, "guidy-api-development");
   assert.equal(config.vars.GUIDY_ENVIRONMENT, "development");
-  assert.equal(config.vars.GUIDY_AUTH_MODE, "resend-test");
+  assert.equal(config.vars.GUIDY_AUTH_MODE, "resend");
+  assert.equal(config.vars.GUIDY_EMAIL_FROM, "noreply@auth.guidy.fun");
   assert.equal(config.d1_databases[0].database_name, "guidy-development");
 });
 

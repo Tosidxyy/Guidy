@@ -1,10 +1,12 @@
 # Guidy · Cloudflare 收信 / Resend 发信
 
-2026-10-10 用户选定：Cloudflare Email Routing 负责自有域名收信/转发，Resend 负责验证码发送。Worker/D1 继续在 Cloudflare。guidy.fun 已购买并激活，api.guidy.fun 已绑定；仍先用 Resend 的测试发件地址，只发给 Resend 注册邮箱。Cloudflare 收信与 Resend 发信域名验证尚未配置，不能将 API 域名激活当成已完成邮件 DNS/收信配置。
+开放注册完成：2026-10-10 用户添加 DNS 后，Resend 确认 auth.guidy.fun / Sending verified，四条记录均通过。云端已部署 noreply@auth.guidy.fun / resend（版本 3b1656de-0c49-44bf-a27c-c20b0044bae4），实际验证码请求 200/email，用户确认非原测试邮箱收到验证码并登录成功。原测试邮箱不再是注册白名单；账号仍须验证码验证，限流与对象归属继续生效。参考 [DNS 配置与状态](RESEND_DOMAIN_DNS.md)。
+
+2026-10-10 用户选定：Cloudflare Email Routing 负责自有域名收信/转发，Resend 负责验证码发送。Worker/D1 继续在 Cloudflare。guidy.fun 已购买并激活，api.guidy.fun 已绑定；auth.guidy.fun 已验证并启用正式发信地址。Cloudflare 根域收信/转发仍未配置。
 
 2026-10-10 发信修复实测：真实 Expo Go 来源请求返回 200 / delivery=email，用户明确确认邮件已收到；App 输入最新验证码并完成登录/恢复/退出仍待验证。失败根因包含未配置 Expo Go 来源，以及 workerd 不接受 redirect:error；发送已改为 manual 并拒绝所有非 2xx，新增真实 Workers 运行时回归。无需重建现有 Resend Key，不把模拟测试当作真实发信证据。
 
-## 先准备 Resend 测试发信
+## 初始 Resend 测试模式（历史配置，当前已升级）
 
 1. 在 Resend 注册并验证邮箱；API Keys 中创建 Sending access key（不需要 Full access）。
 2. 在 Windows 的 backend 目录执行，按交互提示粘贴值，不在聊天发送：
@@ -23,7 +25,7 @@ npx wrangler secret put GUIDY_EMAIL_TEST_TO --config wrangler.cloud.json
 
 ### Expo Go 来源与发信错误排查
 
-开放邮箱注册的 DNS 配置见 [实际发信域名记录](RESEND_DOMAIN_DNS.md)。域名 verified 前保持 resend-test；验证后计划切换为 noreply@auth.guidy.fun / resend。开发 Worker 的 GUIDY_ENVIRONMENT=development 独立于邮件模式，可在 verified-sender 模式保留明确私网预览白名单；正式环境（production 或未显式标 development 的 resend）仍拒绝非空预览来源配置。域名验证及实际任意邮箱投递成功前，不标记开放注册已完成。
+开放邮箱注册的 DNS 配置见 [实际发信域名记录](RESEND_DOMAIN_DNS.md)。域名 verified 后已切换为 noreply@auth.guidy.fun / resend。开发 Worker 的 GUIDY_ENVIRONMENT=development 独立于邮件模式，可在 verified-sender 模式保留明确私网预览白名单；正式环境（production 或未显式标 development 的 resend）仍拒绝非空预览来源配置。
 
 Expo Go 使用 exp:// 来源，不能仅配置正式 App 的 guidy://。本项目通过可选的 GUIDY_EXPO_PREVIEW_ORIGINS JSON 白名单允许最多四个明确的私有地址/端口（不接受通配符、公网主机或任意 exp://），适用于 local-inbox/resend-test，或显式 GUIDY_ENVIRONMENT=development 的 resend。当前云开发白名单独立配置在 Workers secret 中，未将个人预览地址作为认证绕过逻辑写死；换网络/端口时需更新，切换正式部署环境前删除该配置或设为 []。HTTPS API origin、浏览器 CORS 和账号会话验证继续保留。
 
