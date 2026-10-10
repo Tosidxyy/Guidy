@@ -8,7 +8,7 @@
   "observability": { "enabled": false },
   "vars": {
     "GUIDY_CORS_ORIGINS": "[]",
-    "GUIDY_AUTH_MODE": "disabled",
+    "GUIDY_AUTH_MODE": "resend-test",
     "BETTER_AUTH_URL": "https://guidy-api-development.guidy-backend.workers.dev",
     "GUIDY_EMAIL_FROM": "onboarding@resend.dev"
   },

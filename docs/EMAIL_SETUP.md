@@ -14,7 +14,7 @@ npx wrangler secret put GUIDY_EMAIL_TEST_TO --config wrangler.cloud.json
 
 第二个值是 Resend 注册邮箱。Cloudflare 存储这些值，配置文件/Git/Expo 中不能写入 Key 或个人测试邮箱。默认 `onboarding@resend.dev` 只允许向 Resend 账号邮箱发信；填其他地址会被拒绝。[Resend 官方限制](https://resend.com/docs/knowledge-base/403-error-resend-dev-domain)
 
-3. 独立随机 BETTER_AUTH_SECRET 已在 Cloudflare 配置，值未显示或写入 Git。启用测试登录前，确认三项 secret 名称齐备；云配置已准备 sender/origin，再将 GUIDY_AUTH_MODE 从 disabled 改为 resend-test。部署 wrapper 会拒绝缺少 secret 的邮件配置。保持 disabled，直到完成用户的 Key/测试邮箱配置。
+3. 独立随机 BETTER_AUTH_SECRET 已在 Cloudflare 配置，值未显示或写入 Git。三项 secret 名称已核对齐备，云配置现已启用 resend-test；sender/origin 已部署。API Key 的实际权限与邮件最终收信仍须通过真实请求验收，不能仅凭名称存在认定发信成功。
 4. 必要检查通过后部署；App 的 EXPO_PUBLIC_API_URL 再切换到云 HTTPS origin，完全重启 Metro/Reload，在 App 请求验证码并核对真实邮箱收到邮件。Provider API 接受不等于最终收信，垃圾邮件和延迟仍须实际检查。
 
 本轮发信适配已支持 Resend REST API、服务端 Key、8 秒超时、无个人数据的幂等键、错误脱敏和明确的失败响应。Better Auth 会抑制邮件回调错误，因此 HTTP 边界额外核对每次投递结果，发送失败不能进入“已提交发送”状态。邮件模式只保存哈希 verifier，不写明码 dev_auth_inbox。原有 local-inbox 可继续本地开发。

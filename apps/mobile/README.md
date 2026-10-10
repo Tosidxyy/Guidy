@@ -8,6 +8,7 @@ Expo Router + React Native + TypeScript。当前是基础界面，不是已完�
 - Agent、排程、提醒及反馈尚未接入；未来功能入口明确禁用或作为静态说明。
 - 「我的 → 登录」已接真实 Better Auth/D1 邮箱 OTP，会话恢复和退出；原生 cookie 使用官方 Expo 插件与 SecureStore，恢复会话需要服务端验证。当前验证码仅投递到 Windows 本地开发收件箱，不发送邮件，不再使用固定演示码；详见 [后端登录说明](../../backend/README.md)。
 - 登录页按服务端成功响应区分邮件和本地收件箱，不显示固定码。Resend 发送失败会保留输入并提示；密钥不进入客户端，投递被接受不代表邮件最终到达。邮件设置见 [Cloudflare 收信 / Resend 发信](../../docs/EMAIL_SETUP.md)。
+- 当前 .env.example 默认使用云 HTTPS API；云端 resend-test 只接受配置的 Resend 注册邮箱。本机忽略 .env 与手机预览已切换云地址；本地开发时可另设 Windows LAN origin。真实 iPhone 收信/恢复仍需验收。
 - 「我的 → 连接状态」调用真实 `/health`，显示尚未检查/检查中/可用/失败，支持五秒超时与重试；成功仅代表 API 可连接，不代表已登录或业务数据已同步。
 - 进行中的连接检查在离开「我的」或 App 切后台时取消，显示取消状态并允许重新检查；旧请求不会覆盖新检查结果，不自动在后台轮询。用户已确认本地 Worker 在 iPhone App 显示服务可用；新增切后台行为仍需单独真机验证。
 - 图标和启动屏从项目批准资源复制，未重绘。

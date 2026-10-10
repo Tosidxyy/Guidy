@@ -1,8 +1,8 @@
 # Guidy backend · Cloudflare TypeScript
 
-当前已有 Workers API、D1 本地迁移和 Better Auth 邮箱 OTP 登录/退出/会话恢复及受保护账号接口。独立云开发 Worker/D1 已部署；云端认证关闭，验证码仍仅投递到本地开发收件箱，正式邮件未接入。Python 版本仅在 Git 历史中保留。
+当前已有 Workers API、D1 本地迁移和 Better Auth 邮箱 OTP 登录/退出/会话恢复及受保护账号接口。云开发 Worker/D1 已部署并开启 resend-test，仅允许配置的注册邮箱；本地收件箱仍可独立使用。真实邮件/云端完整登录验收与正式域名尚待完成。Python 版本仅在 Git 历史中保留。
 
-Resend 发信适配与仅允许注册邮箱的 resend-test 模式已实现；Cloudflare 自有域名收信等待域名。账号 secret/真实收信未验收前，云配置保持 disabled。完整操作见 [邮件配置](../docs/EMAIL_SETUP.md)。
+Resend 适配与 resend-test 已配置，匿名 get-session 返回 200、受保护 me 返回 401；Cloudflare 自有域名收信等待域名。API key/收件邮箱名称已确认，实际收信仍待验证。完整操作见 [邮件配置](../docs/EMAIL_SETUP.md)。
 
 ## Windows 本地运行
 
@@ -45,7 +45,7 @@ health 成功合同保持 `{data:{status:"ok",service:"guidy-api",version:"0.1.0
 
 测试使用 Wrangler 相同版本的 Miniflare/workerd（Miniflare 5 采用官方 V4 配置转换器），不持久化测试数据，验证迁移后的库 Schema、约束、外键、回滚、级联删除与开发/测试绑定隔离。这些不是登录或跨用户 API 权限验收；D1 没有自动 RLS，后续所有业务访问仍须会话/owner 校验。
 
-本地 OTP/会话已接入；云开发 Worker/D1 已创建并部署，云端认证关闭，正式邮件/完整云端登录未完成。部署命令与真实资源见 [Cloudflare 开发环境](../docs/CLOUDFLARE_DEPLOY.md)。Cloudflare/D1 的语义与 [架构](../docs/ARCHITECTURE.md)、[数据库模型](../docs/DATABASE.md) 一致。
+本地 OTP/会话已接入；云开发 Worker/D1 已开启注册邮箱受限的 resend-test，真实收信/完整云登录仍待验收。部署命令与真实资源见 [Cloudflare 开发环境](../docs/CLOUDFLARE_DEPLOY.md)。Cloudflare/D1 的语义与 [架构](../docs/ARCHITECTURE.md)、[数据库模型](../docs/DATABASE.md) 一致。
 
 ## 本地真实登录
 
