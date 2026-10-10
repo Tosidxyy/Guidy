@@ -69,6 +69,7 @@
 
 ### M1-A 目标与澄清
 
+- [x] 目标内用户条件确认：三步填写期望结果/可投入时间/限制条件，允许暂不确定；goal_slots 用户来源/确认时间/版本保存，详情摘要、重载恢复与冲突保留输入。（本地浏览器/真实 D1 通过并部署云端；固定输入准备，未接 AI 动态问答，iPhone 新交互尚未验证。）
 - [x] 草稿目标详情/编辑/暂停继续：PATCH /api/v1/goals/{id}、expected_revision 条件写入、原子修改回执与幂等重放；首页进入详情、冲突保留输入并显式重新读取。（本地 D1/浏览器通过；只支持未有生效计划的 draft/paused，研究/执行中状态的暂停继续仍待后续，iPhone/云端未验证。）
 - [x] 账号目标创建/列表/单项读取：POST/GET /api/v1/goals、GET /api/v1/goals/{id}，真实会话归属、创建幂等、revision=0；App 从本机草稿提交、展示/恢复账号目标。（本地 Worker/D1 浏览器端到端通过；PATCH/暂停继续、云部署及 iPhone 真机待完成，原完整 API 项保持未完成。）
 - [x] 离线目标输入准备：一份本机草稿的创建、编辑、持久保存、首页展示和确认删除。（用户要求域名等待期间先开发内部功能；原生 SecureStore、Web localStorage，不属于账号 Goal，不自动上传；浏览器验证通过，iPhone 持久保存/键盘未验证。）
@@ -587,3 +588,15 @@ flowchart TD
 - 最终云部署版本 3b1656de-0c49-44bf-a27c-c20b0044bae4；固定账号/Worker/D1 guard 校验通过。实际 verified sender 请求 200 / delivery=email；随后用户明确确认原测试邮箱之外的新邮箱收到验证码并登录成功，真实开放注册链路验收通过。邮箱/OTP/密钥不进入 Git 或测试输出。
 - 实现提交：准备 a04410b5801499698215b2d5b08d4550df55fd7a；开放配置 0f42ab112700aec7a0552d1b42207c39a50342d8。所有本轮文件范围/文档链接/diff 与暂存检查 PASS。TODO 单独提交后将所有待推送提交同步 origin/main，核对远程 SHA。
 - 剩余：Cloudflare 根域收信/转发、原生重启恢复/断网退出/多设备、云端目标写入尚未完成；公开 iOS 安装仍需构建签名流程。下一轮回到目标内澄清与条件确认；开放注册不等于 App Store 发布。
+
+### 2026-10-10 — M1 / 目标内条件确认与持久恢复
+
+- 范围：账号目标详情→三步用户条件确认→确认保存→详情摘要/重载恢复；允许暂不确定，显示未保存/已确认/来源于用户。参考 design/prototypes/02-agent-chat.png 黑白目标陈述卡与问题卡；导航/品牌不变。固定三问是输入准备，不伪装成动态 AI 对话、研究或生成计划。
+- 新增 0006 goal_slots：outcome/available_time/constraints，schema_version=1，confirmed/unknown，source=user、sensitivity=private；confirmed 为有效文本+服务端时间，unknown 为空文本+NULL。数据库与运行时双层校验、Goal FK 级联、唯一 key，暂停/非草稿只读；没有 agent_messages/runs/jobs、日历或 LLM 调用。
+- API GET/PATCH /api/v1/goals/{id}/slots 使用验证会话和 owner 条件；GET 原子读取目标/条件一致快照，PATCH expected_revision+Idempotency-Key 原子更新三项、Goal revision 和命名空间化回执。测试证明第三项失败回滚全部数据、同键并发只改一次、同版本不同请求只一方成功、后续修改后历史重放不再写、字段/来源伪造拒绝、跨账号/匿名拒绝。日志无条件正文；现有目标/执行记录未清空。
+- UI 请求离页取消/旧响应丢弃，账号/目标切换不显示其他输入；冲突读取新版本时保留当前输入并需再次确认。未保存内容仅在页面，「返回」要求确认丢弃；系统返回手势未验证。详情读取条件一致快照，保存后摘要可恢复；未修改的已保存条件禁重复提交。
+- 快速检查：mobile typecheck/lint、test:ui-state 11 项、export:ios PASS；backend typecheck/lint/format:check、npm test 36 项、build:cloud dry-run PASS；0006 本地 dev/test 迁移 PASS。首轮 TS nullable/D1 unknown 类型错误修正后复查，不记失败为通过；最终小文案变更后 type/lint 与相同 UI 流程复测通过。
+- Browser plugin not available，Playwright/Edge localhost:8090→真实本地 Worker/D1，393×852：本地登录→输入/未知→确认→重载恢复→外部版本变化 409→保留输入→读最新版本→再保存→详情摘要 PASS；0 意外 console error/warn/pageerror，预期验证码 400 与版本 409，截图与非空/无覆盖层检查通过。旧 Metro 首次超时，核对本项目 8090 进程并重启后通过；仅清理生成的 QA 账号及级联目标/条件/回执。原生键盘/VoiceOver/深色未验证。
+- 云端：0006 应用 PASS，部署版本 b0d5a1ef-c396-459d-b7cf-ae635b91bef1；受保护 slots GET/PATCH 匿名 401/UNAUTHORIZED 合同 PASS。当前默认云 origin 无需切回本地；没有创建真实云测试用户或读取 OTP。iPhone 已登录条件保存尚待用户真机验收，不能把本地浏览器结果当云成功写入。
+- 文档/源码范围、相对链接、git diff/暂存检查 PASS；实现 Commit：3469912f831ccef829ab096eb730c6bfc7b7b133。TODO 单独提交后 push origin/main 并核对远程 SHA。
+- 下一步：接入真实 Agent Provider、Goal 内动态问题与待确认建议；高风险安全路由与必要字段门槛尚未完成，不能因三项已填写而开放自动计划/日历。
