@@ -89,6 +89,88 @@ async function fixture(t) {
   return { db, env, request, otp, signIn, records, app };
 }
 
+test("readiness reads prerequisites and preserves policy notices across edits in one owned snapshot", async (t) => {
+  const { db, env, app, request, signIn } = await fixture(t);
+  const a = await signIn("readiness-a@example.invalid");
+  const b = await signIn("readiness-b@example.invalid");
+  const goal = (
+    await (
+      await request(
+        "/api/v1/goals",
+        { description: "学习英语", timeframe: "" },
+        a.cookie,
+        { "Idempotency-Key": "readiness-create" },
+      )
+    ).json()
+  ).data;
+  const path = "/api/v1/goals/" + goal.id + "/slots";
+  assert.equal((await request(path)).status, 401);
+  assert.equal((await request(path, undefined, b.cookie)).status, 404);
+  assert.equal(
+    (await (await request(path, undefined, a.cookie)).json()).data.readiness
+      .phase,
+    "needs_confirmation",
+  );
+  const saved = await app.fetch(
+    new globalThis.Request(env.BETTER_AUTH_URL + path, {
+      method: "PATCH",
+      headers: {
+        Cookie: a.cookie,
+        "Content-Type": "application/json",
+        "Idempotency-Key": "readiness-confirm",
+      },
+      body: JSON.stringify({
+        expected_revision: 0,
+        slots: [
+          { key: "outcome", state: "confirmed", text: "旅行交流" },
+          { key: "available_time", state: "confirmed", text: "每晚20分钟" },
+          { key: "constraints", state: "unknown", text: "" },
+        ],
+      }),
+    }),
+    env,
+  );
+  assert.equal(saved.status, 200);
+  const ready = (await (await request(path, undefined, a.cookie)).json()).data;
+  assert.equal(ready.readiness.phase, "research_preparation");
+  assert.equal(ready.readiness.goal_revision, ready.goal.revision);
+  assert.deepEqual(ready.readiness.unknown_optional, ["constraints"]);
+  await db
+    .prepare(
+      "INSERT INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,reply_json,created_at,updated_at,lease_until) VALUES(?,?,?,'readiness-policy','{}',1,1,'需要专业判断','succeeded',?,1,1,1)",
+    )
+    .bind(
+      globalThis.crypto.randomUUID(),
+      goal.id,
+      a.body.user.id,
+      JSON.stringify({ source: "policy", kind: "referral" }),
+    )
+    .run();
+  assert.equal(
+    (await (await request(path, undefined, a.cookie)).json()).data.readiness
+      .phase,
+    "needs_review",
+  );
+  await db
+    .prepare("UPDATE goals SET revision=2 WHERE id=?")
+    .bind(goal.id)
+    .run();
+  assert.equal(
+    (await (await request(path, undefined, a.cookie)).json()).data.readiness
+      .phase,
+    "needs_review",
+  );
+  await db
+    .prepare("UPDATE goals SET status='paused' WHERE id=?")
+    .bind(goal.id)
+    .run();
+  assert.equal(
+    (await (await request(path, undefined, a.cookie)).json()).data.readiness
+      .phase,
+    "paused",
+  );
+});
+
 test("harness refuses a reply when confirmed context changes during generation", async (t) => {
   const { app, env, db, request, signIn } = await fixture(t);
   const account = await signIn("stale-ai@example.invalid");

@@ -1,4 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types";
+import { clarificationReadiness } from "./agent/readiness.ts";
 
 const keys = ["outcome", "available_time", "constraints"] as const;
 type Slot = {
@@ -59,17 +60,33 @@ export async function slotsResponse(
           "SELECT s.key,s.value_json,s.source,s.confirmed_at FROM goal_slots s JOIN goals g ON g.id=s.goal_id WHERE g.id=? AND g.owner_id=? ORDER BY s.key",
         )
         .bind(goalId, owner),
+      db
+        .prepare(
+          "SELECT 1 AS found FROM agent_runs r JOIN goals g ON g.id=r.goal_id AND g.owner_id=r.owner_id WHERE g.id=? AND g.owner_id=? AND r.status='succeeded' AND json_extract(r.reply_json,'$.source')='policy' LIMIT 1",
+        )
+        .bind(goalId, owner),
     ]);
     const goal = results[0].results[0];
     if (!goal) return fail(404, "NOT_FOUND", "目标不存在。");
+    const slots = results[1].results.map((s) => ({
+      key: s.key,
+      value: JSON.parse(s.value_json as string),
+      source: s.source,
+      confirmed_at: s.confirmed_at,
+    }));
     return ok({
       goal,
-      slots: results[1].results.map((s) => ({
-        key: s.key,
-        value: JSON.parse(s.value_json as string),
-        source: s.source,
-        confirmed_at: s.confirmed_at,
-      })),
+      slots,
+      readiness: clarificationReadiness(
+        goal as {
+          revision: number;
+          status: string;
+          description: string;
+          title: string;
+        },
+        slots as Parameters<typeof clarificationReadiness>[1],
+        !!results[2].results.length,
+      ),
     });
   }
   if (request.method !== "PATCH") {

@@ -26,6 +26,16 @@ AI 输出一个澄清问题、简短理由和可选的条件建议，不能写 g
 
 模型输出必须通过 JSON、字段/类型/长度、单问和重复问题边界校验；不允许 tool calls、截断或虚假“已写入/购买”等执行声明。未通过的原始模型输出/思考内容不保存、不展示；失败输入和安全错误码仍可恢复。按明确用户事实保守匹配部分高风险条件，返回标为 policy 的系统边界，不假装这是模型输出；该词匹配不是完整医学风险判定，研究/计划尚未开放。
 
+## 基础澄清进度
+
+`GET /goals/{id}/slots` 在同一个 D1 batch 读取 owner 过滤的目标、条件与该目标已有的 policy 提示，新增 `readiness`（schema_version=1、goal_revision、phase、confirmed_keys、missing_required、unknown_optional）。用户确认、有时间戳、有效非空文本的 outcome/available_time 是首批研究资料前置；constraints 可未知，始终明确提示未确认，不解释为“没有限制”。
+
+phase 为 needs_confirmation / needs_review / research_preparation / paused / read_only。现有部分高风险词或该目标已有的 policy 提示优先标为待核对；这是保守提示，不是完整风险分类。修改描述或条件不会自动解除历史转介，显式专业核对/解决流程尚待实现。该结果为只读派生数据，不改变 Goal 状态、不声明研究/计划可执行、不写日历，也不替代后续研究工具、领域安全或排程规则。
+
+目标详情显示三项确认进度、所缺基础条件和下一步说明。研究尚未实现时只显示研究准备，不提供无效启动按钮。可继续补充可选条件或聊天，不强制无限问答。
+
+`backend/evals/clarification-readiness.json` 包含学习、健身、护肤等10个合成样例，由确定性规则测试重复运行；包括缺项、可选未知、专业判断提示、暂停与非草稿。它验证状态规则，不评估真实 DeepSeek 输出质量。
+
 ## 测试限额与恢复
 
 - DeepSeek 输出最多 650 Token（包含条件建议），HTTP/harness 等待最多 20 秒，运行 lease 45 秒，App 等待最多 30 秒。

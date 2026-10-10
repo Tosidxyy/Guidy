@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import { apiOrigin, authClient } from '../auth/client';
 import { checkedSlots, type SavedSlot, type SlotInput } from './clarification';
 import { checkedDialogue, dialogueError, type Dialogue } from './dialogue';
+import { checkedReadiness, type Readiness } from './readiness';
 
 export type AccountGoal = { id: string; title: string; description: string; timeframe_note: string; status: string; revision: number };
 export class GoalApiError extends Error {
@@ -60,10 +61,11 @@ export async function updateGoal(id: string, body: { description: string; timefr
   return checkedGoal(await request('PATCH', body, key, undefined, `/${id}`));
 }
 
-export type GoalConditions = { goal: AccountGoal; slots: SavedSlot[] };
+export type GoalConditions = { goal: AccountGoal; slots: SavedSlot[]; readiness?: Readiness };
 function checkedConditions(result: GoalConditions): GoalConditions {
   if (!result) throw new Error('条件响应格式不正确。');
-  return { goal: checkedGoal(result.goal), slots: checkedSlots(result.slots) };
+  const goal=checkedGoal(result.goal);
+  return { goal, slots: checkedSlots(result.slots), readiness: result.readiness===undefined?undefined:checkedReadiness(result.readiness,goal.revision) };
 }
 export async function getConditions(id: string, signal: AbortSignal): Promise<GoalConditions> {
   if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('目标地址不正确。');

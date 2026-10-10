@@ -6,13 +6,14 @@ import { useTheme } from '../../src/theme/ThemeProvider';
 import { useAccount } from '../../src/auth/AuthProvider';
 import { getConditions, GoalApiError, updateGoal, type AccountGoal } from '../../src/goals/api';
 import { questions, type SavedSlot } from '../../src/goals/clarification';
+import type { Readiness } from '../../src/goals/readiness';
 
 export default function GoalDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user, pending } = useAccount();
   const owner = user?.id;
   const { colors } = useTheme();
-  const [record, setRecord] = useState<{owner: string; goal: AccountGoal; slots: SavedSlot[]} | null>(null);
+  const [record, setRecord] = useState<{owner: string; goal: AccountGoal; slots: SavedSlot[]; readiness?:Readiness} | null>(null);
   const [description, setDescription] = useState('');
   const [timeframe, setTimeframe] = useState('');
   const [error, setError] = useState('');
@@ -39,7 +40,7 @@ export default function GoalDetail() {
     if (owner) getConditions(id, controller.signal).then(result => {
       const value = result.goal;
       if (controller.signal.aborted) return;
-      setRecord({owner,goal:value,slots:result.slots});
+      setRecord({owner,goal:value,slots:result.slots,readiness:result.readiness});
       if (!preserve.current) { setDescription(value.description || value.title); setTimeframe(value.timeframe_note); }
       else setNotice('已读取最新版本，保留了你的输入。请核对后再保存。');
       preserve.current = false;
@@ -67,6 +68,7 @@ export default function GoalDetail() {
       setRecord(previous => ({owner:owner!,goal:result,slots:previous && previous.owner === owner ? previous.slots : []})); setDescription(result.description); setTimeframe(result.timeframe_note);
       setNotice(status === 'paused' ? '目标已暂停。' : goal.status === 'paused' ? '目标已恢复为待澄清草稿。' : '修改已保存。');
       operation.current = null;
+      setRefresh(n=>n+1);
     } catch(err) {
       if (current !== generation.current) return;
       setError(err instanceof Error ? err.message : '保存失败，你的输入仍保留。');
@@ -88,6 +90,13 @@ export default function GoalDetail() {
       {owner && !loading && (conflict || !goal) && <Action label={conflict ? '读取最新版本（保留输入）' : '重新读取目标'} secondary disabled={saving} onPress={() => { preserve.current = conflict; setRefresh(n => n+1); }} />}
       {goal && <>
         <Badge>{goal.status === 'paused' ? '已暂停' : goal.status === 'draft' ? '草稿 · 待澄清' : '当前状态暂不可编辑'}</Badge>
+        {record?.readiness&&<Card>
+          <AppText>澄清进度 · {record.readiness.confirmed_keys.length} / 3 项已确认</AppText>
+          <Badge>{({needs_confirmation:'还需确认基础条件',needs_review:'安全提示待核对',research_preparation:'基础资料已齐 · 研究准备',paused:'目标已暂停',read_only:'当前阶段只读'})[record.readiness.phase]}</Badge>
+          {questions.map(q=><Caption key={q.key}>{q.label}：{record.readiness!.confirmed_keys.includes(q.key)?'已确认':record.readiness!.missing_required.includes(q.key)?'待确认 · 研究所需':'暂不确定 · 可继续补充'}</Caption>)}
+          <Caption>{record.readiness.phase==='needs_review'?'目标或对话中存在需要专业判断的提示，请先核对；当前不自动推进。':record.readiness.phase==='research_preparation'?'基础研究资料已确认。后续仍需查证来源、适用条件和安全限制；研究功能将在下一阶段接入。':'你可以继续对话，也可在条件页直接补充并确认。'}</Caption>
+          <Caption>这只表示基础资料进度，不代表研究完成、计划可执行或已经安排日历。</Caption>
+        </Card>}
         <Card>
           <AppText>我的目标</AppText>
           <TextInput accessibilityLabel="账号目标内容" multiline maxLength={300} value={description} onChangeText={setDescription} editable={editable && !saving && !loading} style={[inputStyle,{minHeight:160,textAlignVertical:'top'}]} />
@@ -106,7 +115,7 @@ export default function GoalDetail() {
           <Action label={goal.status === 'paused' ? '继续目标' : '暂停目标'} secondary disabled={saving || loading || conflict || dirty} onPress={() => save(goal.status === 'paused' ? 'draft' : 'paused')} />
           {dirty && <Caption>内容有修改，请先保存，再暂停或继续。</Caption>}
         </>}
-        <Caption>离开前请保存修改。AI 澄清尚未接入，暂停不会操作日历或通知。</Caption>
+        <Caption>离开前请保存修改。AI 建议需你确认，暂停不会操作日历或通知。</Caption>
       </>}
     </Screen>
   </KeyboardAvoidingView>;
