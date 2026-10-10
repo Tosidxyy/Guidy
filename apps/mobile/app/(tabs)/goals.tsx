@@ -54,10 +54,10 @@ export default function GoalsScreen() {
         {accountList?.owner === user.id && <>
           {!accountList.goals.length && <Caption>还没有账号目标。可以先写下草稿，再保存到账号。</Caption>}
           {accountList.goals.map(goal => <Card key={goal.id}>
-            <Badge>{goal.status === 'draft' ? '草稿 · 待澄清' : '已保存'}</Badge>
+            <Badge>{goal.status === 'draft' ? '草稿 · 待澄清' : goal.status === 'paused' ? '已暂停' : '已保存'}</Badge>
             <AppText style={{ fontWeight: '600' }}>{goal.description || goal.title}</AppText>
             <Caption>期望时间：{goal.timeframe_note || '暂不确定'}</Caption>
-            <Caption>下一步 · 等待接入目标内澄清对话。</Caption>
+            <Action label="查看目标" secondary onPress={() => router.push({ pathname: '/goal/[id]', params: { id: goal.id } })} />
           </Card>)}
           {accountList.more && <Caption>仅显示最近 100 个目标。</Caption>}
         </>}

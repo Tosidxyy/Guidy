@@ -2,7 +2,10 @@ import { Platform } from 'react-native';
 import { apiOrigin, authClient } from '../auth/client';
 
 export type AccountGoal = { id: string; title: string; description: string; timeframe_note: string; status: string; revision: number };
-async function request(method: 'GET' | 'POST', body?: { description: string; timeframe: string }, key?: string, signal?: AbortSignal) {
+export class GoalApiError extends Error {
+  constructor(message: string, readonly code: string) { super(message); }
+}
+async function request(method: 'GET' | 'POST' | 'PATCH', body?: Record<string, unknown>, key?: string, signal?: AbortSignal, path = '') {
   if (!apiOrigin || !authClient) throw new Error('请先配置服务地址。');
   const headers: Record<string, string> = {};
   if (body) headers['Content-Type'] = 'application/json';
@@ -14,19 +17,20 @@ async function request(method: 'GET' | 'POST', body?: { description: string; tim
   if (signal?.aborted) controller.abort();
   const timer = setTimeout(cancel, 10_000);
   try {
-    const response = await fetch(`${apiOrigin}/api/v1/goals`, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: Platform.OS === 'web' ? 'include' : 'omit', signal: controller.signal });
+    const response = await fetch(`${apiOrigin}/api/v1/goals${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: Platform.OS === 'web' ? 'include' : 'omit', signal: controller.signal });
     const payload = await response.json();
     if (!response.ok) {
-      if (response.status === 401) throw new Error('登录已失效，请重新登录。本机草稿仍保留。');
-      if (response.status === 409) throw new Error('提交内容已改变，请先保存本机草稿，再重新提交。');
+      if (response.status === 401) throw new Error('登录已失效，请重新登录。请求失败不会清空输入。');
+      if (response.status === 409) throw new GoalApiError('目标已改变，请读取最新版本后再决定是否保存。你的输入仍保留。', payload.error?.code ?? 'CONFLICT');
+      if (response.status === 404) throw new Error('目标不存在或当前账号无法访问。');
       throw new Error('账号目标未保存或读取成功，请稍后重试。');
     }
     if (payload.error !== null || !payload.data) throw new Error('服务响应格式不正确。');
     return payload.data;
   } catch (error) {
-    if (controller.signal.aborted) throw new Error('连接超时或已取消。本机草稿仍保留，请重试。');
+    if (controller.signal.aborted) throw new Error('连接超时或已取消，输入未清空，请重试。');
     if (error instanceof Error && !['TypeError'].includes(error.name)) throw error;
-    throw new Error('无法连接服务。本机草稿仍保留，请重试。');
+    throw new Error('无法连接服务，输入未清空，请重试。');
   } finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); }
 }
 export async function listGoals(signal: AbortSignal): Promise<{ goals: AccountGoal[]; has_more: boolean }> {
@@ -38,4 +42,17 @@ export async function createGoal(body: { description: string; timeframe: string 
   const result = await request('POST', body, key);
   if (typeof result.id !== 'string' || result.status !== 'draft' || result.description !== body.description || result.timeframe_note !== body.timeframe || !Number.isInteger(result.revision)) throw new Error('目标保存结果未确认。本机草稿仍保留，请重试。');
   return result;
+}
+
+function checkedGoal(result: AccountGoal): AccountGoal {
+  if (!result || !/^[0-9a-f-]{36}$/.test(result.id) || typeof result.title !== 'string' || typeof result.description !== 'string' || typeof result.timeframe_note !== 'string' || typeof result.status !== 'string' || !Number.isSafeInteger(result.revision) || result.revision < 0) throw new Error('目标响应格式不正确。');
+  return result;
+}
+export async function getGoal(id: string, signal: AbortSignal): Promise<AccountGoal> {
+  if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('目标地址不正确。');
+  return checkedGoal(await request('GET', undefined, undefined, signal, `/${id}`));
+}
+export async function updateGoal(id: string, body: { description: string; timeframe: string; status: 'draft' | 'paused'; expected_revision: number }, key: string): Promise<AccountGoal> {
+  if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('目标地址不正确。');
+  return checkedGoal(await request('PATCH', body, key, undefined, `/${id}`));
 }

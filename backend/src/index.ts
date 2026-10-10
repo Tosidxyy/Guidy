@@ -322,7 +322,13 @@ export function createApp({
               .map((h) => h.trim().toLowerCase()) ?? [];
           if (
             !allowed ||
-            !(isAuth ? ["GET", "POST"] : ["GET"]).includes(
+            !(
+              isGoals
+                ? ["GET", "POST", "PATCH"]
+                : isAuth
+                  ? ["GET", "POST"]
+                  : ["GET"]
+            ).includes(
               request.headers.get("Access-Control-Request-Method") ?? "",
             ) ||
             requestedHeaders.some(
@@ -344,7 +350,11 @@ export function createApp({
             response = new Response(null, {
               status: 204,
               headers: {
-                "Access-Control-Allow-Methods": isAuth ? "GET, POST" : "GET",
+                "Access-Control-Allow-Methods": isGoals
+                  ? "GET, POST, PATCH"
+                  : isAuth
+                    ? "GET, POST"
+                    : "GET",
                 "Access-Control-Allow-Headers": isAuth
                   ? `Content-Type, Expo-Origin, X-Request-ID${isGoals ? ", Idempotency-Key" : ""}`
                   : "X-Request-ID",

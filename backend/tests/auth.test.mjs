@@ -89,6 +89,152 @@ async function fixture(t) {
   return { db, env, request, otp, signIn, records, app };
 }
 
+test("goal edits atomically record results, reject stale versions and preserve ownership", async (t) => {
+  const { request, signIn, db, app, env } = await fixture(t);
+  const a = await signIn("edit-a@example.invalid");
+  const b = await signIn("edit-b@example.invalid");
+  const goal = (
+    await (
+      await request(
+        "/api/v1/goals",
+        { description: "原目标", timeframe: "" },
+        a.cookie,
+        { "Idempotency-Key": "create-for-edit" },
+      )
+    ).json()
+  ).data;
+  const patch = (body, key, cookie = a.cookie) =>
+    app.fetch(
+      new globalThis.Request(`http://127.0.0.1:8787/api/v1/goals/${goal.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: cookie,
+          "Idempotency-Key": key,
+        },
+        body: JSON.stringify(body),
+      }),
+      env,
+    );
+  const input = {
+    description: "修改后的目标",
+    timeframe: "下个月",
+    status: "draft",
+    expected_revision: 0,
+  };
+  assert.equal((await patch(input, "edit-unowned", b.cookie)).status, 404);
+  assert.equal((await patch(input, "edit-no-login", "")).status, 401);
+  assert.equal(
+    (await patch({ ...input, expected_revision: -1 }, "edit-invalid")).status,
+    422,
+  );
+  await db
+    .prepare(
+      "CREATE TRIGGER reject_receipt BEFORE INSERT ON goal_mutations BEGIN SELECT RAISE(ABORT,'test-only rollback'); END",
+    )
+    .run();
+  assert.equal((await patch(input, "edit-retry-001")).status, 500);
+  assert.equal(
+    (
+      await db
+        .prepare("SELECT revision FROM goals WHERE id=?")
+        .bind(goal.id)
+        .first()
+    ).revision,
+    0,
+  );
+  await db.prepare("DROP TRIGGER reject_receipt").run();
+  const edits = await Promise.all([
+    patch(input, "edit-retry-001"),
+    patch(input, "edit-retry-001"),
+  ]);
+  assert.deepEqual(
+    edits.map((r) => r.status),
+    [200, 200],
+  );
+  assert.equal((await edits[0].json()).data.revision, 1);
+  assert.equal(
+    (await db.prepare("SELECT count(*) AS n FROM goal_mutations").first()).n,
+    1,
+  );
+  assert.equal((await patch(input, "edit-stale-001")).status, 409);
+  assert.equal(
+    (await patch({ ...input, description: "different" }, "edit-retry-001"))
+      .status,
+    409,
+  );
+  const paused = { ...input, status: "paused", expected_revision: 1 };
+  const race = await Promise.all([
+    patch(paused, "pause-key-001"),
+    patch({ ...paused, description: "race" }, "pause-key-002"),
+  ]);
+  assert.deepEqual(race.map((r) => r.status).sort(), [200, 409]);
+  const latest = (
+    await (
+      await request("/api/v1/goals/" + goal.id, undefined, a.cookie)
+    ).json()
+  ).data;
+  assert.equal(latest.revision, 2);
+  assert.equal(latest.status, "paused");
+  assert.equal(
+    (
+      await patch(
+        {
+          ...latest,
+          description: latest.description,
+          timeframe: latest.timeframe_note,
+          status: "draft",
+          expected_revision: 2,
+        },
+        "resume-invalid",
+      )
+    ).status,
+    422,
+  );
+  assert.equal(
+    (
+      await patch(
+        {
+          description: latest.description,
+          timeframe: latest.timeframe_note,
+          status: "draft",
+          expected_revision: 2,
+        },
+        "resume-key-001",
+      )
+    ).status,
+    200,
+  );
+  const replay = await patch(input, "edit-retry-001");
+  assert.equal((await replay.json()).data.revision, 1);
+  assert.equal(
+    (
+      await db
+        .prepare("SELECT revision FROM goals WHERE id=?")
+        .bind(goal.id)
+        .first()
+    ).revision,
+    3,
+  );
+  await db
+    .prepare("UPDATE goals SET status='active' WHERE id=?")
+    .bind(goal.id)
+    .run();
+  assert.equal(
+    (await patch({ ...input, expected_revision: 3 }, "edit-active-001")).status,
+    409,
+  );
+  assert.equal(
+    (
+      await patch(
+        { ...input, status: "completed", expected_revision: 3 },
+        "edit-invalid-state",
+      )
+    ).status,
+    422,
+  );
+});
+
 test("account goals require sessions, isolate owners and deduplicate concurrent writes", async (t) => {
   const { request, signIn, db, records } = await fixture(t);
   assert.equal((await request("/api/v1/goals")).status, 401);

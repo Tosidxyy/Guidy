@@ -64,7 +64,7 @@ function insertGoal(db, id, user, title = "Test goal") {
     .run();
 }
 
-test("D1 auth schema matches the locked library and only M0 tables exist", async (t) => {
+test("D1 auth schema matches the locked library and scoped goal tables exist", async (t) => {
   const { db } = await sandbox(t);
   const migration = await getMigrations({
     database: db,
@@ -85,6 +85,7 @@ test("D1 auth schema matches the locked library and only M0 tables exist", async
     [
       "account",
       "dev_auth_inbox",
+      "goal_mutations",
       "goals",
       "profiles",
       "rateLimit",

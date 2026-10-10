@@ -1,5 +1,7 @@
 # Guidy backend · Cloudflare TypeScript
 
+目标编辑：`PATCH /api/v1/goals/{id}` 需要会话、Idempotency-Key 和 JSON `{description,timeframe,status,expected_revision}`。status 仅 draft/paused，只有当前 draft/paused 且无生效计划可编辑；每次成功修改 revision + 1。返回 200；版本冲突/同键不同内容 409、非法字段 422、其他账号对象 404。重复提交重放当次回执，即使随后目标已有其他修改也不再次写入。请先应用本地迁移 0005；后续 Agent/计划相关状态的暂停恢复需另行实现，不开放强制改为 draft。
+
 内部目标功能（本地已实现）：`GET /api/v1/goals` 返回当前账号最近 100 个目标及 `has_more`；`GET /api/v1/goals/{id}` 仅返回本人目标，不存在/其他账号返回 404。`POST /api/v1/goals` 必须有已验证会话、JSON `{description,timeframe}` 和 8–128 位字母/数字/短横线/下划线 `Idempotency-Key`；description 1–300 字，timeframe 0–80 字。首次 201，同键同内容 200 并返回同目标，同键不同内容 409。所有业务响应使用 data/error/request_id 合同。状态固定 draft、revision=0；期望时间仅为说明，未转为截止日期/计划。先应用 0004 本地迁移，云端尚未升级。
 
 当前已有 Workers API、D1 本地迁移和 Better Auth 邮箱 OTP 登录/退出/会话恢复及受保护账号接口。云开发 Worker/D1 已部署并开启 resend-test，仅允许配置的注册邮箱；本地收件箱仍可独立使用。真实邮件/云端完整登录验收与正式域名尚待完成。Python 版本仅在 Git 历史中保留。

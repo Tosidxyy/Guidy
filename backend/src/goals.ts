@@ -39,7 +39,8 @@ export async function goalsResponse(
       .first();
     return goal ? ok(goal) : fail(404, "NOT_FOUND", "目标不存在。");
   }
-  if (path !== "/api/v1/goals" || request.method !== "POST") {
+  const isUpdate = path !== "/api/v1/goals" && request.method === "PATCH";
+  if (!isUpdate && (path !== "/api/v1/goals" || request.method !== "POST")) {
     const response = fail(
       405,
       "METHOD_NOT_ALLOWED",
@@ -47,7 +48,7 @@ export async function goalsResponse(
     );
     response.headers.set(
       "Allow",
-      path === "/api/v1/goals" ? "GET, POST" : "GET",
+      path === "/api/v1/goals" ? "GET, POST" : "GET, PATCH",
     );
     return response;
   }
@@ -88,7 +89,14 @@ export async function goalsResponse(
     return fail(422, "INVALID_BODY", "目标格式不正确。");
   }
   if (
-    Object.keys(body).some((k) => !["description", "timeframe"].includes(k)) ||
+    Object.keys(body).some(
+      (k) =>
+        !(
+          isUpdate
+            ? ["description", "timeframe", "status", "expected_revision"]
+            : ["description", "timeframe"]
+        ).includes(k),
+    ) ||
     typeof body.description !== "string" ||
     typeof body.timeframe !== "string"
   )
@@ -97,6 +105,79 @@ export async function goalsResponse(
   const timeframe = body.timeframe.trim();
   if (!description || description.length > 300 || timeframe.length > 80)
     return fail(422, "INVALID_BODY", "目标为 1–300 字，期望时间最多 80 字。");
+  if (isUpdate) {
+    if (
+      !Number.isSafeInteger(body.expected_revision) ||
+      (body.expected_revision as number) < 0 ||
+      !["draft", "paused"].includes(body.status as string)
+    )
+      return fail(422, "INVALID_BODY", "请提供有效目标状态和版本。");
+    const goalId = path.split("/").at(-1)!;
+    const existing = await db
+      .prepare("SELECT id FROM goals WHERE id=? AND owner_id=?")
+      .bind(goalId, owner)
+      .first();
+    if (!existing) return fail(404, "NOT_FOUND", "目标不存在。");
+    const payload = JSON.stringify({
+      description,
+      timeframe,
+      status: body.status,
+      expected_revision: body.expected_revision,
+    });
+    const now = Date.now();
+    await db.batch([
+      db
+        .prepare(
+          `UPDATE goals SET title=?,description=?,timeframe_note=?,status=?,revision=revision+1,updated_at=max(updated_at,?),last_mutation_key=? WHERE id=? AND owner_id=? AND revision=? AND status IN ('draft','paused') AND active_plan_version_id IS NULL AND NOT EXISTS(SELECT 1 FROM goal_mutations WHERE owner_id=? AND request_key=?)`,
+        )
+        .bind(
+          description.slice(0, 200),
+          description,
+          timeframe,
+          body.status,
+          now,
+          key,
+          goalId,
+          owner,
+          body.expected_revision,
+          owner,
+          key,
+        ),
+      db
+        .prepare(
+          `INSERT INTO goal_mutations(owner_id,request_key,goal_id,request_payload,response_payload,created_at) SELECT owner_id,?,id,?,json_object('id',id,'title',title,'description',description,'timeframe_note',timeframe_note,'status',status,'revision',revision,'created_at',created_at,'updated_at',updated_at),? FROM goals WHERE id=? AND owner_id=? AND last_mutation_key=? AND revision=? ON CONFLICT(owner_id,request_key) DO NOTHING`,
+        )
+        .bind(
+          key,
+          payload,
+          now,
+          goalId,
+          owner,
+          key,
+          (body.expected_revision as number) + 1,
+        ),
+    ]);
+    const receipt = await db
+      .prepare(
+        "SELECT goal_id,request_payload,response_payload FROM goal_mutations WHERE owner_id=? AND request_key=?",
+      )
+      .bind(owner, key)
+      .first<{
+        goal_id: string;
+        request_payload: string;
+        response_payload: string;
+      }>();
+    if (receipt) {
+      if (receipt.goal_id !== goalId || receipt.request_payload !== payload)
+        return fail(409, "IDEMPOTENCY_CONFLICT", "提交标识已被其他内容使用。");
+      return ok(JSON.parse(receipt.response_payload));
+    }
+    return fail(
+      409,
+      "REVISION_CONFLICT",
+      "目标已改变或当前状态不可编辑，请重新读取。",
+    );
+  }
   const id = crypto.randomUUID();
   const now = Date.now();
   const inserted = await db
