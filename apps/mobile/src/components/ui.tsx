@@ -1,4 +1,4 @@
-import type { PropsWithChildren } from 'react';
+import type { PropsWithChildren, ReactNode } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View, type TextProps, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { spacing, typography, useTheme } from '../theme/ThemeProvider';
@@ -7,17 +7,18 @@ export function AppText({ style, ...props }: TextProps) {
   const { colors } = useTheme();
   return <Text {...props} style={[{ color: colors.text, fontSize: typography.body, lineHeight: 23 }, style]} />;
 }
-export function Screen({ title, children, bottomInset = false }: PropsWithChildren<{ title: string; bottomInset?: boolean }>) {
+export function Screen({ title, children, bottomInset = false, footer }: PropsWithChildren<{ title: string; bottomInset?: boolean; footer?: ReactNode }>) {
   const { colors } = useTheme();
   return (
     <SafeAreaView edges={bottomInset ? ['top', 'left', 'right', 'bottom'] : ['top', 'left', 'right']} style={{ flex: 1, backgroundColor: colors.background }}>
-      <ScrollView contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <View style={styles.brand}>
           <Image source={require('../../assets/images/icon.png')} style={styles.logo} accessibilityLabel="Guidy 标识" />
           <AppText accessibilityRole="header" style={styles.title}>{title}</AppText>
         </View>
         {children}
       </ScrollView>
+      {footer && <View style={[styles.footer, { borderTopColor: colors.divider }]}>{footer}</View>}
     </SafeAreaView>
   );
 }
@@ -47,6 +48,7 @@ export function Action({ label, onPress, disabled = false, secondary = false }: 
 }
 export const styles = StyleSheet.create({
   screen: { padding: spacing.lg, gap: spacing.md, width: '100%', maxWidth: 600, alignSelf: 'center', paddingBottom: spacing.xl },
+  footer: { flexShrink: 0, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, gap: spacing.sm, width: '100%', maxWidth: 600, alignSelf: 'center', borderTopWidth: 1 },
   brand: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
   logo: { width: 34, height: 34 },
   title: { fontSize: typography.title, fontWeight: '700', lineHeight: 32 },

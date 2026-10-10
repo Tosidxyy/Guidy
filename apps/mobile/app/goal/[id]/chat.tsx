@@ -43,8 +43,14 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
   }
   const active=!!data?.runs.some(r=>r.status==='running');const enabled=data?.goal.status==='draft';
   function leave(){router.replace({pathname:'/goal/[id]',params:{id}});}
-  return <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
-    <Screen title="目标对话" bottomInset>
+  return <KeyboardAvoidingView style={{flex:1,backgroundColor:colors.background}} behavior={Platform.OS==='ios'?'padding':undefined}>
+    <Screen title="目标对话" bottomInset footer={data&&<>
+      <TextInput accessibilityLabel="回复或补充条件" multiline scrollEnabled maxLength={600} value={text} onChangeText={setText} editable={!!enabled&&!sending&&!active} placeholder="回答上面的问题，或补充新的条件" placeholderTextColor={colors.secondary} style={{backgroundColor:colors.surface,color:colors.text,borderColor:colors.divider,borderWidth:1,borderRadius:15,padding:12,height:104,textAlignVertical:'top',fontSize:17}}/>
+      <View style={{flexDirection:'row',gap:8}}>
+        <View style={{flex:2}}><Action label={sending?'正在请求…':active?'等待本次生成完成':'发送并继续'} disabled={!enabled||sending||active||!text.trim()} onPress={()=>send()}/></View>
+        <View style={{flex:1}}><Action label="暂不确定" secondary disabled={!enabled||sending||active||!data.runs.length} onPress={()=>send('暂不确定，请考虑其他必要条件。')}/></View>
+      </View>
+    </>}>
       <Action label="返回目标详情" secondary disabled={sending} onPress={()=>text.trim()?setDiscard(true):leave()}/>
       {discard&&<Card><AppText>放弃尚未发送的输入？已发送的消息会保留。</AppText><Action label="放弃并返回" onPress={leave}/><Action label="继续输入" secondary onPress={()=>setDiscard(false)}/></Card>}
       {!owner&&<Caption>请登录后进入目标对话。</Caption>}
@@ -60,9 +66,6 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
           {run.status==='running'?<Caption>正在生成建议，你的消息已保存。</Caption>:run.status==='failed'?<Card><AppText>这次生成未完成</AppText><Caption>{dialogueError(run.error_code??'')}</Caption><Action label="把这条消息填回输入框" secondary disabled={sending||active} onPress={()=>setText(run.user_text)}/></Card>:run.reply&&<Card><Badge>{run.reply.source==='policy'?'系统安全提示':'AI 建议 · 待确认'}</Badge><AppText style={{fontSize:21,fontWeight:'600'}}>{run.reply.question}</AppText><Caption>{run.reply.reason}</Caption></Card>}
         </View>)}
         {!enabled&&<Caption>当前目标只读，暂停草稿请先在详情页继续。</Caption>}
-        <TextInput accessibilityLabel="回复或补充条件" multiline maxLength={600} value={text} onChangeText={setText} editable={!!enabled&&!sending&&!active} placeholder="回答上面的问题，或补充新的条件" placeholderTextColor={colors.secondary} style={{backgroundColor:colors.surface,color:colors.text,borderColor:colors.divider,borderWidth:1,borderRadius:15,padding:16,minHeight:110,textAlignVertical:'top',fontSize:17}}/>
-        <Action label={sending?'正在请求…':active?'等待本次生成完成':'发送并继续'} disabled={!enabled||sending||active||!text.trim()} onPress={()=>send()}/>
-        <Action label="暂不确定" secondary disabled={!enabled||sending||active||!data.runs.length} onPress={()=>send('暂不确定，请考虑其他必要条件。')}/>
         <Caption>回答保存在当前目标内。需要确认或修改条件时，返回「澄清目标与条件」；当前不生成计划或执行操作。</Caption>
       </>}
     </Screen>
