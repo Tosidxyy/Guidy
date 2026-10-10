@@ -69,6 +69,8 @@
 
 ### M1-A 目标与澄清
 
+- [x] DeepSeek 澄清 harness 实现与测试入口：可替换 Provider、owner/版本/上下文一致快照、持久 run/message、幂等/并发/限额、Schema/执行声称边界、失效恢复；Goal 内对话页。（真实 D1 + 模拟 Provider、受控 UI 通过并已部署；真实 DeepSeek 回复和新 iPhone 交互待下项，不代表研究/计划已完成。）
+- [ ] 验收真实 DeepSeek API：iPhone 出现目标相关问题、多轮输入/重载恢复、真实用量/超时失败与模型质量；扩大评估集后完善语义重复/高风险路由。（用户已配置服务端 Key；模型真实回复待反馈。）
 - [x] 目标内用户条件确认：三步填写期望结果/可投入时间/限制条件，允许暂不确定；goal_slots 用户来源/确认时间/版本保存，详情摘要、重载恢复与冲突保留输入。（本地浏览器/真实 D1 通过并部署云端；固定输入准备，未接 AI 动态问答，iPhone 新交互尚未验证。）
 - [x] 草稿目标详情/编辑/暂停继续：PATCH /api/v1/goals/{id}、expected_revision 条件写入、原子修改回执与幂等重放；首页进入详情、冲突保留输入并显式重新读取。（本地 D1/浏览器通过；只支持未有生效计划的 draft/paused，研究/执行中状态的暂停继续仍待后续，iPhone/云端未验证。）
 - [x] 账号目标创建/列表/单项读取：POST/GET /api/v1/goals、GET /api/v1/goals/{id}，真实会话归属、创建幂等、revision=0；App 从本机草稿提交、展示/恢复账号目标。（本地 Worker/D1 浏览器端到端通过；PATCH/暂停继续、云部署及 iPhone 真机待完成，原完整 API 项保持未完成。）
@@ -600,3 +602,16 @@ flowchart TD
 - 云端：0006 应用 PASS，部署版本 b0d5a1ef-c396-459d-b7cf-ae635b91bef1；受保护 slots GET/PATCH 匿名 401/UNAUTHORIZED 合同 PASS。当前默认云 origin 无需切回本地；没有创建真实云测试用户或读取 OTP。iPhone 已登录条件保存尚待用户真机验收，不能把本地浏览器结果当云成功写入。
 - 文档/源码范围、相对链接、git diff/暂存检查 PASS；实现 Commit：3469912f831ccef829ab096eb730c6bfc7b7b133。TODO 单独提交后 push origin/main 并核对远程 SHA。
 - 下一步：接入真实 Agent Provider、Goal 内动态问题与待确认建议；高风险安全路由与必要字段门槛尚未完成，不能因三项已填写而开放自动计划/日历。
+
+### 2026-10-10 — DeepSeek Provider / harness v1
+
+- 用户明确指定先用自己的 DeepSeek API 测试、重点开发 harness，撤回先前 Workers AI 调研方向；没有新增 Workers AI binding 或调用。官方当前 model 名称核对为 deepseek-flash，非 thinking、JSON object、max_tokens=350；独立 AgentProvider 不依赖 DB/工具。用户只通过 CLI 配置 DEEPSEEK_API_KEY，服务端名称检查通过，不读取/输出 Key，不进入 App/Git。
+- 新增 0007 agent_runs/agent_messages：goal/owner 和 run/goal 复合 FK、turn index、唯一请求键/角色、每 Goal 一条 running；记录目标版本、私有上下文快照、requested_model、context_schema_version/harness_version、usage 和状态/lease。迁移在本地 dev/test 与独立云开发应用通过；没有改写旧迁移或清理用户记录。每次消息先持久存储，再尝试 Provider。
+- Harness：仅本人草稿、目标/对话版本；一致读取当前目标、条件和最近两轮成功对话，不附账号邮箱/ID、cookie/Key；Context≤5000字符。相同键只尝试一次 Provider，running 返回202、结束重放持久状态；旧页面/并发不同键不重复占用。生成后再检查目标状态/版本，旧回复不写入；模型格式/字段/长度/单问/重复/虚假执行声明校验，不执行 tool calls，也不更新 goal_slots/计划/日历。
+- 配额/恢复：每账号每天8、全局20次新尝试，按UTC重置，包含失败；HTTP/harness20秒、lease45秒，App30秒。GET只读历史并结算过期失败，不自动重复付费调用；超时输入和状态能恢复，显式新请求才重试。中止等待不承诺供应商没消耗Token；该短请求不替代后台研究 jobs。保守词匹配按用户事实给 policy 转介，不把助手假设问题当事实；不是完整医学判定，完整风险/动态问答项仍不勾选。
+- UI：Goal详情「与AI澄清目标」，显示建议待确认/系统边界、输入/未知、持久历史、状态读取/失败填回；owner+Goal组件实例隔离，离页取消读取/丢弃旧响应，生成状态有限轮询不发新模型请求。对话答案不自动变成确认Slot。没有独立AgentTab、外部操作或品牌更改。
+- 快速检查：backend typecheck/lint/format、npm test42项、build:cloud PASS；mobile typecheck/lint、test:ui-state13项、export:ios PASS。初次测试全局引用 lint 修正后重跑；新增生成期间目标版本改变、相同键并发/缓存、错误Schema/虚假写入声称、过期恢复、不自动重试/配额、owner隔离、policy不调用模型、拒绝tools/截断等边界，未把模型 mock 当真实输出。
+- Browser plugin not available，Playwright/Edge localhost8090、393×852：真实本地登录/目标 + 受控消息响应，回复渲染/Reload历史/502保留输入/失败状态 PASS；0意外error/warn/pageerror，预期400/502。旧Metro首次超时，核对本项目进程重启后通过；截图是受控固定问题，不是实际DeepSeek生成。仅清理生成QA账号及级联记录，脚本/图在仓库外。
+- 云端：0007应用PASS；最终部署c57d256b-739b-40a0-bf3e-63198d7b0ff0（只读部署API再次核对最新版本），新messages GET/POST匿名401合同PASS；secret名称guard确认配置。没有在无授权会话的公网增加模型probe后门；真实DeepSeek Key有效性/回复由用户在App点击验收，已发起问题，当前无反馈，不宣称真实模型调用通过。
+- 文档AI_HARNESS/架构/预览/README、相对链接、diff/暂存范围检查PASS；实现Commit：f506c9492b9c2170272887c7aa98ccf69194a5c0。TODO单独提交后push origin/main并核对远程SHA。
+- 下一步：真实Provider验收后完善离线eval/语义重复/风险场景、待确认Slot建议和受控工具registry；agent_jobs、研究来源、PlanDraft/排程仍未实现，不提前开放执行。
