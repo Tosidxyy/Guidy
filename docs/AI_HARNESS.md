@@ -1,5 +1,7 @@
 # Guidy AI harness · 澄清测试链路
 
+> **2026-10-11 目标交互更新**：Slot与研究/生成步骤是后台能力，正式主流程为聊天采集→方案草稿（含拟安排）→一次批准自动入历。下文已有手工确认/搜索/审阅协议是实现现状，不作为最终必经UI；受控保存用户事实与一次批准合同见[对话主流程](CHAT_FIRST_FLOW.md)。改造尚未实现，模型不直接写核心表。
+
 用户于 2026-10-10 指定先使用自己的 DeepSeek API，主要开发 harness。当前 Provider 为 DeepSeek 的 `deepseek-flash`，使用 [官方 Chat Completions 接口](https://api-docs.deepseek.com/api/create-chat-completion/)，非流式、thinking disabled、JSON object；Provider 可替换，业务控制不交给模型。
 
 2026-10-11 已确认后续方案方法：目标倒推、约束规划、按需搜索、生成后校验/修订、执行反馈。新增豆包SearchProvider和私有搜索尝试API，先落库保留预算再请求，unknown不自动重试；见[搜索接入](SEARCH_SETUP.md)。已接Goal内主动搜索页面，未接自动查询/搜索Workflow；首批PlanDraft后端已实现，手机审阅已接入，完整校验仍待实现，旧后台来源任务仍仅公开GET。候选供应商、费用及完整流程见[搜索实现策略](SEARCH_STRATEGY.md)，产品验收以[PRD](PRD.md)为准。

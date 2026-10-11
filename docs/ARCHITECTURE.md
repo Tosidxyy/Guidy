@@ -1,5 +1,7 @@
 # Guidy｜Cloudflare TypeScript 架构
 
+> **2026-10-11 目标交互更新**：Slot与研究/生成步骤是后台能力，正式主流程为聊天采集→方案草稿（含拟安排）→一次批准自动入历。下文已有手工确认/搜索/审阅协议是实现现状，不作为最终必经UI；受控保存用户事实与一次批准合同见[对话主流程](CHAT_FIRST_FLOW.md)。改造尚未实现，模型不直接写核心表。
+
 > 2026-10-09 用户确认改用 Cloudflare 并将后端语言改为 TypeScript。本文件替代此前 Python/FastAPI/Supabase 方案；旧文档仅见 [历史快照](../archive/architecture-before-cloudflare/ARCHITECTURE.md)，不能作为当前实现依据。
 
 ## 1. 已确定选型与边界
