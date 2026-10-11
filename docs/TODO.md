@@ -693,3 +693,12 @@ flowchart TD
 - 云部署最终845a6540-e9dc-46e3-a550-b03a10c224ec，health正常、evidence匿名401保护PASS。云复测一次自动审批未在deadline完成，命令未执行；按规则仅重试一次后通过，不把超时判为不安全或绕过审批。没有遗留阻塞审批动作。
 - UI/来源文档、链接、diff/暂存范围检查PASS；实现Commit：a242baf65f1cfa82dbca038037b0d6b0a85434c5。TODO单独提交后push origin/main并核对远程SHA。
 - 未验证：新iPhone表单收起/键盘与VO/大字，当前British Council实际云读取恢复。下一步优先补充不可用来源的替代路径，再推进计划草稿；不再只用电脑读取或空任务证明真实来源链路。
+
+### 2026-10-11 — 方案生成方法确认 / 搜索渠道与费用研究
+
+- 用户确认将目标倒推、约束规划、按需检索、生成后校验/修订与执行反馈更新到现行文档；本轮只更新PRD/架构/harness和新增[搜索实现策略](SEARCH_STRATEGY.md)，没有实现自动搜索、PlanDraft或购买/调用搜索服务。
+- 核对官方豆包Custom/Global、Tavily、Serper、Brave、Exa能力/费用/额度，保留人民币与美元原币种、充值/每日限制/内容额外费用；推荐豆包Custom优先候选，Tavily或Exa免费对照。推荐不等于用户最终选型或实际中文质量/Cloudflare可用性测试结论。
+- 确定后续SearchProvider与现有URL读取分离；付费尝试需预算回执/检查点，结果不明标unknown不自动重复扣费；引用只能来自目标私有研究快照，模型生成建议、代码校验并由用户确认，历史与版本边界不变。
+- 快速检查：四份文档相对链接、HTTPS URL格式、提案/待实现标注、3次基础查询费用算术与git diff --check PASS。仅文档变更，未运行应用测试/部署或真机验证，不虚报供应商端到端验证。
+- 内容Commit：0e1b8a0869faaafed54836d3126e6d760e88eed0。TODO单独提交后push origin/main并核对远程SHA；完整M1研究/计划项目保持未勾选。
+- 下一步：选定一个Provider，实现通用安全结果/预算尝试记录和Adapter，再以同一组中文/英文问题在Cloudflare评估内容可用性与每份草稿总成本；模型/抽取/失败成本纳入，不只比较单次搜索价格。
