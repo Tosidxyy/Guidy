@@ -92,6 +92,7 @@
 - [x] 首批持久后台来源任务：Cloudflare Workflows、D1 agent_jobs/逐项快照、同实例派发恢复、lease/检查点/版本保护；最多3份来源，页面离开后可恢复进度。（真实Workers Workflow+受控UI通过并部署，云空任务2步成功；实际iPhone来源任务待验收，不代表搜索/事实研究/计划生成完成。）
 - [x] 首批来源准备：独立网页 ResearchProvider、精确官网HTTPS白名单、大小/超时/跳转/类型限制；用户指定来源与待核对问题，D1保存短摘录/访问时间/限制/unverified，Goal内恢复/失败明确重试。（本地真实D1+受控UI、电脑实际公开网页读取通过并部署；不是自动搜索/事实核验或后台研究Job，iPhone云端来源读取仍待验收。）
 - [x] 首批搜索后端：豆包Custom SearchProvider、安全来源DTO、私有搜索尝试/结果、原子预算/幂等/owner/版本保护、unknown不自动重搜；已部署。受控供应商+真实临时D1验证通过；不代表手机入口、真实Key/搜索效果或完整研究流程验收。
+- [x] Goal内主动搜索入口与来源审阅：通用查询、可收起输入、正文/摘要/片段标识、结果/旧版本恢复、同键重放及另开搜索确认。（类型/lint/20项状态测试/iOS导出/受控供应商浏览器验证PASS；真实豆包返回及iPhone体验未验证。）
 - [ ] 实现搜索/网页提取 Provider 抽象；保存来源 URL、获取时间、适用条件、未知项。
 - [ ] 增加外部网页不可信输入隔离与 SSRF/超时/重定向限制。
 - [ ] 使用 TypeScript Agent Provider 生成 `PlanDraft`，按运行时 Schema 与领域规则两次校验。
@@ -714,3 +715,14 @@ flowchart TD
 - 迁移dev/test/cloud 0011 PASS，build:cloud dry-run PASS；云deploy版本5adbf980-45d4-4244-93dd-c303817c03f5，health正常、search-runs匿名GET/POST 401/UNAUTHORIZED PASS。没有调用真实搜索/LLM、收集用户验证码或读取Key，真实凭据有效性/中文召回/云Provider访问未验证。
 - 前端无变更，未跑移动端/浏览器/真机测试。SEARCH_SETUP/策略/harness/架构/数据库、空Key示例、相对链接和diff/暂存范围PASS；代码Commit：dc8da2afdea3f3e2b8e30cf2bea22c2f9a96c68b。TODO单独提交后push origin/main并核对SHA。
 - 下一步：Goal内查询审阅和搜索入口、来源卡片/正文不足/unknown/旧版本恢复；Key配置后验证真实云端搜索，再接完整研究编排与带引用PlanDraft。完整M1-B搜索/计划验收仍未勾选。
+
+### 2026-10-11 — Goal内搜索入口 / 来源展示与失败恢复
+
+- Scope：研究资料页新增「搜索研究资料」二级入口；独立search页面/安全DTO/错误映射与客户端API。不改导航/品牌/后端/迁移，不生成查询、调用DeepSeek、核实事实或生成PlanDraft。结合03-plan-detail PNG与DESIGN_SYSTEM黑白卡片/徽标，应用React最佳实践及前端调试技能。
+- 输入默认收起，展开后单个多行问题与按钮位于键盘避让独立底栏，可收起保留同页输入；成功收起、失败保留。请求后锁定原内容，恢复沿用同一幂等键；另开搜索需明确确认可能再次消耗额度，不自动重搜。刷新/重进仅GET，未提交输入不持久化。Goal/账号key隔离、focus读请求取消/旧响应丢弃，POST离页不等于取消供应商执行。
+- 展示未核实来源、搜索时间（不是访问时间）、正文摘录/相关摘要/仅片段正文不足、空结果、安全错误、unknown及旧版本。响应拒绝目标错配/伪verified/危险URL/缺正文/超长或不合规数据；原网页仅明确点击打开，网页注入文字显示为普通资料。服务端Key不进入前端。
+- 快速检查：mobile typecheck/lint PASS，test:ui-state20项PASS，最终export:ios PASS。初次lint拒绝渲染读refs，改为渲染state与事件ref分别承担职责后复查通过；未以初次导出成功替代lint。仅前端改动，无新增后台回归/部署需求。
+- Browser plugin not available，按技能使用Playwright/Edge：真实本地OTP/Goal服务+受控搜索回复，入口/默认无输入/非法查询禁用/收起保留/320×480输入及按钮可见无横溢/成功收起/Reload恢复且无自动POST/unknown保留并同键恢复/另开确认PASS。POST3次仅2个不同键，0意外error/warn；截图/脚本仓库外，精确删除本次QA账号。脚本初次变量重名未执行，修正后通过；8090已有经核对的Guidy预览，复用未误停用户进程。
+- 云只检查secret名称：DOUBAO_SEARCH_API_KEY存在，不读取值；真实密钥有效性/供应商中文效果/Cloudflare搜索成功/iPhone键盘/VO/大字仍未验证，已向用户请求体验反馈，未扩大为通过。无真实付费搜索、云邮件或模型调用。
+- SEARCH_SETUP/harness/架构/UI/iPhone说明、相对链接与diff/暂存范围PASS；代码Commit：ec2b9b231a65bde4996b2cf180ff05b8bdcee477。TODO单独提交后push origin/main并核对远程SHA。完整M1-B搜索/PlanDraft验收保持未勾选。
+- 下一步：用户实际搜索后处理Provider错误/内容可用性，再按确认条件组织查询与证据筛选，生成带引用且经规则校验的可审阅PlanDraft，用户确认前不写日历。
