@@ -20,3 +20,24 @@ test('website denial gives an actionable reason without claiming success',()=>{
   assert.match(sourceError('SOURCE_RATE_LIMITED'),/限流/);
   assert.match(sourceError('CONTEXT_CHANGED'),/输入仍保留/);
 });
+
+import {checkedSearchSnapshot,validSearchQuery,searchError,safeSearchLink} from '../src/goals/search.ts';
+test('search snapshots reject forged verification, unsafe links, wrong goals and missing provider content',()=>{
+  const id='00000000-0000-0000-0000-000000000001';
+  const source={source_id:id,title:'资料',url:'https://example.org/',snippet:'片段',content:'正文',content_kind:'provider_content',published_at:null,verification_status:'unverified'};
+  const attempt={id,goal_revision:0,query:'英语学习方法',provider:'doubao-custom',status:'succeeded',billing_status:'reserved_unknown',error_code:null,created_at:123,result:{provider:'doubao-custom',provider_request_id:'synthetic',searched_at:123,sources:[source]}};
+  const snapshot={goal:{id,revision:0,status:'draft'},attempts:[attempt]};
+  assert.equal(checkedSearchSnapshot(snapshot,id).attempts[0].result.sources.length,1);
+  for(const override of [{url:'javascript:alert(1)'},{url:'https://user:password@example.org/'},{url:'https://127.0.0.1/'},{verification_status:'verified'},{content:''},{content_kind:'snippet_only'}])assert.throws(()=>checkedSearchSnapshot({...snapshot,attempts:[{...attempt,result:{...attempt.result,sources:[{...source,...override}]}}]},id));
+  assert.throws(()=>checkedSearchSnapshot(snapshot,'00000000-0000-0000-0000-000000000002'));
+  assert.throws(()=>checkedSearchSnapshot({...snapshot,attempts:[{...attempt,status:'unknown'}]},id));
+  assert.equal(checkedSearchSnapshot({...snapshot,attempts:[{...attempt,status:'unknown',result:null,error_code:'SEARCH_RESULT_UNKNOWN'}]},id).attempts[0].status,'unknown');
+});
+test('generic queries, safe link opening and unknown billing errors do not imply automatic retries',()=>{
+  assert.ok(validSearchQuery('英语初学者学习方法'));
+  for(const q of ['','x'.repeat(101),'person@example.org','13800138000','a\nb','https://example.org'])assert.equal(validSearchQuery(q),false);
+  assert.equal(safeSearchLink('https://example.org/article'),true);
+  assert.equal(safeSearchLink('https://localhost/'),false);
+  assert.match(searchError('SEARCH_RESULT_UNKNOWN'),/不会自动/);
+  assert.ok(!searchError('private provider body').includes('private'));
+});

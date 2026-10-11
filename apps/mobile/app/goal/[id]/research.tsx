@@ -48,7 +48,8 @@ function ResearchBody({id,owner}:{id:string;owner?:string}){
   return <KeyboardAvoidingView style={{flex:1,backgroundColor:colors.background}} behavior={Platform.OS==='ios'?'padding':undefined}><Screen title="研究资料与来源" bottomInset footer={form}>
     <Action label="返回目标详情" secondary disabled={busy} onPress={()=>url||claim||caveat?setDiscard(true):leave()}/>
     {discard&&<Card><AppText>放弃尚未提交的来源输入？已提交的记录保留。</AppText><Action label="放弃并返回" onPress={leave}/><Action label="继续填写" secondary onPress={()=>setDiscard(false)}/></Card>}
-    <Badge>来源准备 · 尚未形成研究结论</Badge><Caption>添加官网网页和想核对的问题。可选最多3份资料交给后台重新读取与归档；成功启动后，离开 App 不会取消。当前没有自动搜索或事实核验。</Caption>
+    <Badge>来源准备 · 尚未形成研究结论</Badge><Caption>添加官网网页和想核对的问题。可选最多3份资料交给后台重新读取与归档；成功启动后，离开 App 不会取消。可以主动搜索资料；当前没有自动生成查询或事实核验。</Caption>
+    {owner&&<Action label="搜索研究资料" secondary disabled={busy} onPress={()=>router.push({pathname:'/goal/[id]/search',params:{id}})}/>}
     {!!error&&<AppText accessibilityRole="alert">{error}</AppText>}
     {!owner&&<Caption>请登录后查看资料。</Caption>}
     {owner&&<Action label="重新读取资料状态" secondary disabled={busy} onPress={()=>{setError('');setRefresh(n=>n+1);}}/>}

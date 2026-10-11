@@ -1,6 +1,6 @@
 # 豆包搜索接入与首批接口
 
-首批实现日期：2026-10-11。现有Cloudflare后端新增搜索Adapter、私人尝试/结果快照与预算保留；没有手机入口、自动生成查询、PlanDraft或搜索Workflow。页面里的旧来源重读仍是网页GET，不调用搜索API。
+首批实现日期：2026-10-11。现有Cloudflare后端新增搜索Adapter、私人尝试/结果快照与预算保留；已接Goal内主动搜索入口；自动生成查询、PlanDraft及搜索Workflow尚未实现。页面里的旧来源重读仍是网页GET；独立搜索页由用户主动提交搜索API。
 
 ## 配置
 
@@ -44,4 +44,4 @@ npx wrangler secret put DOUBAO_SEARCH_API_KEY --config wrangler.cloud.json
 
 本轮测试使用合成供应商响应和真实临时D1/本地Auth边界，不证明真实Key、中文召回质量、Cloudflare外网可用性或iPhone功能。云端迁移/部署结果记[TODO](TODO.md)，密钥配置后需通过后续认证入口做真实搜索验收，不增加公网付费probe。
 
-下一轮接Goal内搜索入口与查询审阅，展示来源/正文不足/费用不明/旧版本，完成真实Cloudflare搜索；之后加入可恢复研究编排与PlanDraft，规则及确认边界以[搜索策略](SEARCH_STRATEGY.md)和[PRD](PRD.md)为准。
+Goal内入口为「研究资料与来源 → 搜索研究资料」：输入默认收起，用户填写通用问题、主动提交；成功收起输入，失败保留，读取状态不自动搜索。同页恢复使用原幂等键，另开搜索需确认可能再消耗额度；重载仅读取服务端历史，不保存未提交输入。展示来源、正文不足、结果不明和旧版本。真实Cloudflare搜索及iPhone体验待用户反馈；之后加入可恢复研究编排与PlanDraft，规则及确认边界以[搜索策略](SEARCH_STRATEGY.md)和[PRD](PRD.md)为准。
