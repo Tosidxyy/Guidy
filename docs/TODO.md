@@ -91,6 +91,7 @@
 - [x] 来源页阅读区域修复：添加表单默认收起、主动展开、收起保留/成功自动收起、失败保留；来源/任务安全错误码保留，全部失败明确显示。（浏览器/类型/lint/状态/iOS导出通过；新iPhone布局待确认，British Council云端HTTP520未恢复。）
 - [x] 首批持久后台来源任务：Cloudflare Workflows、D1 agent_jobs/逐项快照、同实例派发恢复、lease/检查点/版本保护；最多3份来源，页面离开后可恢复进度。（真实Workers Workflow+受控UI通过并部署，云空任务2步成功；实际iPhone来源任务待验收，不代表搜索/事实研究/计划生成完成。）
 - [x] 首批来源准备：独立网页 ResearchProvider、精确官网HTTPS白名单、大小/超时/跳转/类型限制；用户指定来源与待核对问题，D1保存短摘录/访问时间/限制/unverified，Goal内恢复/失败明确重试。（本地真实D1+受控UI、电脑实际公开网页读取通过并部署；不是自动搜索/事实核验或后台研究Job，iPhone云端来源读取仍待验收。）
+- [x] 首批搜索后端：豆包Custom SearchProvider、安全来源DTO、私有搜索尝试/结果、原子预算/幂等/owner/版本保护、unknown不自动重搜；已部署。受控供应商+真实临时D1验证通过；不代表手机入口、真实Key/搜索效果或完整研究流程验收。
 - [ ] 实现搜索/网页提取 Provider 抽象；保存来源 URL、获取时间、适用条件、未知项。
 - [ ] 增加外部网页不可信输入隔离与 SSRF/超时/重定向限制。
 - [ ] 使用 TypeScript Agent Provider 生成 `PlanDraft`，按运行时 Schema 与领域规则两次校验。
@@ -702,3 +703,14 @@ flowchart TD
 - 快速检查：四份文档相对链接、HTTPS URL格式、提案/待实现标注、3次基础查询费用算术与git diff --check PASS。仅文档变更，未运行应用测试/部署或真机验证，不虚报供应商端到端验证。
 - 内容Commit：0e1b8a0869faaafed54836d3126e6d760e88eed0。TODO单独提交后push origin/main并核对远程SHA；完整M1研究/计划项目保持未勾选。
 - 下一步：选定一个Provider，实现通用安全结果/预算尝试记录和Adapter，再以同一组中文/英文问题在Cloudflare评估内容可用性与每份草稿总成本；模型/抽取/失败成本纳入，不只比较单次搜索价格。
+
+### 2026-10-11 — 豆包Custom首批搜索后端 / 预算与私有结果
+
+- 用户授权下一轮，并确认已有豆包Key、稍后配置服务端。Scope仅SearchProvider/私有搜索API/尝试账本与文档；当前手机来源页不调用搜索，自动查询、搜索Workflow、PlanDraft保持未实现。采用Agent构建技能的持久执行/凭据边界，继续既定Cloudflare栈，未迁移框架或购买套餐。
+- 固定Custom web endpoint、Bearer服务端Key；query最多100个Unicode字符、Count5、不开队列/改写；12秒等待、30秒lease、256KiB响应、redirect manual。不转发Cookie/完整目标/对话、不抓取结果URL；HTTP(S)展示链接过滤明显无效/私网地址，但不声称任意URL DNS/IP SSRF检查已实现。query拒绝邮箱/长数字/URL/控制字符，不冒充完整PII分类器。
+- 来源DTO：后端UUID、provider/request_id/searched_at、标题/URL/snippet、最多1200内容、provider_content/provider_summary/snippet_only、可选发文时间、unverified。Snippet不补成正文、搜索时间不伪造retrieved_at，不将供应商标签当事实验证。
+- 0011新增search_attempts/search_usage，D1 batch先保留尝试和额度再外部POST；owner与revision/基础readiness/policy门槛。每Goal版本3、账号每日6/全局30（UTC，失败与unknown计入）。同键仅回执、冲突409；中断/过期unknown不自动重试/切换，Key缺失503无额度消耗。billing_status固定reserved_unknown，尚未接账单核对。Goal删除清私有查询结果，不清当天最小usage；账号删除级联，生命周期清理待发布前实现。
+- 快速检查：backend typecheck/lint/format:check、完整63项测试PASS（新增7项搜索测试，包括实际12秒超时abort、并发一次调用、冲突/owner/缺Key/readiness/旧结果拒绝、日额/全局额、删除后用量保留）。测试是受控供应商及真实临时D1。初次非提升lint因旧pytest_cache权限失败，正常环境重跑通过；测试fixture先缺profiles外键/误写不存在created_at字段，修正后完整复测通过，不把初次失败记PASS。
+- 迁移dev/test/cloud 0011 PASS，build:cloud dry-run PASS；云deploy版本5adbf980-45d4-4244-93dd-c303817c03f5，health正常、search-runs匿名GET/POST 401/UNAUTHORIZED PASS。没有调用真实搜索/LLM、收集用户验证码或读取Key，真实凭据有效性/中文召回/云Provider访问未验证。
+- 前端无变更，未跑移动端/浏览器/真机测试。SEARCH_SETUP/策略/harness/架构/数据库、空Key示例、相对链接和diff/暂存范围PASS；代码Commit：dc8da2afdea3f3e2b8e30cf2bea22c2f9a96c68b。TODO单独提交后push origin/main并核对SHA。
+- 下一步：Goal内查询审阅和搜索入口、来源卡片/正文不足/unknown/旧版本恢复；Key配置后验证真实云端搜索，再接完整研究编排与带引用PlanDraft。完整M1-B搜索/计划验收仍未勾选。
