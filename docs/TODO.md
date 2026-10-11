@@ -88,6 +88,7 @@
 
 ### M1-B 可恢复研究与结构化计划
 
+- [x] 首批持久后台来源任务：Cloudflare Workflows、D1 agent_jobs/逐项快照、同实例派发恢复、lease/检查点/版本保护；最多3份来源，页面离开后可恢复进度。（真实Workers Workflow+受控UI通过并部署，云空任务2步成功；实际iPhone来源任务待验收，不代表搜索/事实研究/计划生成完成。）
 - [x] 首批来源准备：独立网页 ResearchProvider、精确官网HTTPS白名单、大小/超时/跳转/类型限制；用户指定来源与待核对问题，D1保存短摘录/访问时间/限制/unverified，Goal内恢复/失败明确重试。（本地真实D1+受控UI、电脑实际公开网页读取通过并部署；不是自动搜索/事实核验或后台研究Job，iPhone云端来源读取仍待验收。）
 - [ ] 实现搜索/网页提取 Provider 抽象；保存来源 URL、获取时间、适用条件、未知项。
 - [ ] 增加外部网页不可信输入隔离与 SSRF/超时/重定向限制。
@@ -665,3 +666,17 @@ flowchart TD
 - 电脑实际Provider读取British Council present-simple公开页成功：title29/excerpt1200字符，10秒限制内；无凭据/个人数据，不当作事实核验或真实云Worker获取成功。云0008迁移/deploy PASS，版本1a1ab796-49ee-4fb3-8193-c16502307962，health正常；evidence匿名GET401，初次POST检查不符未留原始正文，再独立核对GET/POST均401/UNAUTHORIZED PASS，原因未复现。
 - 文档来源说明/架构/数据库/UI/预览、链接、diff/暂存范围PASS；实现Commit：8ed5c12bf8633fd867fcbc0c6380e08d8844dd39。TODO单独提交后push origin/main并核对远程SHA。
 - 未验证：iPhone新增表单键盘/来源读取保存、真实云Worker供应商访问、VoiceOver/大字体。来源生命周期/删除接口、自动搜索、持久Job与消费者、事实支撑claim/时效核验、PlanDraft仍待实现；完整M1-B项目保持未勾选。下一步将来源准备接入可恢复研究任务与结构化计划，不直接开放日历执行。
+
+### 2026-10-11 — Cloudflare Workflows / 可恢复后台来源任务
+
+- Scope：来源页主动选择1–3个当前版本来源，提交后台重新读取/归档、查看逐项成功失败和Reload恢复；不自动搜索、不调用LLM、不核实事实或生成计划。用户上一轮只回复下一步，未把该消息当作来源读取真机验收。采用已定Cloudflare栈，参考Agent构建技能的持久执行原则及官方Workflows文档，未迁移到eve/Vercel或升级付费套餐。
+- 0009新增agent_jobs/research_job_items：owner/Goal复合FK、账号幂等请求、版本、queued/running/completed/failed与派发状态、每Goal一条活跃任务；逐项固定URL/问题/限制、position、claim_token/lease/attempts与未核实结果。每Goal20个任务、账号每日3/全局10、每任务最多3来源；当前日期按UTC计额。资料结果不覆盖原source、核心Goal/Slot/计划不改，删除级联。
+- D1原子保存任务+来源快照，固定UUID触发Workflow仅传jobId；D1与派发不是跨服务事务，失败503并保留queued/未启动，GET不自动派发。用户resume_job_id继续启动同实例、原请求重放不建第二任务。未启动与后台排队分开，已失败实例不自动restart。取消/主动终止、派发自动修复队列未实现。
+- 持久start/source/finish步骤，来源30秒lease、10秒请求、最多2次领取；有效claim争用会使步骤等待后重试，Runtime/DB步骤最多2次重试、35秒间隔。已完成/失败来源检查点跳过；崩溃后可能重读一次公开GET，不声称外部调用严格一次。当前没有付费模型调用，后续LLM/长时研究另设计预算与heartbeat。版本变化拒绝旧结果；平台errored/terminated记录固定失败并回收未完项，不返回原始平台错误。
+- Node单测保持index.ts，实际部署main改worker.ts并独立导出ResearchWorkflow；dev/test/cloud名称隔离，guard锁定云绑定/类/入口。添加Cloudflare types解决模块类型识别。真实Miniflare5虚拟多模块Workflow初次启动internal error，按安装API明确Workflow导出、改为与Wrangler相同单模块编译后实际运行通过；真实Wrangler本地启动也通过。重复端口参数首次CLI拒绝，改直接命令，不计失败为通过。
+- 快速检查：backend typecheck/lint/format、完整54项回归PASS；最终平台失败/时间戳补充后6项任务专项PASS（包含真实Workflows执行、并发/配额、启动失败恢复、检查点、lease恢复、版本变化、级联与安全错误）。初次测试setTimeout lint引用、一次新增断言格式检查失败，修正后复查通过。mobile typecheck/lint、17项状态测试、export:ios PASS；build:cloud dry-run PASS。
+- SQLite CHECK的NULL语义收紧：0009本地已应用，因此不改旧迁移，新增0010复制/重建逐项表明确available时间非NULL，保留已有行；坏数据复制会失败而不是静默删除。最终真实D1断言PASS，0009/0010 dev/test/cloud迁移PASS，没有清理既有用户或执行历史。
+- Browser plugin not available，按前端调试/React技能用Playwright/Edge：真实本地登录/目标+受控来源/任务回复，来源选择→503保留同一任务→resume同ID→离页再进/Reload显示完成、POST创建1/恢复1而GET不重建PASS；来源失败保留、底栏/聊天/退出回归PASS。0意外错误/警告，预期400/422/502/503；受控后台回复不是实际云来源获取。脚本/截图仓库外，仅清理生成QA账号。
+- 云部署9a8e66c0-496c-429d-9fe4-67d6d9623949，Workflow guidy-research-development创建成功。私有CLI触发空测试实例guidy-smoke-20261011-4b7a6fa3，jobId为不存在的全零UUID；云status=complete、start/finish两步success，无网页/模型请求、无用户数据写入。仅证明云持久执行基础，不扩大为真实账号/来源整链验收。health正常，research-runs匿名GET/POST401/UNAUTHORIZED PASS。
+- 架构/数据库/UI/来源/预览文档、相对链接、diff/暂存范围检查PASS；实现Commit：74cdd206961d273891ce6ea1d6981ddefadf8baf。TODO单独提交后push origin/main并核对远程SHA。
+- 未验证：iPhone实际任务提交/离开后结果、云来源读取CPU/供应商可用性、VoiceOver/大字体。完整自动检索、事实证据核验、专业风险流程、PlanDraft/排程、长任务heartbeat/费用策略保持未完成。下一轮把确认条件与来源接入可审阅的结构化计划草稿，仍不直接写日历。
