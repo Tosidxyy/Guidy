@@ -81,3 +81,13 @@ harness只接受上一成功且紧邻当前turn、有效Goal版本的问题所�
 用户反馈韩语目标回答「你来安排吧」导致重复询问每周时间。将该回答识别为委托建议而非可用时间事实：受控提议每周3次×20分钟（60分钟）作为尝试投入，只有下一轮明确同意才保存「愿意先尝试每周60分钟；具体可用时段尚未确认」。time_proposal=weekly_60_v1仅由harness设置，模型不能提供该字段；捕获依据仍链接用户明确同意与此前服务端提议的question run。不能据此推导可用日期或安排任务。拒绝/重复委托/未知转到尚未问过的字段，都问过仍缺关键条件则needs_information，主动「继续完善」才重新讨论未知，不循环逼答。
 
 asked_topics从本人Goal成功DeepSeek问题的三个内部target去重，包含旧已问问题；不是轮数或确认数，不代表三个答案已确定。停止操作至少三种target问过才允许，否则422 CLARIFICATION_MINIMUM_NOT_MET，不调用模型。固定用户停止消息创建clarify-stop-v1/notice/harness/draft_requested回执，最多每Goal10条，不占8/20模型澄清日额度、耗尽额度仍可停止；重复key不多建，旧版本/并发/历史policy继续保护，不取消已在途付费请求。停止仅记录准备草稿的意图，尚未自动运行研究/计划，不补假Slot、写日历或生成假结果。未发送输入在停止成功后保留。
+
+## 停止后自动研究与方案（首批chat_auto_v1）
+
+停止notice成功与planning_jobs/生成额度预留同一个D1 batch；上下文冻结Goal版本与三个条件（可未知），同一source_run_id只一项，单Goal一项活跃，最多10项。停止本身不调用模型；有额度才派发已保存请求，达到上限/已有活跃时不假称已启动。每job与手动plan-drafts共享账号每日3/全局10 plan_draft_usage（UTC，失败/unknown也计），一次自动任务最多研究判断+计划两次模型，0或1次搜索；搜索额外共享6/30 search_usage。删除Goal不退款，两种用量在账号删除时级联。
+
+复用ResearchWorkflow绑定，event仅jobId；数据库判定source重读还是自动规划，原来源任务行为不变。planning-decide/research/generate三步检查点，付费阶段先D1 claim再调用；45秒付费阶段保护窗口、外部判断20秒/搜索12秒/生成25秒，Workflow每步60秒、自动重试0。中断/重复claim/超时不重付费，结果不明终态unknown；已保存后重复步骤无副作用。queued/中间待处理10分钟、外部阶段45秒lease，GET只过期结算，不派发或重生成；派发失败可POST恢复同一jobID，另开须用户明确确认。
+
+研究判断返回needs_search与固定七类通用topic，查询由harness固定词表生成并冻结，不发送用户时间/限制/邮箱/原文到搜索。健康/健身/护肤关键词强制检索，是保守规则非全面领域分类。确定性选前三份有正文/摘要来源各900字，保存URL/供应商request_id/search_id/searched_at/未核实，不把摘要当事实核验；没有正文失败，不静默降级为已研究。need_search=false才允许无来源个人行动草稿，仍unverified且明确未检索。
+
+计划复用strict emit_plan与Schema/引用/依赖/风险校验，不执行工具；未知成果/时间/限制在服务端补入assumptions，保留unknown事实。只chat_auto_v1支持来源0与未知必需字段，原手动搜索/生成门槛不放宽；无来源禁止虚构引用，不能认定专业事实。生成前后检查owner/Goal版本/状态/policy，通过才同batch保存私有plan_draft_attempt与completed，稳定Task IDs/未排程标志，完全不写核心PlanVersion/日历。研究判断不是全面知识缺口或语义事实评估。

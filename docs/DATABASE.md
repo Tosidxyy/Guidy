@@ -234,3 +234,7 @@ plan_draft_reviews追加weekly_capacity_minutes INTEGER，可NULL，CHECK 0–10
 ### 0015 聊天采集依据
 
 chat_condition_captures以run_id唯一记录当前回答和question_run_id、Goal/owner、slot_key/value_json、整条用户原文、提取版本及resulting_goal_revision。回答/问题均通过agent_runs(id,goal_id,owner_id)复合FK校验，删除目标/账号/相关run级联。与Goal版本增加、目标Slot写入、成功回复/助手消息同一D1 batch，失败全部回滚；不覆盖旧run、Goal条件仍source=user/private，仅有限明确回答可确认。未知confirmed_at=NULL，旧手工确认数据不自动改写。
+
+### 0016 持久自动方案任务
+
+planning_jobs用source_run_id唯一对应停止请求，source/Goal/owner复合FK，冻结上下文/Goal版本、研究决定/固定查询、来源、派发/状态/lease与错误码；活跃Goal部分唯一索引防并发。与停止成功及plan_draft_usage预留同batch；结果保存到原私有plan_draft_attempts（ID=jobID，auto_plan_请求键），不是PlanVersion，结果和completed同事务。Goal/账号删除级联私人Job/草稿，生成与搜索usage独立保留到账号删除，Goal删除不重置配额。新迁移不改原表或已应用迁移。

@@ -79,3 +79,10 @@ import {effortSummary} from '../src/goals/plans.ts';
 test('weekly capacity compares unknown, zero, exact, surplus and overload without claiming scheduling',()=>{
  assert.match(effortSummary(60,null),/无法比较/);assert.match(effortSummary(60,0),/超出 60/);assert.match(effortSummary(60,60),/刚好/);assert.match(effortSummary(60,90),/剩余 30/);assert.match(effortSummary(90,60),/超出 30/);assert.match(effortSummary(null,60),/有效/);assert.equal(reviewNumber('１００８０',0,10080),10080);assert.equal(reviewNumber('10081',0,10080),null);
 });
+
+import {checkedPlanning} from '../src/goals/planning.ts';
+test('automatic drafts permit explicit unknowns without sources, reject fake citations and forged completion',()=>{
+ const id='00000000-0000-0000-0000-000000000001',run='00000000-0000-0000-0000-000000000002';const draft={schema_version:1,status:'draft',verification_status:'unverified',title:'建议',summary:'试行',assumptions:['未知时间'],risks:[],weekly_minutes:60,time_fit:'needs_user_review',cost_status:'unknown',scheduling_status:'not_checked',tasks:[{id:run,key:'t1',stage:1,title:'练习',instructions:'练习并复盘',duration_minutes:20,frequency_per_week:3,mandatory:true,depends_on:[],evidence_ids:[]}]};
+ const context={schema_version:1,generation_mode:'chat_auto_v1',goal:{description:'学习',timeframe_note:''},conditions:['outcome','available_time','constraints'].map(key=>({key,source:'user',confirmed_at:null,value:{schema_version:1,state:'unknown',text:''}})),sources:[]};const plan={id,goal_revision:0,status:'succeeded',error_code:null,context,draft,created_at:123,billing_status:'reserved_unknown'};const goal={id,revision:0,status:'draft'};const job={id,source_run_id:run,goal_revision:0,status:'completed',error_code:null,dispatched:1,created_at:123,plan};
+ assert.equal(checkedPlanning({goal,jobs:[job]},id).jobs[0].plan.context.sources.length,0);assert.throws(()=>checkedPlanning({goal,jobs:[{...job,plan:null}]},id));assert.throws(()=>checkedPlanning({goal,jobs:[{...job,plan:{...plan,draft:{...draft,tasks:[{...draft.tasks[0],evidence_ids:['fake']}]}}}]},id));assert.throws(()=>checkedPlans({goal,attempts:[{...plan,context:{...context,generation_mode:undefined}}]},id));
+});

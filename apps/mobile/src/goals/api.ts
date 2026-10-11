@@ -1,3 +1,4 @@
+import {checkedPlanning,type PlanningSnapshot} from './planning';
 import { checkedPlans,planError,checkedReviews,reviewError,type ReviewSnapshot,type ReviewChange,type PlanSnapshot } from './plans';
 import { checkedSearchSnapshot, searchError, type SearchSnapshot } from './search';
 import { Platform } from 'react-native';
@@ -121,3 +122,6 @@ export async function submitPlan(id:string,body:{search_ids:string[];expected_re
 
 export async function getReviews(id:string,attemptId:string,signal:AbortSignal):Promise<ReviewSnapshot>{if(!/^[0-9a-f-]{36}$/.test(id)||!/^[0-9a-f-]{36}$/.test(attemptId))throw new Error('草稿地址不正确。');return checkedReviews(await request('GET',undefined,undefined,signal,`/${id}/draft-reviews?attempt_id=${attemptId}`),id,attemptId);}
 export async function saveReview(id:string,attemptId:string,body:{expected_goal_revision:number;expected_review_revision:number;weekly_capacity_minutes?:number|null;changes:ReviewChange[]},key:string):Promise<ReviewSnapshot>{if(!/^[0-9a-f-]{36}$/.test(id)||!/^[0-9a-f-]{36}$/.test(attemptId))throw new Error('草稿地址不正确。');return checkedReviews(await request('POST',body,key,undefined,`/${id}/draft-reviews?attempt_id=${attemptId}`),id,attemptId);}
+
+export async function getPlanning(id:string,signal?:AbortSignal):Promise<PlanningSnapshot>{return checkedPlanning(await request('GET',undefined,undefined,signal,`/${id}/planning-runs`),id);}
+export async function resumePlanning(id:string,jobId:string):Promise<PlanningSnapshot>{return checkedPlanning(await request('POST',{job_id:jobId},undefined,undefined,`/${id}/planning-runs`),id);}

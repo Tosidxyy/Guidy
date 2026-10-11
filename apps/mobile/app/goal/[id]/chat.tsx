@@ -1,3 +1,4 @@
+import {AutomaticPlanning} from '../../../src/components/AutomaticPlanning';
 import { useCallback, useRef, useState } from 'react';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { KeyboardAvoidingView, Platform, TextInput, View } from 'react-native';
@@ -65,13 +66,14 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
           <Card style={{backgroundColor:colors.action}}><AppText style={{color:colors.onAction}}>{run.user_text}</AppText></Card>
           {run.status==='running'?<Caption>正在生成建议，你的消息已保存。</Caption>:run.status==='failed'?<Card><AppText>这次生成未完成</AppText><Caption>{dialogueError(run.error_code??'')}</Caption><Action label="把这条消息填回输入框" secondary disabled={sending||active} onPress={()=>setText(run.user_text)}/></Card>:run.reply&&<Card><Badge>{run.reply.source==='policy'?'系统安全提示':'Agent'}</Badge><AppText style={{fontSize:21,fontWeight:'600'}}>{run.reply.question}</AppText><Caption>{run.reply.reason}</Caption></Card>}
         </View>)}
-        {data.runs.at(-1)?.reply?.stage==='research_ready'&&data.runs.at(-1)?.reply?.requested_slot===null&&<Caption>基本信息已收集。自动研究与方案生成还在接入，这里尚不会安排日历。</Caption>}
+        {data.runs.at(-1)?.reply?.stage==='research_ready'&&data.runs.at(-1)?.reply?.requested_slot===null&&<Caption>基本信息已收集。可以停止提问并准备草稿，确认方案前不会安排日历。</Caption>}
         {data.runs.at(-1)?.reply?.stage==='needs_information'&&<Card><Caption>尚有必要信息待确定，可以先保留目标，不会自动安排日历。</Caption><Action label="继续完善" secondary disabled={sending||active||!enabled} onPress={()=>send('请继续澄清仍未明确的条件。')}/></Card>}
         {(data.asked_topics?.length??0)<3&&<Caption>先了解三个核心信息，再停止提问；每项都可以暂不确定。</Caption>}
         {data.runs.at(-1)?.reply?.stage!=='draft_requested'&&<Action label="停止提问，先出草稿" secondary disabled={sending||active||!enabled||(data.asked_topics?.length??0)<3} onPress={()=>send('先到这里，请根据现有信息准备方案草稿。')}/>}
         {data.runs.at(-1)?.reply?.stage==='draft_requested'&&<Action label="继续完善" secondary disabled={sending||active||!enabled} onPress={()=>send('请继续澄清仍未明确的条件。')}/>}
+        <AutomaticPlanning key={owner+':'+id} id={id} owner={owner} chatRevision={data.chat_revision} stopped={data.runs.at(-1)?.reply?.stage==='draft_requested'} stopRunId={data.runs.filter(r=>r.reply?.stage==='draft_requested').at(-1)?.id} onAnother={()=>{void send('先到这里，请根据现有信息准备方案草稿。');}}/>
         {!enabled&&<Caption>当前目标只读，暂停草稿请先在详情页继续。</Caption>}
-        <Caption>对话会保存在这个目标内。你可以继续补充；已记录条件的更正和自动生成方案将在后续接通。</Caption>
+        <Caption>对话会保存在这个目标内。你可以继续补充；自动生成的草稿会显示在这里；已记录条件的更正将在后续接通。</Caption>
       </>}
     </Screen>
   </KeyboardAvoidingView>;

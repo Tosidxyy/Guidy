@@ -80,3 +80,9 @@ GET/POST `/api/v1/goals/{id}/draft-reviews?attempt_id={UUID}` 要求会话、Goa
 审阅页新增用户填写的每周可用分钟，0–10080整数、null表示未知。保存与任务调整同一不可变审阅版本，允许只改可用时间；POST可选weekly_capacity_minutes，旧客户端省略则继承前版，明确null清空。原有请求负载和幂等回执保持，旧版本迁移后为NULL，不从自由文本或AI推断。GET每份review返回该字段；客户端校验范围并在加载/保存/重进时恢复，刷新或版本冲突保留输入。
 
 总量比较按所有任务duration×frequency之和，显示未知、超出、刚好或剩余分钟。跨阶段任务未必同周执行，这是全部任务每周执行的估算，不是排程可行性判定；超出仍可保存待审草稿，不自动删任务、模型修订或批准。没有修改Goal/Slot、time_fit或日历；具体可用日期/时区/时间窗、截止、冲突/间隔、金钱预算和专业适用性仍待实现。0014仅追加nullable受CHECK约束的列，不覆写已有快照。
+
+## 聊天自动草稿chat_auto_v1
+
+用户三个核心信息问过后停止提问，无需挑选搜索或填写Slot。后台按需检索生成结果保存为独立plan_draft_attempt；Goal版本/原稿/执行历史不变。context.generation_mode=chat_auto_v1允许三个条件unknown；仅未检索分支可sources=[]，所有引用为空、assumptions明确未外部核实。生成时服务端补入未知成果/时间/基础限制提示，总投入仍建议、time_fit待审阅、cost未知、scheduling未检查。原手动端点仍要求已确认基础条件与来源，strict输出不能因此伪造来源或用户事实。
+
+GET /goals/{id}/planning-runs读取最多10项状态及completed.plan，POST {job_id}仅恢复同一已有任务的派发，不新增模型尝试（稳定jobID实现幂等）；通过会话/owner授权，未知/失败不自动再生成。聊天可明确另开停止请求生成新草稿，旧结果保留，共享每日3/10生成配额。自然语言改稿及一次批准排程仍未实现。

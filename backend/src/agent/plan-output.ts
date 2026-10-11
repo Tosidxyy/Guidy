@@ -11,7 +11,7 @@ export function planOutputTool(context: string) {
   );
   if (
     !Array.isArray(refs) ||
-    refs.length < 1 ||
+    (refs.length < 1 && data.generation_mode !== "chat_auto_v1") ||
     refs.length > 3 ||
     new Set(refs).size !== refs.length ||
     refs.some((ref) => typeof ref !== "string" || !/^E[1-3]$/.test(ref))
@@ -58,7 +58,9 @@ export function planOutputTool(context: string) {
               "最多5项前置任务key，不可自依赖/成环",
             ),
             evidence_ids: array(
-              { type: "string", enum: refs },
+              refs.length
+                ? { type: "string", enum: refs }
+                : { type: "string", pattern: "^$" },
               "最多3项当前来源引用，至少一个任务有引用",
             ),
           }),

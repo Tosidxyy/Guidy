@@ -18,7 +18,11 @@ type ModelDraft = {
   risks: string[];
   tasks: DraftTask[];
 };
-export function checkedPlan(content: string, sourceIds: string[]) {
+export function checkedPlan(
+  content: string,
+  sourceIds: string[],
+  allowUncited = false,
+) {
   const fail = (code = "PLAN_SCHEMA_JSON") => {
     throw new AgentError(code);
   };
@@ -91,7 +95,10 @@ export function checkedPlan(content: string, sourceIds: string[]) {
     if (t.evidence_ids.some((id) => !sourceIds.includes(id)))
       fail("PLAN_INVALID_CITATION");
   }
-  if (!v.tasks.some((t) => t.evidence_ids.length))
+  if (
+    !v.tasks.some((t) => t.evidence_ids.length) &&
+    !(allowUncited && sourceIds.length === 0)
+  )
     fail("PLAN_INVALID_CITATION");
   const visiting = new Set<string>(),
     done = new Set<string>();

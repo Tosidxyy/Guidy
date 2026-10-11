@@ -33,8 +33,15 @@ async function fixture(t, workflow = false) {
         new URL("../src/research/" + name + ".ts", import.meta.url),
         "utf8",
       );
+      const testSource =
+        name === "workflow"
+          ? source.replace(
+              /import\s*\{[\s\S]*?\}\s*from\s*["']\.\.\/agent\/planning-jobs\.ts["'];/,
+              "const decidePlanning=async()=>{},researchPlanning=async()=>{},generatePlanning=async()=>{};",
+            )
+          : source;
       const compiled = ts
-        .transpileModule(source, {
+        .transpileModule(testSource, {
           compilerOptions: {
             target: ts.ScriptTarget.ES2022,
             module: ts.ModuleKind.ESNext,

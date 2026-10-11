@@ -1,3 +1,5 @@
+import { planningStatements, dispatchPlanning } from "./planning-jobs.ts";
+import type { WorkflowBinding } from "../research/jobs.ts";
 import type { D1Database } from "@cloudflare/workers-types";
 import { checkedSuggestions, type SlotSuggestion } from "./suggestions.ts";
 import {
@@ -82,6 +84,7 @@ export async function dialogueResponse(
   requestId: string,
   env: AgentEnv,
   provider?: AgentProvider,
+  planningBinding?: WorkflowBinding,
 ): Promise<Response> {
   const goalId = new URL(request.url).pathname.split("/").at(-2)!;
   const now = Date.now();
@@ -125,6 +128,15 @@ export async function dialogueResponse(
         .bind(goalId, owner)
         .all()
     ).results.map((r) => String(r.topic));
+  const dispatchForRun = async (runId: string) => {
+    const job = await db
+      .prepare(
+        "SELECT id FROM planning_jobs WHERE source_run_id=? AND owner_id=?",
+      )
+      .bind(runId, owner)
+      .first();
+    if (job) await dispatchPlanning(db, planningBinding, String(job.id));
+  };
   const snapshot = async () => {
     const rows = await db.batch<Record<string, unknown>>([
       db
@@ -226,6 +238,7 @@ export async function dialogueResponse(
   if (previous) {
     if (previous.goal_id !== goalId || previous.request_payload !== payload)
       return fail(409, "IDEMPOTENCY_CONFLICT");
+    if (stop) await dispatchForRun(String(previous.id));
     return ok(await snapshot(), previous.status === "running" ? 202 : 200);
   }
   if (goal.status !== "draft" || goal.revision !== goalRevision)
@@ -312,7 +325,7 @@ export async function dialogueResponse(
         .bind(goalId, owner),
       db
         .prepare(
-          "SELECT key,value_json FROM goal_slots WHERE goal_id=? ORDER BY key",
+          "SELECT key,value_json,confirmed_at FROM goal_slots WHERE goal_id=? ORDER BY key",
         )
         .bind(goalId),
       db
@@ -416,7 +429,7 @@ export async function dialogueResponse(
         kind: "notice",
         source: "harness",
         question:
-          "已停止这一段提问，并保存基于现有信息准备草稿的请求。自动研究与方案生成还在接入，尚未生成新草稿。",
+          "已停止这一段提问，并保存基于现有信息准备草稿的请求。生成进度与结果会显示在这段对话下方。",
         reason: "缺失信息保留为待核对假设；确认入历前仍需检查必要条件。",
         requested_slot: null,
         stage: "draft_requested",
@@ -550,6 +563,39 @@ export async function dialogueResponse(
           capture ? 1 : 0,
           capture ? 1 : 0,
         ),
+      ...(stop && reply.stage === "draft_requested"
+        ? planningStatements(
+            db,
+            id,
+            goalId,
+            owner,
+            goalRevision,
+            {
+              schema_version: 1,
+              generation_mode: "chat_auto_v1",
+              goal: {
+                description: String(
+                  contextGoal.description || contextGoal.title,
+                ),
+                timeframe_note: String(contextGoal.timeframe_note),
+              },
+              conditions: ["outcome", "available_time", "constraints"].map(
+                (key) => {
+                  const saved = slots.results.find((s) => s.key === key);
+                  return {
+                    key,
+                    source: "user",
+                    confirmed_at: saved?.confirmed_at ?? null,
+                    value: saved
+                      ? JSON.parse(String(saved.value_json))
+                      : { schema_version: 1, state: "unknown", text: "" },
+                  };
+                },
+              ),
+            },
+            completed,
+          )
+        : []),
       ...(capture
         ? captureStatements(
             db,
@@ -572,6 +618,7 @@ export async function dialogueResponse(
       .bind(id, owner)
       .first();
     if (result?.status !== "succeeded") throw new AgentError("CONTEXT_CHANGED");
+    if (stop) await dispatchForRun(id);
     return ok(await snapshot());
   } catch (error) {
     const code = error instanceof AgentError ? error.code : "AI_UNAVAILABLE";
