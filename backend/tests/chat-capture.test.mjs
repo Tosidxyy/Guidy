@@ -240,7 +240,7 @@ test("chat answers atomically save private conditions with evidence, current sna
   );
 });
 
-test("partial or wrong-key suggestions never confirm facts; unknown mandatory answers keep asking", async (t) => {
+test("partial or wrong-key suggestions never confirm facts; unknown mandatory answers defer to other questions", async (t) => {
   const f = await setup(t);
   await f.post("开始", "capture-start");
   const bad = {
@@ -266,7 +266,7 @@ test("partial or wrong-key suggestions never confirm facts; unknown mandatory an
   const latest = (await (await f.get()).json()).data;
   assert.equal(latest.goal.revision, 1);
   assert.equal(latest.runs[2].reply.stage, "clarifying");
-  assert.equal(latest.runs[2].reply.requested_slot, "outcome");
+  assert.equal(latest.runs[2].reply.requested_slot, "available_time");
   assert.equal(
     (await f.post("大概能交流", "capture-ambiguous", 3, 1)).status,
     200,
@@ -380,5 +380,143 @@ test("a failed provenance insert rolls back condition and goal changes together 
   assert.equal(
     (await f.db.prepare("SELECT status FROM agent_runs").first()).status,
     "failed",
+  );
+});
+
+test("delegated time becomes a bounded proposal, never guessed availability; acceptance is explicit and replayable", async (t) => {
+  const f = await setup(t);
+  await f.post("开始", "delegate-start");
+  await f.post("学会基础韩语交流", "delegate-outcome", 1, 0);
+  const r = await f.post("你来安排吧", "delegate-time", 2, 1);
+  assert.equal(r.status, 200);
+  const b = (await r.json()).data;
+  assert.equal(b.goal.revision, 2);
+  assert.equal(b.runs.at(-1).reply.time_proposal, "weekly_60_v1");
+  assert.match(b.runs.at(-1).reply.question, /60分钟/);
+  const value = JSON.parse(
+    (
+      await f.db
+        .prepare("SELECT value_json FROM goal_slots WHERE key='available_time'")
+        .first()
+    ).value_json,
+  );
+  assert.equal(value.state, "unknown");
+  const accepted = await f.post("可以", "delegate-accept", 3, 2);
+  assert.equal(accepted.status, 200);
+  const a = (await accepted.json()).data;
+  assert.equal(a.goal.revision, 3);
+  assert.equal(a.runs.at(-1).reply.requested_slot, "constraints");
+  const saved = JSON.parse(
+    (
+      await f.db
+        .prepare("SELECT value_json FROM goal_slots WHERE key='available_time'")
+        .first()
+    ).value_json,
+  );
+  assert.equal(saved.state, "confirmed");
+  assert.match(saved.text, /具体可用时段尚未确认/);
+  assert.equal((await f.post("可以", "delegate-accept", 3, 2)).status, 200);
+  assert.equal(f.calls(), 4);
+  assert.equal(
+    (await f.db.prepare("SELECT active_plan_version_id FROM goals").first())
+      .active_plan_version_id,
+    null,
+  );
+});
+test("declining a proposal and unknown answers do not force a repeated time question", async (t) => {
+  const f = await setup(t);
+  await f.post("开始", "decline-start");
+  await f.post("学会基础韩语交流", "decline-outcome", 1, 0);
+  await f.post("你来安排吧", "decline-time", 2, 1);
+  const declined = await f.post("先不决定", "decline-proposal", 3, 2);
+  assert.equal(declined.status, 200);
+  assert.equal(
+    (await declined.json()).data.runs.at(-1).reply.requested_slot,
+    "constraints",
+  );
+  const end = await f.post("暂不确定", "decline-constraints", 4, 2);
+  assert.equal(end.status, 200);
+  const b = (await end.json()).data;
+  assert.equal(b.runs.at(-1).reply.requested_slot, null);
+  assert.equal(b.runs.at(-1).reply.stage, "needs_information");
+  assert.equal(b.goal.revision, 3);
+  const resume = await f.post(
+    "请继续澄清仍未明确的条件。",
+    "decline-resume",
+    5,
+    3,
+  );
+  assert.equal(resume.status, 200);
+  assert.equal(
+    (await resume.json()).data.runs.at(-1).reply.requested_slot,
+    "available_time",
+  );
+});
+test("stop requires three distinct core questions, works without a model at paid quota, and remains policy gated", async (t) => {
+  const f = await setup(t),
+    message = "先到这里，请根据现有信息准备方案草稿。";
+  assert.equal((await f.post(message, "stop-too-early")).status, 422);
+  assert.equal(f.calls(), 0);
+  await f.post("开始", "stop-start");
+  await f.post("学习韩语交流", "stop-outcome", 1, 0);
+  await f.post("每天二十分钟", "stop-time", 2, 1);
+  const before = (await (await f.get()).json()).data;
+  assert.deepEqual([...before.asked_topics].sort(), [
+    "available_time",
+    "constraints",
+    "outcome",
+  ]);
+  for (let i = 4; i <= 8; i++)
+    await f.db
+      .prepare(
+        "INSERT INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) VALUES(?,?,?,?,?, ?,2,'test','failed','clarify-v3.1',?,?,?)",
+      )
+      .bind(
+        globalThis.crypto.randomUUID(),
+        f.goal,
+        f.owner,
+        "quota-seed-" + i,
+        "{}",
+        i,
+        Date.now(),
+        Date.now(),
+        Date.now(),
+      )
+      .run();
+  const result = await f.post(message, "stop-after-questions", 8, 2);
+  assert.equal(result.status, 200);
+  const body = (await result.json()).data;
+  assert.equal(body.runs.at(-1).reply.kind, "notice");
+  assert.equal(body.runs.at(-1).reply.stage, "draft_requested");
+  assert.equal(f.calls(), 3);
+  assert.equal(body.goal.revision, 2);
+  assert.equal(
+    (await f.post(message, "stop-after-questions", 8, 2)).status,
+    200,
+  );
+  assert.equal(f.calls(), 3);
+  const noProvider = await dialogueResponse(
+    f.req(message, "stop-no-provider", 9, 2),
+    f.db,
+    f.owner,
+    "test",
+    {},
+  );
+  assert.equal(noProvider.status, 200);
+  assert.equal(
+    (await f.post("继续", "quota-still-limited", 10, 2)).status,
+    429,
+  );
+  await f.db
+    .prepare("UPDATE goals SET description='我有伤病' WHERE id=?")
+    .bind(f.goal)
+    .run();
+  const safe = await f.post(message, "stop-policy", 10, 2);
+  assert.equal(safe.status, 200);
+  assert.equal((await safe.json()).data.runs.at(-1).reply.source, "policy");
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM plan_draft_attempts").first())
+      .n,
+    0,
   );
 });

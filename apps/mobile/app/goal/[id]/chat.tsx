@@ -37,7 +37,7 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
     const body={text:value,expected_chat_revision:data.chat_revision,expected_goal_revision:data.goal.revision};const payload=JSON.stringify(body);
     if(operation.current?.payload!==payload)operation.current={payload,key:`chat_${Date.now()}_${Math.random().toString(36).slice(2,12)}`};
     const scope=generation.current;busy.current=true;setSending(true);setError('');
-    try{const result=await sendDialogue(id,body,operation.current.key);if(scope!==generation.current)return;running.current=result.runs.some(r=>r.status==='running');setRecord({owner,data:result});setText('');operation.current=null;}
+    try{const result=await sendDialogue(id,body,operation.current.key);if(scope!==generation.current)return;running.current=result.runs.some(r=>r.status==='running');setRecord({owner,data:result});if(value!=='先到这里，请根据现有信息准备方案草稿。')setText('');operation.current=null;}
     catch(err){if(scope!==generation.current)return;setError(err instanceof Error?err.message:'生成失败，输入仍保留。');await load(new AbortController().signal,scope,false);}
     finally{busy.current=false;setSending(false);}
   }
@@ -48,7 +48,7 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
       <TextInput accessibilityLabel="回复或补充条件" multiline scrollEnabled maxLength={600} value={text} onChangeText={setText} editable={!!enabled&&!sending&&!active} placeholder="回答上面的问题，或补充新的条件" placeholderTextColor={colors.secondary} style={{backgroundColor:colors.surface,color:colors.text,borderColor:colors.divider,borderWidth:1,borderRadius:15,padding:12,height:104,textAlignVertical:'top',fontSize:17}}/>
       <View style={{flexDirection:'row',gap:8}}>
         <View style={{flex:2}}><Action label={sending?'正在请求…':active?'等待本次生成完成':'发送并继续'} disabled={!enabled||sending||active||!text.trim()} onPress={()=>send()}/></View>
-        <View style={{flex:1}}><Action label="暂不确定" secondary disabled={!enabled||sending||active||!data.runs.length} onPress={()=>send('暂不确定，请考虑其他必要条件。')}/></View>
+        <View style={{flex:1}}><Action label="暂不确定" secondary disabled={!enabled||sending||active||!data.runs.length||data.runs.at(-1)?.reply?.requested_slot===null} onPress={()=>send('暂不确定，请考虑其他必要条件。')}/></View>
       </View>
     </>}>
       <Action label="返回目标详情" secondary disabled={sending} onPress={()=>text.trim()?setDiscard(true):leave()}/>
@@ -66,6 +66,10 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
           {run.status==='running'?<Caption>正在生成建议，你的消息已保存。</Caption>:run.status==='failed'?<Card><AppText>这次生成未完成</AppText><Caption>{dialogueError(run.error_code??'')}</Caption><Action label="把这条消息填回输入框" secondary disabled={sending||active} onPress={()=>setText(run.user_text)}/></Card>:run.reply&&<Card><Badge>{run.reply.source==='policy'?'系统安全提示':'Agent'}</Badge><AppText style={{fontSize:21,fontWeight:'600'}}>{run.reply.question}</AppText><Caption>{run.reply.reason}</Caption></Card>}
         </View>)}
         {data.runs.at(-1)?.reply?.stage==='research_ready'&&data.runs.at(-1)?.reply?.requested_slot===null&&<Caption>基本信息已收集。自动研究与方案生成还在接入，这里尚不会安排日历。</Caption>}
+        {data.runs.at(-1)?.reply?.stage==='needs_information'&&<Card><Caption>尚有必要信息待确定，可以先保留目标，不会自动安排日历。</Caption><Action label="继续完善" secondary disabled={sending||active||!enabled} onPress={()=>send('请继续澄清仍未明确的条件。')}/></Card>}
+        {(data.asked_topics?.length??0)<3&&<Caption>先了解三个核心信息，再停止提问；每项都可以暂不确定。</Caption>}
+        {data.runs.at(-1)?.reply?.stage!=='draft_requested'&&<Action label="停止提问，先出草稿" secondary disabled={sending||active||!enabled||(data.asked_topics?.length??0)<3} onPress={()=>send('先到这里，请根据现有信息准备方案草稿。')}/>}
+        {data.runs.at(-1)?.reply?.stage==='draft_requested'&&<Action label="继续完善" secondary disabled={sending||active||!enabled} onPress={()=>send('请继续澄清仍未明确的条件。')}/>}
         {!enabled&&<Caption>当前目标只读，暂停草稿请先在详情页继续。</Caption>}
         <Caption>对话会保存在这个目标内。你可以继续补充；已记录条件的更正和自动生成方案将在后续接通。</Caption>
       </>}

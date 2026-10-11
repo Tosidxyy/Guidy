@@ -29,3 +29,7 @@ test('chat collection metadata accepts internal keys but cannot masquerade as po
  const reply={...base.runs[0].reply,requested_slot:'outcome',stage:'clarifying'};assert.equal(checkedDialogue({...base,runs:[{...base.runs[0],reply}]}).runs[0].reply.requested_slot,'outcome');
  for(const override of [{requested_slot:'calendar'},{stage:'scheduled'},{source:'policy',kind:'referral'}])assert.throws(()=>checkedDialogue({...base,runs:[{...base.runs[0],reply:{...reply,...override}}]}));
 });
+
+test('harness stop notices cannot masquerade as generated drafts or model actions',()=>{const reply={schema_version:1,kind:'notice',source:'harness',question:'已停止提问，草稿生成尚未接通。',reason:'缺失信息仍未知',requested_slot:null,stage:'draft_requested'};assert.equal(checkedDialogue({...base,runs:[{...base.runs[0],reply}]}).runs[0].reply.stage,'draft_requested');for(const patch of [{source:'deepseek'},{requested_slot:'outcome'},{stage:'scheduled'},{suggestions:[]}])assert.throws(()=>checkedDialogue({...base,runs:[{...base.runs[0],reply:{...reply,...patch}}]}));});
+
+test('three-topic progress is distinct internal metadata, never a repeated-turn count',()=>{assert.equal(checkedDialogue({...base,asked_topics:['outcome','available_time','constraints']}).asked_topics.length,3);for(const topics of [['outcome','outcome'],['calendar'],['outcome','available_time','constraints','outcome']])assert.throws(()=>checkedDialogue({...base,asked_topics:topics}));});

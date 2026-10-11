@@ -75,3 +75,9 @@ harness只接受上一成功且紧邻当前turn、有效Goal版本的问题所�
 模型question字段与下一缺项不匹配时，harness使用该缺项的固定补问并标为同一内部target；简单关键词检查不是全面语义证明。基础成果/时间确认后stage可为research_ready，仍不是排程可用；约束再问一次，可未知。自动研究/方案和自然语言更正尚未接通，聊天如实说明。
 
 0015 chat_condition_captures保存回答run、问题run、owner/Goal、key/value/原文、chat-capture-v1及resulting_goal_revision；两端复合FK防跨目标/账号。单个D1 batch完成成功reply、Goal revision+1、Slot和依据、助手消息，失败一起回滚。run.goal_revision保留请求输入版；下一轮用捕获回执版对齐上一问题，GET/POST返回新的Goal一致快照。同键只读持久结果，不重提取/调用/涨版本。没有核心PlanVersion、日历或提醒写入。
+
+## clarify-v3.1 委托时间、未知去重与停止请求
+
+用户反馈韩语目标回答「你来安排吧」导致重复询问每周时间。将该回答识别为委托建议而非可用时间事实：受控提议每周3次×20分钟（60分钟）作为尝试投入，只有下一轮明确同意才保存「愿意先尝试每周60分钟；具体可用时段尚未确认」。time_proposal=weekly_60_v1仅由harness设置，模型不能提供该字段；捕获依据仍链接用户明确同意与此前服务端提议的question run。不能据此推导可用日期或安排任务。拒绝/重复委托/未知转到尚未问过的字段，都问过仍缺关键条件则needs_information，主动「继续完善」才重新讨论未知，不循环逼答。
+
+asked_topics从本人Goal成功DeepSeek问题的三个内部target去重，包含旧已问问题；不是轮数或确认数，不代表三个答案已确定。停止操作至少三种target问过才允许，否则422 CLARIFICATION_MINIMUM_NOT_MET，不调用模型。固定用户停止消息创建clarify-stop-v1/notice/harness/draft_requested回执，最多每Goal10条，不占8/20模型澄清日额度、耗尽额度仍可停止；重复key不多建，旧版本/并发/历史policy继续保护，不取消已在途付费请求。停止仅记录准备草稿的意图，尚未自动运行研究/计划，不补假Slot、写日历或生成假结果。未发送输入在停止成功后保留。

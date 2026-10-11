@@ -8,6 +8,7 @@ import {
 } from "./provider.ts";
 
 import {
+  delegatesTime,
   chatCapture,
   captureStatements,
   nextChatSlot,
@@ -17,13 +18,15 @@ import {
 
 type Reply = {
   schema_version: 1;
-  kind: "question" | "referral";
+  kind: "question" | "referral" | "notice";
   question: string;
   reason: string;
-  source: "deepseek" | "policy";
+  source: "deepseek" | "policy" | "harness";
   suggestions?: SlotSuggestion[];
   requested_slot?: CaptureKey | null;
-  stage?: "clarifying" | "research_ready";
+  stage?:
+    "clarifying" | "research_ready" | "needs_information" | "draft_requested";
+  time_proposal?: "weekly_60_v1";
 };
 function validateReply(content: string, userText: string): Reply {
   let value;
@@ -113,6 +116,15 @@ export async function dialogueResponse(
     .run();
   const columns =
     "id,turn_index,user_text,status,reply_json,error_code,input_tokens,output_tokens,requested_model,context_schema_version,harness_version,goal_revision,created_at";
+  const askedTopics = async () =>
+    (
+      await db
+        .prepare(
+          "SELECT DISTINCT json_extract(reply_json,'$.requested_slot') topic FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' AND json_extract(reply_json,'$.source')='deepseek' AND json_extract(reply_json,'$.requested_slot') IN ('outcome','available_time','constraints') ORDER BY topic",
+        )
+        .bind(goalId, owner)
+        .all()
+    ).results.map((r) => String(r.topic));
   const snapshot = async () => {
     const rows = await db.batch<Record<string, unknown>>([
       db
@@ -129,6 +141,7 @@ export async function dialogueResponse(
     const liveGoal = rows[0].results[0];
     return {
       goal: liveGoal,
+      asked_topics: await askedTopics(),
       chat_revision: rows[1].results[0]?.turn_index ?? 0,
       runs: rows[1].results.reverse().map((r) => ({
         ...r,
@@ -202,6 +215,7 @@ export async function dialogueResponse(
   } catch {
     return fail(422, "INVALID_BODY");
   }
+  const stop = text === "先到这里，请根据现有信息准备方案草稿。";
   const payload = JSON.stringify({ text, chatRevision, goalRevision });
   const previous = await db
     .prepare(
@@ -216,9 +230,11 @@ export async function dialogueResponse(
   }
   if (goal.status !== "draft" || goal.revision !== goalRevision)
     return fail(409, "CONTEXT_CHANGED");
-  let model: AgentProvider;
+  if (stop && (await askedTopics()).length < 3)
+    return fail(422, "CLARIFICATION_MINIMUM_NOT_MET");
+  let model: AgentProvider | undefined;
   try {
-    model = provider ?? deepseekProvider(env);
+    if (!stop) model = provider ?? deepseekProvider(env);
   } catch {
     return fail(503, "AI_NOT_CONFIGURED");
   }
@@ -227,7 +243,7 @@ export async function dialogueResponse(
   const claimed = await db.batch([
     db
       .prepare(
-        `INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running','clarify-v3',?,?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=?)=? AND (SELECT count(*) FROM agent_runs WHERE owner_id=? AND created_at>=?)<8 AND (SELECT count(*) FROM agent_runs WHERE created_at>=?)<20`,
+        `INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running',?,?,?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=?)=? AND ((?=1 AND (SELECT count(*) FROM agent_runs WHERE goal_id=goals.id AND harness_version='clarify-stop-v1')<10) OR (?=0 AND (SELECT count(*) FROM agent_runs WHERE owner_id=? AND created_at>=? AND harness_version!='clarify-stop-v1')<8 AND (SELECT count(*) FROM agent_runs WHERE created_at>=? AND harness_version!='clarify-stop-v1')<20))`,
       )
       .bind(
         id,
@@ -235,6 +251,7 @@ export async function dialogueResponse(
         payload,
         chatRevision + 1,
         text,
+        stop ? "clarify-stop-v1" : "clarify-v3.1",
         now,
         now,
         now + 45000,
@@ -243,6 +260,8 @@ export async function dialogueResponse(
         goalRevision,
         goalId,
         chatRevision,
+        stop ? 1 : 0,
+        stop ? 1 : 0,
         owner,
         day,
         day,
@@ -267,7 +286,7 @@ export async function dialogueResponse(
     }
     const counts = await db
       .prepare(
-        "SELECT count(*) AS total,sum(CASE WHEN owner_id=? THEN 1 ELSE 0 END) AS personal FROM agent_runs WHERE created_at>=?",
+        "SELECT count(*) AS total,sum(CASE WHEN owner_id=? THEN 1 ELSE 0 END) AS personal FROM agent_runs WHERE created_at>=? AND harness_version!='clarify-stop-v1'",
       )
       .bind(owner, day)
       .first();
@@ -328,6 +347,7 @@ export async function dialogueResponse(
           goal_revision: Number(last!.effective_revision),
           requested_slot: lastReply.requested_slot,
           source: lastReply.source,
+          time_proposal: lastReply.time_proposal,
         }
       : null;
     const context = JSON.stringify({
@@ -390,13 +410,28 @@ export async function dialogueResponse(
         reason: "当前不会提供诊断、处方调整或高风险行动建议。",
         source: "policy",
       };
+    else if (stop)
+      reply = {
+        schema_version: 1,
+        kind: "notice",
+        source: "harness",
+        question:
+          "已停止这一段提问，并保存基于现有信息准备草稿的请求。自动研究与方案生成还在接入，尚未生成新草稿。",
+        reason: "缺失信息保留为待核对假设；确认入历前仍需检查必要条件。",
+        requested_slot: null,
+        stage: "draft_requested",
+      };
     else {
       const completion = await Promise.race([
-        model.complete(context, controller.signal),
+        model!.complete(context, controller.signal),
         timeout,
       ]);
       reply = validateReply(completion.content, text);
-      if (reply.requested_slot !== undefined) {
+      if (
+        reply.requested_slot !== undefined ||
+        preceding?.time_proposal === "weekly_60_v1" ||
+        (preceding?.requested_slot === "available_time" && delegatesTime(text))
+      ) {
         capture = chatCapture(
           text,
           reply.suggestions ?? [],
@@ -410,7 +445,14 @@ export async function dialogueResponse(
               { key: capture.key, value: capture.value },
             ]
           : conditions;
-        const target = nextChatSlot(after);
+        let target = nextChatSlot(after, text === "请继续澄清仍未明确的条件。");
+        const basicReady =
+          after.some(
+            (s) => s.key === "outcome" && s.value.state === "confirmed",
+          ) &&
+          after.some(
+            (s) => s.key === "available_time" && s.value.state === "confirmed",
+          );
         const questionFits =
           target === null ||
           {
@@ -422,12 +464,45 @@ export async function dialogueResponse(
           const fallback = {
             outcome: "你希望这个目标最终达到什么具体结果？",
             available_time: "你每周能投入多少时间，通常哪些时段有空？",
-            constraints: "有什么需要考虑的限制或已有资源？也可以暂不确定。",
+            constraints:
+              "你目前的基础、已有资源或关键限制是什么？也可以暂不确定。",
           };
           reply.question = target
             ? fallback[target]
             : "基本信息已收集，还有其他希望补充的内容吗？";
           reply.reason = "根据你的回答继续补齐必要信息，暂不安排日历。";
+        }
+        const delegate =
+          preceding?.goal_revision === goalRevision &&
+          preceding.requested_slot === "available_time" &&
+          delegatesTime(text);
+        if (delegate && preceding?.time_proposal !== "weekly_60_v1") {
+          target = "available_time";
+          reply.time_proposal = "weekly_60_v1";
+          reply.question =
+            "那先建议每周3次、每次20分钟，共60分钟做入门尝试，你愿意先按这个投入试试吗？";
+          reply.reason =
+            "这只是建议，不代表已知道你的空闲时段；同意后才记录尝试投入。";
+        } else if (
+          preceding?.time_proposal === "weekly_60_v1" &&
+          !capture?.value.text
+        ) {
+          reply.question = target
+            ? {
+                outcome: "你希望这个目标最终达到什么具体结果？",
+                available_time: "你通常有哪些可用时间？",
+                constraints:
+                  "我们先把时间留为待定，有什么限制或已有资源需要考虑吗？",
+              }[target]
+            : "时间可以先留待定，等你想好后再继续完善，可以吗？";
+          reply.reason =
+            "不会重复追问同一时间，也不会把委托或未知当成实际空闲。";
+        }
+        if (target === null) {
+          reply.question = basicReady
+            ? "基本信息已收集，还有其他希望补充的内容吗？"
+            : "必要信息还未确定，你想先保留目标，之后再完善吗？";
+          reply.reason = "已知与未知分别保留，不会强行继续追问或安排日历。";
         }
         reply.requested_slot = target;
         reply.stage =
@@ -438,7 +513,9 @@ export async function dialogueResponse(
             (s) => s.key === "available_time" && s.value.state === "confirmed",
           )
             ? "research_ready"
-            : "clarifying";
+            : target === null
+              ? "needs_information"
+              : "clarifying";
       }
       inputTokens = completion.inputTokens;
       outputTokens = completion.outputTokens;
