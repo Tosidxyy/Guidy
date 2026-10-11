@@ -100,7 +100,7 @@
 - [ ] 研究/计划生成改为D1 持久 Agent Job + 经验证的 Cloudflare 后台编排/消费者（lease、heartbeat、重试、检查点）。
 - [ ] 实现 Job 状态轮询，恢复后能继续查看阶段进度而不重复扣费/重复生成副作用。
 - [ ] 计划详情展示任务、阶段、依据、预算/时间投入、阻塞原因和未确认条件。
-- [ ] 手机草稿生成与审阅真机验收：页面/客户端校验/受控生成与恢复已实现；真实iPhone生成校验失败，修正后仍失败，等待新错误文字继续定位。不得以受控回复通过代替真实生成。
+- [x] 手机基础真实生成与草稿展示：strict输出修正后用户确认iPhone「已出现草稿」。（仅基础生成/展示；内容质量、引用语义、时间适配、异常恢复/VO/大字及确认入历未验收。旧失败与用量保留。）
 - [ ] 建立健身、学习、护肤各 1 套可重复的评估样例，避免把 LLM 无法验证的产品参数当事实。
 
 **M1 验收**：输入“我想开始健身”可完成动态澄清、研究并输出 `PlanDraft`；必填信息缺失时不伪造，来源失败时可重试，Agent 关闭页面后 Worker 继续运行。
@@ -757,3 +757,14 @@ flowchart TD
 - Browser plugin not available，Playwright/Edge真实本地OTP/Goal+受控搜索/模型，选择前禁用/任务假设依赖引用/无确认入历/Reload仅GET/unknown同键恢复/另开确认/320×480无横溢/终态禁用/细分任务提示PASS；最终POST4次、3不同键，0意外error/warn。测试不是实际DeepSeek，脚本/截图仓库外，仅清理精确QA账号。
 - 云最终部署d4cb6288-b8a3-44dd-be50-d6cb7c2b1838，health正常、plan-drafts匿名GET/POST401 PASS；未代用户调用模型/搜索或读取Key/原始目标。文档同步/相对链接/diff/暂存范围PASS；代码Commit：7146f3eb99a16650dabd08d7075997e70238b889。TODO单独提交后push origin/main并核对SHA。
 - 下一步：通过新安全错误码和用户反馈定位真实模型失败，必要时进一步约束输出/独立诊断；真实草稿成功前不推进确认入历。完整领域/预算时间匹配、引用语义/修订与持久Plan Workflow仍未完成。
+
+### 2026-10-11 — strict计划输出 / 云端复现与iPhone成功确认
+
+- 用户第三次提示顶层字段/整体格式不合规。只读云错误码计数旧通用2、PLAN_INVALID_SCHEMA 1，不读取用户正文或失败原始模型内容；旧记录无法还原具体坏字段。增加固定JSON/对象/字段/标题/摘要/假设/风险/任务数/重复key分类，不输出任意未知字段名/原文。
+- 查阅DeepSeek官方strict指南：计划目的改固定beta/chat/completions、thinking disabled、1800输出Token、强制唯一emit_plan参数返回。该函数只是格式载体，不派发/执行工具、不跟进调用；仅固定名称、单一调用与完整结束接受。object全部required/additionalProperties=false，当前引用enum、字符串pattern/整数范围，数组数量/唯一/依赖和专业规则仍本地验证。澄清普通endpoint/JSON/650及拒绝工具不变，无自动JSON回退或重复扣费。
+- 隔离测试身份写短期验证哈希，经云真实登录/Goal/slots API、标明非真实抓取的受控来源：普通模式与最终strict各一次模型调用均201成功，精确清理测试身份/验证记录与级联数据。无邮件、Key/真实用户字段/原始回复读取输出。fixture先用数字日期导致登录400/INVALID_OTP，未到模型调用，按锁定库ISO存储修正后通过。一次审批因账号用量不能完成，未执行；用户恢复后正常审批重试通过，没有绕过。
+- 为用户已用3次提供仅开发环境临时第4次主动验证，不清旧记录/账单占用/全局上限；用户随后明确确认iPhone「已出现草稿」。因此基础真实生成/展示勾选；不扩大为所有模型质量/事实/时间/专业安全或入历通过。验证结束已恢复所有环境每日3/全局10，旧4条记录和草稿保留，同键/只读回执仍可访问，当天不再新生成。
+- 最终检查：backend typecheck/lint/format:check、14项计划/DeepSeek专项PASS，覆盖strict模式协议、未知/多个调用/截断拒绝、非法context无fetch、引用/依赖/owner/幂等/版本/安全提示/预算、恢复3不删除已有4次。mobile typecheck/lint、22项状态测试、export:ios PASS。build:cloud PASS；最终部署95634cea-1446-4f40-8ca6-6c9bbe145408，health正常、plan-drafts匿名GET/POST401 PASS，无迁移。
+- Browser plugin not available，Playwright/Edge既有QA脚本：初次本地8090超时未记通过，核对Guidy监听进程PID32236后只重启该QA预览（不改手机8089/环境文件）；最终额度4告知→GET恢复3、不自动模型POST/历史和失败恢复/终态禁用/新请求确认/320×480无横溢PASS，0意外错误/警告、POST4/3不同键。受控回复不代替用户真机反馈，精确清QA账号、截图/脚本仓库外。
+- PLAN_DRAFT/架构/harness/iPhone说明、链接/diff/暂存范围PASS；代码Commit：55b74ec6ce99625bebdde6319ab0993c3fe695fd。TODO单独提交后push origin/main并核对SHA；完整M1/领域校验/编辑批准/PlanVersion排程仍未完成。
+- 下一步：在已可生成/展示的草稿基础上实现用户任务审阅与必要调整，再收集结构化时间/预算并做确定性可执行检查；用户确认前保持不写日历。
