@@ -2,11 +2,18 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "guidy-api-development",
   "account_id": "8ea47eed8a010eb55b3d512e14657497",
-  "main": "src/index.ts",
+  "main": "src/worker.ts",
   "compatibility_date": "2026-10-09",
   "workers_dev": true,
   "routes": [{ "pattern": "api.guidy.fun", "custom_domain": true }],
   "observability": { "enabled": false },
+  "workflows": [
+    {
+      "name": "guidy-research-development",
+      "binding": "RESEARCH_WORKFLOW",
+      "class_name": "ResearchWorkflow"
+    }
+  ],
   "vars": {
     "GUIDY_ENVIRONMENT": "development",
     "GUIDY_AI_ENABLED": "true",

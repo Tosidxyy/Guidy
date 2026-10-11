@@ -104,6 +104,10 @@ test("source retrieval persists unverified records, claims once, rejects stale w
     ).json()
   ).data;
   const path = "/api/v1/goals/" + goal.id + "/evidence";
+  const jobsPath = "/api/v1/goals/" + goal.id + "/research-runs";
+  assert.equal((await request(jobsPath)).status, 401);
+  assert.equal((await request(jobsPath, {}, "")).status, 401);
+  assert.equal((await request(jobsPath, undefined, b.cookie)).status, 404);
   let calls = 0;
   let release;
   let entered;

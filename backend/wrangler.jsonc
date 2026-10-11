@@ -1,9 +1,16 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "guidy-api",
-  "main": "src/index.ts",
+  "main": "src/worker.ts",
   "compatibility_date": "2026-10-09",
   "workers_dev": false,
   "observability": { "enabled": false },
+  "workflows": [
+    {
+      "name": "guidy-research-local",
+      "binding": "RESEARCH_WORKFLOW",
+      "class_name": "ResearchWorkflow",
+    },
+  ],
   "vars": { "GUIDY_CORS_ORIGINS": "[]" },
 }

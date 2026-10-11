@@ -4,7 +4,9 @@
 
 # Guidy｜数据库设计与数据生命周期
 
-增量迁移 `0008_research_evidence.sql` 实现首批用户指定网页来源：goal/owner复合FK、请求幂等键、目标版本、来源URL、待核对问题（claim）、用户填写限制、fetching/available/failed、固定unverified、短摘录和访问时间。available必须有访问时间与非空摘录，其他状态无摘录；不存完整HTML，不改变核心Goal/Slot/计划。失败也保留记录，目标删除级联；发布前仍需明确保留期限和用户删除接口。参见 [来源准备](RESEARCH_SOURCES.md)，后台Job与事实核验尚未实现。
+0009新增agent_jobs与research_job_items，首批用于Cloudflare Workflows来源重新读取：任务携带owner/Goal复合FK、幂等输入与版本，queued/running/completed/failed及明确派发状态；每Goal一条活跃任务。逐项固定来源快照、位置、claim_token/lease/attempts、读取结果与时间，任务删除级联。0010通过复制/重建逐项表强化available的非NULL访问时间约束，保留已有行，不改已应用的0009；坏数据会使复制校验失败而不静默清理。完成结果不覆盖原research_evidence，核心目标/条件/计划不因后台读取改变。参见[来源任务协议](RESEARCH_SOURCES.md)。
+
+增量迁移 `0008_research_evidence.sql` 实现首批用户指定网页来源：goal/owner复合FK、请求幂等键、目标版本、来源URL、待核对问题（claim）、用户填写限制、fetching/available/failed、固定unverified、短摘录和访问时间。available必须有访问时间与非空摘录，其他状态无摘录；不存完整HTML，不改变核心Goal/Slot/计划。失败也保留记录，目标删除级联；发布前仍需明确保留期限和用户删除接口。参见 [来源准备](RESEARCH_SOURCES.md)，后台来源任务由后续0009/0010实现，事实核验尚未实现。
 
 迁移 `0006_goal_slots.sql` 实现第一批用户条件（outcome/available_time/constraints）：value_json 带 schema_version=1、state=confirmed/unknown、text；source 固定 user，sensitivity 固定 private。unknown 必须空文本且 confirmed_at=NULL，confirmed 必须有效文本与服务端确认时间；数据库与运行时双层校验。草稿阶段 PATCH /goals/{id}/slots 带 expected_revision/Idempotency-Key，原子更新三项条件、Goal revision 和命名空间化修改回执；暂停/已生效目标只读。GET 通过 D1 batch 读取一致的目标/条件快照并按 owner 过滤。后续 0007 保存 Agent run/message；clarify-v2 条件建议只存在私有 reply_json，用户审阅并确认后才走原有条件保存事务，模型不直接写确认条件或生成生效计划。
 

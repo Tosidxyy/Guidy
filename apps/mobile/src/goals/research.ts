@@ -16,3 +16,24 @@ export function sourceError(code:string):string{
   if(code==='SOURCE_LIMIT_OR_BUSY')return '有资料正在读取或已达到测试上限，请先读取状态。';
   return '来源未读取成功，未核实资料。请检查链接或读取最新状态。';
 }
+export type ResearchJob = {id:string;goal_revision:number;status:'queued'|'running'|'completed'|'failed';dispatched:0|1;error_code:string|null;items:{position:number;source_url:string;claim:string;caveat:string;status:'pending'|'reading'|'available'|'failed';title:string;excerpt:string;retrieved_at:number|null;error_code:string|null}[]};
+export function checkedJobs(jobs:ResearchJob[]):ResearchJob[]{
+  if(!Array.isArray(jobs)||jobs.length>20)throw new Error('任务响应格式不正确。');
+  for(const job of jobs){
+    if(!job||typeof job.id!=='string'||!Number.isSafeInteger(job.goal_revision)||job.goal_revision<0||!['queued','running','completed','failed'].includes(job.status)||![0,1].includes(job.dispatched)||!Array.isArray(job.items)||job.items.length<1||job.items.length>3||new Set(job.items.map(i=>i.position)).size!==job.items.length)throw new Error('任务状态未通过校验。');
+    for(const item of job.items){
+      if(!Number.isInteger(item.position)||item.position<0||item.position>2||!['pending','reading','available','failed'].includes(item.status))throw new Error('任务来源未通过校验。');
+      checkedEvidence([{...item,id:`${job.id}:${item.position}`,goal_revision:job.goal_revision,status:item.status==='pending'||item.status==='reading'?'fetching':item.status,verification_status:'unverified'}]);
+    }
+    if(job.status==='completed'&&job.items.some(i=>['pending','reading'].includes(i.status)))throw new Error('任务尚未处理完成。');
+  }
+  return jobs;
+}
+export function jobError(code:string):string{
+  if(code==='WORKFLOW_NOT_CONFIGURED')return '后台任务服务尚未配置。';
+  if(code==='WORKFLOW_START_FAILED')return '任务已保存，后台启动失败。请读取状态后尝试启动已保存任务。';
+  if(code==='JOB_LIMIT_OR_BUSY')return '有任务尚未结束或已达到测试上限。';
+  if(code==='INVALID_SOURCES')return '请选择当前目标版本中已结束读取的来源，最多3项。';
+  if(code==='CONTEXT_CHANGED')return '目标已改变，本次旧资料任务停止。';
+  return '后台资料任务未完成，请查看状态；不会自动创建新任务。';
+}

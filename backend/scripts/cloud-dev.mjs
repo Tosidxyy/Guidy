@@ -14,6 +14,11 @@ const config = JSON.parse(
 );
 if (
   config.name !== "guidy-api-development" ||
+  config.main !== "src/worker.ts" ||
+  config.workflows?.length !== 1 ||
+  config.workflows[0].name !== "guidy-research-development" ||
+  config.workflows[0].binding !== "RESEARCH_WORKFLOW" ||
+  config.workflows[0].class_name !== "ResearchWorkflow" ||
   config.account_id !== "8ea47eed8a010eb55b3d512e14657497" ||
   config.d1_databases?.length !== 1 ||
   config.d1_databases[0].database_name !== "guidy-development" ||

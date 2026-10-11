@@ -3,7 +3,7 @@ import { apiOrigin, authClient } from '../auth/client';
 import { checkedSlots, type SavedSlot, type SlotInput } from './clarification';
 import { checkedDialogue, dialogueError, type Dialogue } from './dialogue';
 import { checkedReadiness, type Readiness } from './readiness';
-import { checkedEvidence, sourceError, type Evidence } from './research';
+import { checkedEvidence, checkedJobs, jobError, sourceError, type Evidence, type ResearchJob } from './research';
 
 export type AccountGoal = { id: string; title: string; description: string; timeframe_note: string; status: string; revision: number };
 export class GoalApiError extends Error {
@@ -19,7 +19,7 @@ async function request(method: 'GET' | 'POST' | 'PATCH', body?: Record<string, u
   const cancel = () => controller.abort();
   signal?.addEventListener('abort', cancel, { once: true });
   if (signal?.aborted) controller.abort();
-  const timer = setTimeout(cancel, path.endsWith('/messages')||path.endsWith('/evidence') ? 30_000 : 10_000);
+  const timer = setTimeout(cancel, path.endsWith('/messages')||path.endsWith('/evidence')||path.endsWith('/research-runs') ? 30_000 : 10_000);
   try {
     const response = await fetch(`${apiOrigin}/api/v1/goals${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: Platform.OS === 'web' ? 'include' : 'omit', signal: controller.signal });
     const payload = await response.json();
@@ -93,4 +93,14 @@ export async function addSource(id:string,body:{url:string;claim:string;caveat:s
   if(!/^[0-9a-f-]{36}$/.test(id))throw new Error('目标地址不正确。');
   try{return checkedResearch(await request('POST',body,key,undefined,`/${id}/evidence`));}
   catch(error){if(error instanceof GoalApiError&&error.code.startsWith('SOURCE_'))throw new Error(sourceError(error.code));throw error;}
+}
+export type ResearchJobs={goal:AccountGoal;jobs:ResearchJob[]};
+function checkedJobResult(result:ResearchJobs):ResearchJobs{return {goal:checkedGoal(result.goal),jobs:checkedJobs(result.jobs)};}
+export async function getResearchJobs(id:string,signal:AbortSignal):Promise<ResearchJobs>{
+  if(!/^[0-9a-f-]{36}$/.test(id))throw new Error('目标地址不正确。');
+  return checkedJobResult(await request('GET',undefined,undefined,signal,`/${id}/research-runs`));
+}
+export async function submitResearchJob(id:string,body:{evidence_ids:string[];expected_revision:number}|{resume_job_id:string},key?:string):Promise<ResearchJobs>{
+  if(!/^[0-9a-f-]{36}$/.test(id))throw new Error('目标地址不正确。');
+  try{return checkedJobResult(await request('POST',body,key,undefined,`/${id}/research-runs`));}catch(error){if(error instanceof GoalApiError)throw new Error(jobError(error.code));throw error;}
 }

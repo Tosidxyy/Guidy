@@ -15,7 +15,7 @@
 | Schema | TypeScript DTO + 运行时 Schema 校验（M1 选定/锁定实现） | 不把静态 TS 类型当成运行时校验 |
 | Agent | TypeScript Provider 抽象 + 结构化 PlanDraft | M1 才实现；模型/检索供应商未选定 |
 | 排程 | TypeScript SchedulingService | 确定性校验，不由模型写日历 |
-| 后台研究 | Cloudflare 持久化编排/消费者 + D1 Job 检查点 | M1 先验证 Queues/Workflows 方案，不用 API 请求内存任务 |
+| 后台研究 | Cloudflare Workflows + D1 Job/来源检查点 | 首批持久来源重读；真正研究/计划阶段后续扩展，不用手机后台JS或API内存任务 |
 | 提醒 | iPhone expo-notifications + 服务端意图对账 | M2；不等同任务完成 |
 | 测试 | tsc / ESLint / Node test + Wrangler 实际运行验证 | CI 不直接部署远程 |
 
@@ -57,7 +57,7 @@ D1 不使用 PostgreSQL 行锁或 SKIP LOCKED。Job 原子 claim、lease、heart
 
 Goal 是根对象；Slots 保留来源/确认/敏感性；研究保存 URL、checked_at、支撑主张和限制。网页/模板都是不可信数据；工具限制 SSRF、重定向、下载量、时间和费用，不将外部文本提升为系统指令。
 
-首批 [来源准备](RESEARCH_SOURCES.md) 已分离 ResearchProvider 与持久来源服务：用户指定有限官网URL、短请求读取/去重/版本检查、保存未核实摘录、Goal内来源页恢复。没有自动搜索、后台研究或事实核验，不向澄清模型传入外部网页全文。后续后台研究需单独验证持久Job和消费者。
+首批 [来源准备](RESEARCH_SOURCES.md) 分离ResearchProvider、短请求存档与Cloudflare Workflows后台来源任务：用户指定有限官网URL，持久Job/逐项lease与检查点、同实例派发重试、版本检查和未核实结果恢复。没有自动搜索、事实核验或计划生成，不向澄清模型传入外部网页全文；长时研究/LLM阶段后续增加预算与heartbeat。
 
 动态澄清优先必要信息；软轮次预算不能绕过安全门槛。PlanDraft 先运行时 Schema，再领域/风险/排程校验，再用户批准。专业事实缺乏引用时标为未核实，不伪造价格、浓度或医疗结论。模型/搜索密钥不进入 App。
 
