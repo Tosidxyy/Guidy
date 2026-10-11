@@ -25,6 +25,7 @@ async function request(method: 'GET' | 'POST' | 'PATCH', body?: Record<string, u
     const payload = await response.json();
     if (!response.ok) {
       if(path.endsWith('/messages') && response.status!==401 && response.status!==404)throw new GoalApiError(dialogueError(payload.error?.code??''),payload.error?.code??'AI_UNAVAILABLE');
+      if((path.endsWith('/evidence')||path.endsWith('/research-runs'))&&response.status!==401&&response.status!==404){const code=payload.error?.code??'SOURCE_UNAVAILABLE';throw new GoalApiError(path.endsWith('/evidence')?sourceError(code):jobError(code),code);}
       if (response.status === 401) throw new Error('登录已失效，请重新登录。请求失败不会清空输入。');
       if (response.status === 409) throw new GoalApiError('目标已改变，请读取最新版本后再决定是否保存。你的输入仍保留。', payload.error?.code ?? 'CONFLICT');
       if (response.status === 404) throw new Error('目标不存在或当前账号无法访问。');

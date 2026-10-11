@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { KeyboardAvoidingView, Linking, Platform, TextInput } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Linking, Platform, TextInput } from 'react-native';
 import { Action, AppText, Badge, Caption, Card, Screen } from '../../../src/components/ui';
 import { useAccount } from '../../../src/auth/AuthProvider';
 import { useTheme } from '../../../src/theme/ThemeProvider';
@@ -10,6 +10,7 @@ export default function ResearchPage(){const {id}=useLocalSearchParams<{id:strin
 function ResearchBody({id,owner}:{id:string;owner?:string}){
   const {colors}=useTheme();const [data,setData]=useState<Research|null>(null);const [url,setUrl]=useState('');const [claim,setClaim]=useState('');const [caveat,setCaveat]=useState('');const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [refresh,setRefresh]=useState(0);const [discard,setDiscard]=useState(false);
   const scope=useRef(0);const lock=useRef(false);const operation=useRef<{payload:string;key:string}|null>(null);
+  const [formOpen,setFormOpen]=useState(false);
   const [jobs,setJobs]=useState<ResearchJobs|null>(null);const [selected,setSelected]=useState<string[]>([]);const jobOperation=useRef<{payload:string;key:string}|null>(null);const polling=useRef(false);const jobReadBusy=useRef<number|null>(null);
   const readJobs=useCallback(async(signal:AbortSignal,generation:number)=>{
     if(jobReadBusy.current===generation)return;jobReadBusy.current=generation;
@@ -31,13 +32,14 @@ function ResearchBody({id,owner}:{id:string;owner?:string}){
     if(!data||lock.current||active||data.goal.status!=='draft')return;
     const body={url:url.trim(),claim:claim.trim(),caveat:caveat.trim(),expected_revision:data.goal.revision};if(!body.url||!body.claim){setError('请填写网页链接和想核对的问题。');return;}
     const payload=JSON.stringify(body);if(operation.current?.payload!==payload)operation.current={payload,key:`source_${Date.now()}_${Math.random().toString(36).slice(2,12)}`};const generation=scope.current;lock.current=true;setBusy(true);setError('');
-    try{const value=await addSource(id,body,operation.current.key);if(generation!==scope.current)return;setData(value);if(!value.evidence.some(e=>e.status==='fetching')){setUrl('');setClaim('');setCaveat('');operation.current=null;}}
+    try{const value=await addSource(id,body,operation.current.key);if(generation!==scope.current)return;setData(value);const normalized=new URL(body.url);normalized.hash='';const entry=value.evidence.find(e=>e.source_url===normalized.href&&e.claim===body.claim&&e.caveat===body.caveat&&e.goal_revision===body.expected_revision);if(entry?.status==='failed'){setError(sourceError(entry.error_code??''));return;}if(entry?.status==='available'){setUrl('');setClaim('');setCaveat('');operation.current=null;Keyboard.dismiss();setFormOpen(false);}}
     catch(err){if(generation!==scope.current)return;setError(err instanceof Error?err.message:'读取失败，输入保留。');try{const value=await getResearch(id,new AbortController().signal);if(generation===scope.current)setData(value);}catch{/* Keep inputs for explicit retry. */}}
     finally{lock.current=false;setBusy(false);}
   }
   const input={backgroundColor:colors.surface,color:colors.text,borderWidth:1,borderColor:colors.divider,borderRadius:15,padding:12,minHeight:52,fontSize:17};
   const leave=()=>router.replace({pathname:'/goal/[id]',params:{id}});
-  const form=data?.goal.status==='draft'?<>
+  const form=formOpen&&data?.goal.status==='draft'?<>
+    <Action label="收起添加表单（保留输入）" secondary disabled={busy} onPress={()=>{Keyboard.dismiss();setFormOpen(false);}}/>
     <TextInput accessibilityLabel="来源网页链接" value={url} onChangeText={setUrl} editable={!busy&&!active} maxLength={2000} autoCapitalize="none" autoCorrect={false} placeholder="https://…" placeholderTextColor={colors.secondary} style={input}/>
     <TextInput accessibilityLabel="想核对的问题" value={claim} onChangeText={setClaim} editable={!busy&&!active} maxLength={300} placeholder="这份资料能帮助回答什么问题？" placeholderTextColor={colors.secondary} style={input}/>
     <TextInput accessibilityLabel="适用条件或限制" value={caveat} onChangeText={setCaveat} editable={!busy&&!active} maxLength={300} placeholder="适用条件或限制（可不填）" placeholderTextColor={colors.secondary} style={input}/>
@@ -51,11 +53,12 @@ function ResearchBody({id,owner}:{id:string;owner?:string}){
     {!owner&&<Caption>请登录后查看资料。</Caption>}
     {owner&&<Action label="重新读取资料状态" secondary disabled={busy} onPress={()=>{setError('');setRefresh(n=>n+1);}}/>}
     {data&&<>
+      {data.goal.status==='draft'&&!formOpen&&<Action label={url||claim||caveat?'继续添加来源（有未提交输入）':'添加来源'} disabled={busy} onPress={()=>setFormOpen(true)}/>}
       {jobs&&<Card>
         <AppText>后台资料任务</AppText><Caption>仅重新读取选定来源，结果仍未核实。每账号每日最多3次新任务；旧任务启动失败时可继续尝试同一任务。</Caption>
         <Action label={`启动后台资料任务（已选 ${selected.length} / 3）`} disabled={busy||!selected.length||data.goal.status!=='draft'||jobs.jobs.some(j=>['queued','running'].includes(j.status))} onPress={()=>start()}/>
         {jobs.jobs.map(j=><Card key={j.id}>
-          <Badge>{j.status==='queued'?(j.dispatched?'后台排队中':'已保存 · 尚未启动'):j.status==='running'?'后台读取中':j.status==='completed'?'来源处理结束 · 内容未核实':'任务未完成'}</Badge>
+          <Badge>{j.status==='queued'?(j.dispatched?'后台排队中':'已保存 · 尚未启动'):j.status==='running'?'后台读取中':j.status==='completed'?(j.items.every(i=>i.status==='failed')?'来源全部读取失败':'来源处理结束 · 内容未核实'):'任务未完成'}</Badge>
           <Caption>{j.items.filter(i=>['available','failed'].includes(i.status)).length} / {j.items.length} 项已处理 · {j.items.filter(i=>i.status==='failed').length} 项读取失败</Caption>
           {!!j.error_code&&<Caption>{jobError(j.error_code)}</Caption>}
           {j.status==='queued'&&!j.dispatched&&<Action label="尝试启动已保存任务" secondary disabled={busy} onPress={()=>start(j.id)}/>}
@@ -73,7 +76,7 @@ function ResearchBody({id,owner}:{id:string;owner?:string}){
         {!!e.caveat&&<Caption>你填写的适用限制：{e.caveat}</Caption>}
         {e.goal_revision!==data.goal.revision&&<Caption>对应旧目标版本，适用性需要重新核对。</Caption>}
         {!!e.excerpt&&<AppText>{e.excerpt}</AppText>}
-        {e.status==='failed'&&<><Caption>{sourceError(e.error_code??'')}</Caption><Action label="填回这条来源重新尝试" secondary disabled={busy||active||data.goal.status!=='draft'} onPress={()=>{setUrl(e.source_url);setClaim(e.claim);setCaveat(e.caveat);operation.current=null;}}/></>}
+        {e.status==='failed'&&<><Caption>{sourceError(e.error_code??'')}</Caption><Action label="填回这条来源重新尝试" secondary disabled={busy||active||data.goal.status!=='draft'} onPress={()=>{setUrl(e.source_url);setClaim(e.claim);setCaveat(e.caveat);operation.current=null;setFormOpen(true);}}/></>}
         <Action label="打开原始网页" secondary onPress={()=>{void Linking.openURL(e.source_url).catch(()=>setError('无法打开网页，请稍后再试。'));}}/>
       </Card>)}
     </>}

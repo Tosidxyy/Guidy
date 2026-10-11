@@ -45,3 +45,25 @@ test("source transport is credential-free, rejects redirects/types/oversize, and
   ])
     await assert.rejects(webProvider(async () => response).read(url, signal));
 });
+test("source status and network failures return distinct safe codes, never upstream content", async () => {
+  for (const [status, code] of [
+    [403, "SOURCE_ACCESS_DENIED"],
+    [404, "SOURCE_NOT_FOUND"],
+    [429, "SOURCE_RATE_LIMITED"],
+    [503, "SOURCE_SERVER_ERROR_503"],
+  ]) {
+    await assert.rejects(
+      webProvider(
+        async () =>
+          new globalThis.Response("private upstream body", { status }),
+      ).read("https://www.nhs.uk/", new globalThis.AbortController().signal),
+      (e) => e.code === code && !e.message.includes("private"),
+    );
+  }
+  await assert.rejects(
+    webProvider(async () => {
+      throw new Error("private network detail");
+    }).read("https://www.nhs.uk/", new globalThis.AbortController().signal),
+    (e) => e.code === "SOURCE_NETWORK_ERROR" && !e.message.includes("private"),
+  );
+});

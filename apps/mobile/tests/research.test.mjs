@@ -15,3 +15,8 @@ test('job completion cannot hide pending work and dispatch failure remains expli
   assert.throws(()=>checkedJobs([{...job,items:[item,item]}]));
   assert.match(jobError('WORKFLOW_START_FAILED'),/任务已保存/);
 });
+test('website denial gives an actionable reason without claiming success',()=>{
+  assert.match(sourceError('SOURCE_ACCESS_DENIED'),/拒绝服务器读取/);
+  assert.match(sourceError('SOURCE_RATE_LIMITED'),/限流/);
+  assert.match(sourceError('CONTEXT_CHANGED'),/输入仍保留/);
+});

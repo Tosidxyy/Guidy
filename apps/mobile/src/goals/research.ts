@@ -8,6 +8,13 @@ export function checkedEvidence(value:unknown):Evidence[]{
   return value;
 }
 export function sourceError(code:string):string{
+  if(code==='CONTEXT_CHANGED'||code==='IDEMPOTENCY_CONFLICT')return '目标或请求内容已改变，请重新读取资料状态并核对。你的输入仍保留。';
+  if(code==='SOURCE_ACCESS_DENIED')return '来源网站拒绝服务器读取。请打开原网页查看，或选择其他可访问来源；反复重试可能仍被拒绝。';
+  if(code==='SOURCE_NOT_FOUND')return '来源网页不存在，请核对链接。';
+  if(code==='SOURCE_RATE_LIMITED')return '来源网站暂时限流，请稍后再试。';
+  if(code==='SOURCE_SERVER_ERROR'||/^SOURCE_SERVER_ERROR_5\d{2}$/.test(code))return '来源网站或网络网关当前异常，服务器无法读取。你可打开原网页查看，或稍后重试。';
+  if(code==='SOURCE_NETWORK_ERROR')return '服务器无法连接来源网站，请稍后重试或选择其他来源。';
+  if(code==='SOURCE_UNAVAILABLE')return '上次未能读取网页，具体原因未记录。你可打开原网页查看，或选择其他来源。';
   if(code==='SOURCE_URL_REJECTED')return '暂仅支持 British Council、NHS、WHO、AAD 的指定官网 HTTPS 网页，不含查询参数。';
   if(code==='SOURCE_REDIRECT_REJECTED')return '来源发生跳转，请打开官网后复制最终网页链接。';
   if(code==='SOURCE_TOO_LARGE')return '网页超过读取上限，请选择较短的资料页。';

@@ -82,18 +82,33 @@ export function webProvider(
   return {
     async read(raw, signal) {
       const url = sourceUrl(raw);
-      const response = await fetcher(url, {
-        method: "GET",
-        redirect: "manual",
-        signal,
-        headers: { Accept: "text/html" },
-      });
+      let response: Response;
+      try {
+        response = await fetcher(url, {
+          method: "GET",
+          redirect: "manual",
+          signal,
+          headers: { Accept: "text/html" },
+        });
+      } catch {
+        throw new ResearchError(
+          signal.aborted ? "SOURCE_TIMEOUT" : "SOURCE_NETWORK_ERROR",
+        );
+      }
       if (!response.ok) {
         await response.body?.cancel();
         throw new ResearchError(
           response.status >= 300 && response.status < 400
             ? "SOURCE_REDIRECT_REJECTED"
-            : "SOURCE_UNAVAILABLE",
+            : response.status === 401 || response.status === 403
+              ? "SOURCE_ACCESS_DENIED"
+              : response.status === 404
+                ? "SOURCE_NOT_FOUND"
+                : response.status === 429
+                  ? "SOURCE_RATE_LIMITED"
+                  : response.status >= 500
+                    ? `SOURCE_SERVER_ERROR_${response.status}`
+                    : "SOURCE_UNAVAILABLE",
         );
       }
       if (!/^text\/html\b/i.test(response.headers.get("Content-Type") ?? "")) {
