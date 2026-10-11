@@ -39,11 +39,13 @@ function PlanBody({id,owner}:{id:string;owner?:string}){
     {a.goal_revision!==data.goal.revision&&<Caption>对应旧目标版本，仅供查看，请重新核对适用性。</Caption>}
     {!!a.error_code&&<Caption>{planError(a.error_code)}</Caption>}
     {a.draft&&<>
+     <Caption>AI原始草稿；保存的时长调整可在审阅版本页查看。</Caption>
+     <Action label="调整时长与频次" secondary disabled={busy||reading} onPress={()=>router.push({pathname:'/goal/[id]/review',params:{id,attemptId:a.id}})}/>
      <AppText accessibilityRole="header">{a.draft.title}</AppText><AppText>{a.draft.summary}</AppText><Caption>预计每周投入 {a.draft.weekly_minutes} 分钟；尚未验证是否符合你的时间。成本未知，尚未排程。</Caption>
      <Card><AppText>本次条件快照</AppText><Caption>{a.context.goal.description}</Caption>{a.context.conditions.map(s=><Caption key={s.key}>{s.key==='outcome'?'目标成果':s.key==='available_time'?'可用时间':'限制'}：{s.value.state==='confirmed'?s.value.text:'尚未确认'}</Caption>)}</Card>
      <Card><AppText>待核对假设与风险</AppText>{[...a.draft.assumptions,...a.draft.risks].map((s,i)=><Caption key={i}>{s}</Caption>)}<Caption>引用存在不代表专业效果或事实已核实。</Caption></Card>
      {a.draft.tasks.map(t=><Card key={t.id}><Badge>阶段 {t.stage} · {t.mandatory?'必要任务':'可选任务'}</Badge><AppText>{t.title}</AppText><AppText>{t.instructions}</AppText><Caption>每次 {t.duration_minutes} 分钟 · 每周 {t.frequency_per_week} 次</Caption>{!!t.depends_on.length&&<Caption>先完成：{t.depends_on.map(id=>a.draft!.tasks.find(task=>task.id===id)!.title).join('、')}</Caption>}{!t.evidence_ids.length&&<Caption>此任务没有单独的外部引用，请核对做法。</Caption>}{t.evidence_ids.map(id=>{const s=a.context.sources.find(s=>s.source_id===id)!;return <Card key={id}><AppText>依据：{s.title}</AppText><Caption>搜索时间：{new Date(s.searched_at).toLocaleString()} · 内容未核实</Caption><Caption>{s.url}</Caption><AppText>{s.content}</AppText><Action label={`打开引用：${s.title}`} secondary onPress={()=>{void Linking.openURL(s.url).catch(()=>setError('无法打开引用网页。'));}}/></Card>;})}</Card>)}
-     <Caption>本轮只提供草稿审阅；确认计划、编辑任务及入历功能尚未开放。</Caption>
+     <Caption>本轮只提供草稿审阅；可调整时长与频次；任务内容编辑、确认计划及入历尚未开放。</Caption>
     </>}
    </Card>)}
   </>}

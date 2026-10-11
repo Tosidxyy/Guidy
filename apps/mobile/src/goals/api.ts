@@ -1,4 +1,4 @@
-import { checkedPlans,planError,type PlanSnapshot } from './plans';
+import { checkedPlans,planError,checkedReviews,reviewError,type ReviewSnapshot,type ReviewChange,type PlanSnapshot } from './plans';
 import { checkedSearchSnapshot, searchError, type SearchSnapshot } from './search';
 import { Platform } from 'react-native';
 import { apiOrigin, authClient } from '../auth/client';
@@ -26,6 +26,7 @@ async function request(method: 'GET' | 'POST' | 'PATCH', body?: Record<string, u
     const response = await fetch(`${apiOrigin}/api/v1/goals${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: Platform.OS === 'web' ? 'include' : 'omit', signal: controller.signal });
     const payload = await response.json();
     if (!response.ok) {
+      if(path.includes('/draft-reviews?')&&response.status!==401&&response.status!==404)throw new GoalApiError(reviewError(payload.error?.code??''),payload.error?.code??'REVIEW_UNAVAILABLE');
       if(path.endsWith('/plan-drafts')&&response.status!==401&&response.status!==404)throw new GoalApiError(planError(payload.error?.code??''),payload.error?.code??'PLAN_RESULT_UNKNOWN');
       if(path.endsWith('/search-runs')&&response.status!==401&&response.status!==404)throw new GoalApiError(searchError(payload.error?.code??''),payload.error?.code??'SEARCH_RESULT_UNKNOWN');
       if(path.endsWith('/messages') && response.status!==401 && response.status!==404)throw new GoalApiError(dialogueError(payload.error?.code??''),payload.error?.code??'AI_UNAVAILABLE');
@@ -117,3 +118,6 @@ export async function submitSearch(id:string,body:{query:string;expected_revisio
 
 export async function getPlans(id:string,signal:AbortSignal):Promise<PlanSnapshot>{if(!/^[0-9a-f-]{36}$/.test(id))throw new Error('目标地址不正确。');return checkedPlans(await request('GET',undefined,undefined,signal,`/${id}/plan-drafts`),id);}
 export async function submitPlan(id:string,body:{search_ids:string[];expected_revision:number},key:string):Promise<PlanSnapshot>{if(!/^[0-9a-f-]{36}$/.test(id))throw new Error('目标地址不正确。');return checkedPlans(await request('POST',body,key,undefined,`/${id}/plan-drafts`),id);}
+
+export async function getReviews(id:string,attemptId:string,signal:AbortSignal):Promise<ReviewSnapshot>{if(!/^[0-9a-f-]{36}$/.test(id)||!/^[0-9a-f-]{36}$/.test(attemptId))throw new Error('草稿地址不正确。');return checkedReviews(await request('GET',undefined,undefined,signal,`/${id}/draft-reviews?attempt_id=${attemptId}`),id,attemptId);}
+export async function saveReview(id:string,attemptId:string,body:{expected_goal_revision:number;expected_review_revision:number;changes:ReviewChange[]},key:string):Promise<ReviewSnapshot>{if(!/^[0-9a-f-]{36}$/.test(id)||!/^[0-9a-f-]{36}$/.test(attemptId))throw new Error('草稿地址不正确。');return checkedReviews(await request('POST',body,key,undefined,`/${id}/draft-reviews?attempt_id=${attemptId}`),id,attemptId);}

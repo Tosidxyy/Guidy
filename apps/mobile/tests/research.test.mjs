@@ -63,3 +63,14 @@ test('draft limit and field diagnostics do not silently grant arbitrary model bu
  assert.match(planError('PLAN_SCHEMA_FIELDS'),/字段/);
  const bad={daily_limit:99,goal:{id:'00000000-0000-0000-0000-000000000001',revision:0,status:'draft'},attempts:[]};assert.throws(()=>checkedPlans(bad,bad.goal.id));assert.equal(checkedPlans({...bad,daily_limit:4},bad.goal.id).daily_limit,4);
 });
+
+import {checkedReviews,reviewNumber,reviewError} from '../src/goals/plans.ts';
+test('review snapshots allow only numeric effort changes while preserving task identity, references and draft status',()=>{
+ const goal='00000000-0000-0000-0000-000000000001',attempt='00000000-0000-0000-0000-000000000002',source='00000000-0000-0000-0000-000000000003',task='00000000-0000-0000-0000-000000000004';
+ const draft={schema_version:1,status:'draft',verification_status:'unverified',title:'学习',summary:'练习与复盘',assumptions:[],risks:['未核实'],tasks:[{id:task,key:'t1',stage:1,title:'练习',instructions:'原步骤保持',duration_minutes:20,frequency_per_week:3,mandatory:true,depends_on:[],evidence_ids:[source]}],weekly_minutes:60,time_fit:'needs_user_review',cost_status:'unknown',scheduling_status:'not_checked'};
+ const context={schema_version:1,goal:{description:'学习',timeframe_note:''},conditions:['outcome','available_time'].map(key=>({key,source:'user',confirmed_at:1,value:{schema_version:1,state:'confirmed',text:'确认条件'}})),sources:[{source_id:source,search_id:goal,searched_at:123,provider_request_id:'test',title:'资料',url:'https://example.org/',snippet:'摘要',content:'正文',content_kind:'provider_content',published_at:null,verification_status:'unverified'}]};
+ const changed={...draft,weekly_minutes:90,tasks:[{...draft.tasks[0],duration_minutes:30}]};const v={goal:{id:goal,status:'draft',revision:0},can_edit:true,source:{id:attempt,goal_revision:0,status:'succeeded',error_code:null,draft,context,billing_status:'reserved_unknown',created_at:123},current_revision:1,receipt_revision:1,reviews:[{id:source,revision:1,source:'user',created_at:123,draft:changed}]};assert.equal(checkedReviews(v,goal,attempt).reviews[0].draft.weekly_minutes,90);assert.throws(()=>checkedReviews({...v,reviews:[{...v.reviews[0],draft:{...changed,title:'篡改标题'}}]},goal,attempt));assert.throws(()=>checkedReviews({...v,current_revision:2},goal,attempt));assert.throws(()=>checkedReviews(v,goal,task));
+});
+test('review integer input rejects prefixes, decimals and range overflow while accepting full-width digits',()=>{
+ assert.equal(reviewNumber('３０',5,120),30);for(const value of ['','30abc','20.5','-5','121'])assert.equal(reviewNumber(value,5,120),null);assert.equal(reviewNumber('8',1,7),null);assert.match(reviewError('REVIEW_VERSION_CHANGED'),/输入仍保留/);assert.ok(!reviewError('private upstream content').includes('private'));
+});
