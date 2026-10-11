@@ -210,3 +210,9 @@ D1 没有 PostgreSQL RLS。所有私有对象按已验证会话用户 ID 做服�
 - 是否以及何时启用“公开模板”专用只读投影 Schema。
 
 **本设计的交付边界**：这是数据与约束设计文档，不表示 SQL 已运行、迁移已生成，或远程 D1/Auth 已创建。正式开发仍需根据实际 API 契约完成字段精化和迁移验收。
+
+### 0011：搜索尝试与用量保留（2026-10-11）
+
+search_attempts按goal/owner复合外键存私人查询、版本、幂等键、submitted/succeeded/failed/unknown、安全错误和结果JSON；每Goal仅一项submitted。结果是后端生成source_id的不可变供应商快照，带searched_at和内容类型，不把搜索时间当retrieved_at，不标verified。Goal删除级联清除查询/结果。
+
+search_usage仅存随机尝试ID、owner、创建时间，与尝试在D1 batch同事务保留；无Goal外键，删除目标不重置当日预算；账号删除级联。账号每日6/全局30（UTC），每Goal版本3；成功/失败/unknown都占额度。当前billing_status固定reserved_unknown，表示未核实供应商账单，不宣称成功免费或失败未扣费。生命周期清理待发布前实现。具体合同见[SEARCH_SETUP](SEARCH_SETUP.md)，迁移/部署验证记录见[TODO](TODO.md)。

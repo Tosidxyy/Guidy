@@ -95,6 +95,8 @@ test("D1 auth schema matches the locked library and scoped goal tables exist", a
       "rateLimit",
       "research_evidence",
       "research_job_items",
+      "search_attempts",
+      "search_usage",
       "session",
       "user",
       "verification",

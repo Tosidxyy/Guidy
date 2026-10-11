@@ -109,3 +109,7 @@ M0：TS Worker 探活/错误/日志、基础 CI、D1 开发/测试迁移、Bette
 开发用 Wrangler 本地运行；生产使用独立 Worker/D1 及 secrets，不能把无认证开发服务长期公开。Cloudflare 账号、地区/数据需求、费用与资源权限要在真实资源创建时确认；CI 只做检查与 dry-run，不自动部署。失败重试与批处理边界先测再标完成。
 
 参考：[Workers](https://developers.cloudflare.com/workers/)、[D1](https://developers.cloudflare.com/d1/)、[D1 batch](https://developers.cloudflare.com/d1/worker-api/d1-database/)、[Better Auth 数据库](https://better-auth.com/docs/concepts/database)、[Expo 集成](https://better-auth.com/docs/integrations/expo)。
+
+### 首批搜索尝试接口（2026-10-11）
+
+SearchProvider.search独立于网页ResearchProvider.read；首批豆包Custom Adapter调用固定API，不抓取搜索结果URL。GET/POST /api/v1/goals/{id}/search-runs要求会话/owner、版本和已确认基础条件；D1原子保留尝试/预算，先持久保存再请求。首批同步12秒等待、30秒lease，不复用网页Workflow；崩溃/不明结果不自动重试，完整搜索编排仍待实现。合同与Key配置见[SEARCH_SETUP](SEARCH_SETUP.md)，没有手机入口或自动查询/PlanDraft。

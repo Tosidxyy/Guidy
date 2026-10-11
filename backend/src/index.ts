@@ -2,11 +2,13 @@ import { createAuth, isLocalHost, type AuthEnv } from "./auth.ts";
 import { goalsResponse } from "./goals.ts";
 import { slotsResponse } from "./slots.ts";
 import { researchResponse } from "./research/service.ts";
+import { searchResponse } from "./research/search-service.ts";
+import type { SearchEnv } from "./research/search-provider.ts";
 import { jobResponse, type WorkflowBinding } from "./research/jobs.ts";
 import { dialogueResponse } from "./agent/harness.ts";
 import type { AgentEnv } from "./agent/provider.ts";
 
-export interface Env extends AuthEnv, AgentEnv {
+export interface Env extends AuthEnv, AgentEnv, SearchEnv {
   RESEARCH_WORKFLOW?: WorkflowBinding;
   GUIDY_CORS_ORIGINS?: string;
 }
@@ -58,7 +60,7 @@ async function authResponse(
   const path = new URL(request.url).pathname;
   if (
     path === "/api/v1/goals" ||
-    /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:slots|messages|evidence|research-runs))?$/.test(
+    /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:slots|messages|evidence|research-runs|search-runs))?$/.test(
       path,
     )
   ) {
@@ -71,6 +73,8 @@ async function authResponse(
       return error(id, 403, "ORIGIN_REJECTED", "请求来源未获允许。");
     const session = await auth.api.getSession({ headers: request.headers });
     if (!session) return error(id, 401, "UNAUTHORIZED", "请重新登录。");
+    if (path.endsWith("/search-runs"))
+      return searchResponse(request, env.DB!, session.user.id, id, env);
     if (path.endsWith("/research-runs"))
       return jobResponse(
         request,
@@ -304,7 +308,7 @@ export function createApp({
       const path = new URL(request.url).pathname;
       const isGoals =
         path === "/api/v1/goals" ||
-        /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:slots|messages|evidence|research-runs))?$/.test(
+        /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:slots|messages|evidence|research-runs|search-runs))?$/.test(
           path,
         );
       const isAuth =
@@ -312,15 +316,17 @@ export function createApp({
       const route = isAuth
         ? {
             path: isGoals
-              ? path.endsWith("/research-runs")
-                ? "/api/v1/goals/:id/research-runs"
-                : path.endsWith("/evidence")
-                  ? "/api/v1/goals/:id/evidence"
-                  : path.endsWith("/messages")
-                    ? "/api/v1/goals/:id/messages"
-                    : path.endsWith("/slots")
-                      ? "/api/v1/goals/:id/slots"
-                      : "/api/v1/goals/:id?"
+              ? path.endsWith("/search-runs")
+                ? "/api/v1/goals/:id/search-runs"
+                : path.endsWith("/research-runs")
+                  ? "/api/v1/goals/:id/research-runs"
+                  : path.endsWith("/evidence")
+                    ? "/api/v1/goals/:id/evidence"
+                    : path.endsWith("/messages")
+                      ? "/api/v1/goals/:id/messages"
+                      : path.endsWith("/slots")
+                        ? "/api/v1/goals/:id/slots"
+                        : "/api/v1/goals/:id?"
               : path === "/api/v1/me"
                 ? path
                 : "/api/auth/*",

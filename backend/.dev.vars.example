@@ -8,3 +8,5 @@ BETTER_AUTH_SECRET=
 RESEND_API_KEY=
 GUIDY_EMAIL_FROM=onboarding@resend.dev
 GUIDY_EMAIL_TEST_TO=
+# Optional Doubao Custom search API key; server only, never EXPO_PUBLIC.
+DOUBAO_SEARCH_API_KEY=
