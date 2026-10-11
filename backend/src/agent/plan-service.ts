@@ -171,7 +171,7 @@ export async function planResponse(
       timeframe_note: String(goal.timeframe_note).slice(0, 300),
     },
     conditions: conditionData.slots,
-    sources,
+    sources: sources.map((s, i) => ({ ...s, evidence_ref: `E${i + 1}` })),
   };
   const contextJson = JSON.stringify(context);
   if (contextJson.length > 8500) return fail(422, "PLAN_CONTEXT_TOO_LARGE");
@@ -229,10 +229,21 @@ export async function planResponse(
       timeout,
     ]);
     if (controller.signal.aborted) throw new AgentError("PLAN_RESULT_UNKNOWN");
-    const draft = checkedPlan(
-      completion.content,
-      sources.map((s) => s.source_id),
-    );
+    const draft = checkedPlan(completion.content, [
+      ...sources.map((s) => s.source_id),
+      ...sources.map((_, i) => `E${i + 1}`),
+    ]);
+    draft.tasks = draft.tasks.map((t) => ({
+      ...t,
+      evidence_ids: [
+        ...new Set(
+          t.evidence_ids.map((ref) => {
+            const index = sources.findIndex((_, i) => `E${i + 1}` === ref);
+            return index >= 0 ? sources[index].source_id : ref;
+          }),
+        ),
+      ],
+    }));
     const saved = await db
       .prepare(
         "UPDATE plan_draft_attempts SET status='succeeded',draft_json=?,input_tokens=?,output_tokens=? WHERE id=? AND owner_id=? AND status='submitted' AND lease_until>? AND EXISTS(SELECT 1 FROM goals WHERE id=goal_id AND owner_id=? AND status='draft' AND revision=?) AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=plan_draft_attempts.goal_id AND owner_id=plan_draft_attempts.owner_id AND status='succeeded' AND json_extract(reply_json,'$.source')='policy')",
@@ -253,14 +264,17 @@ export async function planResponse(
   } catch (error) {
     const code =
       error instanceof AgentError ? error.code : "PLAN_RESULT_UNKNOWN";
-    const status = [
-      "PLAN_INVALID_DRAFT",
-      "AI_CREDENTIAL_INVALID",
-      "AI_BALANCE_REQUIRED",
-      "AI_RATE_LIMITED",
-    ].includes(code)
-      ? "failed"
-      : "unknown";
+    const status =
+      [
+        "PLAN_INVALID_DRAFT",
+        "AI_CREDENTIAL_INVALID",
+        "AI_BALANCE_REQUIRED",
+        "AI_RATE_LIMITED",
+      ].includes(code) ||
+      code.startsWith("PLAN_INVALID_") ||
+      code === "PLAN_UNSAFE_CONTENT"
+        ? "failed"
+        : "unknown";
     await db
       .prepare(
         "UPDATE plan_draft_attempts SET status=?,error_code=? WHERE id=? AND owner_id=? AND status='submitted'",

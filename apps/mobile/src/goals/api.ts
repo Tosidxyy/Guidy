@@ -1,3 +1,4 @@
+import { checkedPlans,planError,type PlanSnapshot } from './plans';
 import { checkedSearchSnapshot, searchError, type SearchSnapshot } from './search';
 import { Platform } from 'react-native';
 import { apiOrigin, authClient } from '../auth/client';
@@ -20,11 +21,12 @@ async function request(method: 'GET' | 'POST' | 'PATCH', body?: Record<string, u
   const cancel = () => controller.abort();
   signal?.addEventListener('abort', cancel, { once: true });
   if (signal?.aborted) controller.abort();
-  const timer = setTimeout(cancel, path.endsWith('/messages')||path.endsWith('/evidence')||path.endsWith('/research-runs')||path.endsWith('/search-runs') ? 30_000 : 10_000);
+  const timer = setTimeout(cancel, path.endsWith('/plan-drafts') ? 40_000 : path.endsWith('/messages')||path.endsWith('/evidence')||path.endsWith('/research-runs')||path.endsWith('/search-runs') ? 30_000 : 10_000);
   try {
     const response = await fetch(`${apiOrigin}/api/v1/goals${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: Platform.OS === 'web' ? 'include' : 'omit', signal: controller.signal });
     const payload = await response.json();
     if (!response.ok) {
+      if(path.endsWith('/plan-drafts')&&response.status!==401&&response.status!==404)throw new GoalApiError(planError(payload.error?.code??''),payload.error?.code??'PLAN_RESULT_UNKNOWN');
       if(path.endsWith('/search-runs')&&response.status!==401&&response.status!==404)throw new GoalApiError(searchError(payload.error?.code??''),payload.error?.code??'SEARCH_RESULT_UNKNOWN');
       if(path.endsWith('/messages') && response.status!==401 && response.status!==404)throw new GoalApiError(dialogueError(payload.error?.code??''),payload.error?.code??'AI_UNAVAILABLE');
       if((path.endsWith('/evidence')||path.endsWith('/research-runs'))&&response.status!==401&&response.status!==404){const code=payload.error?.code??'SOURCE_UNAVAILABLE';throw new GoalApiError(path.endsWith('/evidence')?sourceError(code):jobError(code),code);}
@@ -36,6 +38,7 @@ async function request(method: 'GET' | 'POST' | 'PATCH', body?: Record<string, u
     if (payload.error !== null || !payload.data) throw new Error('服务响应格式不正确。');
     return payload.data;
   } catch (error) {
+    if(path.endsWith('/plan-drafts')&&(controller.signal.aborted||!(error instanceof Error)||error.name==='TypeError'))throw new Error('草稿连接中断，结果可能已保存。请先读取状态或恢复同一请求，不会自动重新生成。');
     if(path.endsWith('/search-runs')&&(controller.signal.aborted||!(error instanceof Error)||error.name==='TypeError'))throw new Error('搜索连接中断，结果可能已保存。请先读取状态或恢复同一请求，不会自动重新搜索。');
     if (controller.signal.aborted) throw new Error('连接超时或已取消，输入未清空，请重试。');
     if (error instanceof Error && !['TypeError'].includes(error.name)) throw error;
@@ -111,3 +114,6 @@ export async function submitResearchJob(id:string,body:{evidence_ids:string[];ex
 
 export async function getSearch(id:string,signal:AbortSignal):Promise<SearchSnapshot>{if(!/^[0-9a-f-]{36}$/.test(id))throw new Error('目标地址不正确。');return checkedSearchSnapshot(await request('GET',undefined,undefined,signal,`/${id}/search-runs`),id);}
 export async function submitSearch(id:string,body:{query:string;expected_revision:number},key:string):Promise<SearchSnapshot>{if(!/^[0-9a-f-]{36}$/.test(id))throw new Error('目标地址不正确。');return checkedSearchSnapshot(await request('POST',body,key,undefined,`/${id}/search-runs`),id);}
+
+export async function getPlans(id:string,signal:AbortSignal):Promise<PlanSnapshot>{if(!/^[0-9a-f-]{36}$/.test(id))throw new Error('目标地址不正确。');return checkedPlans(await request('GET',undefined,undefined,signal,`/${id}/plan-drafts`),id);}
+export async function submitPlan(id:string,body:{search_ids:string[];expected_revision:number},key:string):Promise<PlanSnapshot>{if(!/^[0-9a-f-]{36}$/.test(id))throw new Error('目标地址不正确。');return checkedPlans(await request('POST',body,key,undefined,`/${id}/plan-drafts`),id);}

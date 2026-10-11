@@ -35,6 +35,7 @@ function SearchBody({id,owner}:{id:string;owner?:string}){
   return <KeyboardAvoidingView style={{flex:1,backgroundColor:colors.background}} behavior={Platform.OS==='ios'?'padding':undefined}><Screen title="搜索研究资料" bottomInset footer={footer}>
     <Action label="返回研究资料" secondary disabled={busy} onPress={()=>router.replace({pathname:'/goal/[id]/research',params:{id}})}/>
     <Badge>豆包搜索 · 内容未核实</Badge><Caption>搜索问题会发送给搜索服务。请使用通用问题，不填写姓名、邮箱、电话或私人病史。搜索不会生成计划或写入日历。</Caption>
+    {owner&&<Action label="生成与审阅计划草稿" secondary disabled={busy} onPress={()=>router.push({pathname:'/goal/[id]/plan',params:{id}})}/>}
     {!!error&&<AppText accessibilityRole="alert">{error}</AppText>}
     {!owner&&<Caption>请登录后搜索。</Caption>}
     {owner&&<Action label={reading?'正在读取搜索状态…':'读取搜索状态'} secondary disabled={busy||reading} onPress={()=>{setError('');setRevision(n=>n+1);}}/>}

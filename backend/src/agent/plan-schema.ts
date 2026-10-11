@@ -19,8 +19,8 @@ type ModelDraft = {
   tasks: DraftTask[];
 };
 export function checkedPlan(content: string, sourceIds: string[]) {
-  const fail = () => {
-    throw new AgentError("PLAN_INVALID_DRAFT");
+  const fail = (code = "PLAN_INVALID_SCHEMA") => {
+    throw new AgentError(code);
   };
   let v: ModelDraft;
   try {
@@ -83,38 +83,44 @@ export function checkedPlan(content: string, sourceIds: string[]) {
       !Array.isArray(t.depends_on) ||
       t.depends_on.length > 5 ||
       new Set(t.depends_on).size !== t.depends_on.length ||
-      t.depends_on.some((k) => k === t.key || !keys.has(k)) ||
       !Array.isArray(t.evidence_ids) ||
       t.evidence_ids.length > 3 ||
-      new Set(t.evidence_ids).size !== t.evidence_ids.length ||
-      t.evidence_ids.some((id) => !sourceIds.includes(id))
+      new Set(t.evidence_ids).size !== t.evidence_ids.length
     )
-      fail();
+      fail("PLAN_INVALID_TASK");
+    if (t.depends_on.some((k) => k === t.key || !keys.has(k)))
+      fail("PLAN_INVALID_DEPENDENCY");
+    if (t.evidence_ids.some((id) => !sourceIds.includes(id)))
+      fail("PLAN_INVALID_CITATION");
   }
-  if (!v.tasks.some((t) => t.evidence_ids.length)) fail();
+  if (!v.tasks.some((t) => t.evidence_ids.length))
+    fail("PLAN_INVALID_CITATION");
   const visiting = new Set<string>(),
     done = new Set<string>();
   function visit(key: string) {
-    if (visiting.has(key)) fail();
+    if (visiting.has(key)) fail("PLAN_INVALID_DEPENDENCY");
     if (done.has(key)) return;
     visiting.add(key);
     const task = v.tasks.find((t) => t.key === key)!;
     for (const dependency of task.depends_on) {
       const parent = v.tasks.find((t) => t.key === dependency)!;
-      if (parent.stage > task.stage) fail();
+      if (parent.stage > task.stage) fail("PLAN_INVALID_DEPENDENCY");
       visit(dependency);
     }
     visiting.delete(key);
     done.add(key);
   }
   for (const t of v.tasks) visit(t.key);
-  const rendered = JSON.stringify(v);
+  const rendered = JSON.stringify(v).replace(
+    /(?:不能|无法|并不|并非|不代表|不可|不)(?:保证成功|保证治愈)/g,
+    "未作效果承诺",
+  );
   if (
     /https?:|已(?:安排|入历|购买|完成研究)|保证(?:成功|治愈)|自行(?:停药|加药)|\d+\s*(?:毫克|mg)/i.test(
       rendered,
     )
   )
-    fail();
+    fail("PLAN_UNSAFE_CONTENT");
   const ids = new Map(v.tasks.map((t) => [t.key, crypto.randomUUID()]));
   return {
     schema_version: 1 as const,

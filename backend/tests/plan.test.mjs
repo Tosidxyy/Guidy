@@ -625,3 +625,56 @@ test("global budget and a new policy notice during generation block paid work or
   );
   assert.equal(f.calls(), 0);
 });
+
+test("safe validation reasons distinguish citation/task/structure failures and negated claims do not become promises", () => {
+  for (const [change, code] of [
+    [(d) => (d.tasks[0].evidence_ids = ["invented"]), "PLAN_INVALID_CITATION"],
+    [(d) => (d.tasks[0].duration_minutes = 0), "PLAN_INVALID_TASK"],
+    [(d) => (d.extra = "bad"), "PLAN_INVALID_SCHEMA"],
+    [(d) => (d.tasks[0].depends_on = ["t2"]), "PLAN_INVALID_DEPENDENCY"],
+  ]) {
+    const d = modelDraft();
+    change(d);
+    assert.throws(
+      () => checkedPlan(JSON.stringify(d), [sourceId]),
+      (e) => e.code === code,
+    );
+  }
+  const safe = modelDraft();
+  safe.risks = ["不保证成功，不能保证治愈"];
+  assert.equal(
+    checkedPlan(JSON.stringify(safe), [sourceId]).risks[0],
+    safe.risks[0],
+  );
+  const unsafe = modelDraft();
+  unsafe.risks = ["不保证成功，但保证治愈"];
+  assert.throws(
+    () => checkedPlan(JSON.stringify(unsafe), [sourceId]),
+    (e) => e.code === "PLAN_UNSAFE_CONTENT",
+  );
+});
+test("short model evidence aliases resolve only to frozen source UUIDs", async (t) => {
+  const f = await setup(t);
+  const model = {
+    complete: async (ctx) => {
+      const c = JSON.parse(ctx);
+      assert.equal(c.sources[0].evidence_ref, "E1");
+      const d = modelDraft();
+      d.tasks[0].evidence_ids = ["E1", sourceId];
+      return { content: JSON.stringify(d), inputTokens: 1, outputTokens: 1 };
+    },
+  };
+  const result = await planResponse(
+    f.req("plan-short-cite"),
+    f.db,
+    f.owner,
+    "test",
+    env,
+    model,
+  );
+  assert.equal(result.status, 201);
+  const body = await result.json();
+  assert.deepEqual(body.data.attempts[0].draft.tasks[0].evidence_ids, [
+    sourceId,
+  ]);
+});

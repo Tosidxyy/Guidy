@@ -2,7 +2,7 @@
 
 用户于 2026-10-10 指定先使用自己的 DeepSeek API，主要开发 harness。当前 Provider 为 DeepSeek 的 `deepseek-flash`，使用 [官方 Chat Completions 接口](https://api-docs.deepseek.com/api/create-chat-completion/)，非流式、thinking disabled、JSON object；Provider 可替换，业务控制不交给模型。
 
-2026-10-11 已确认后续方案方法：目标倒推、约束规划、按需搜索、生成后校验/修订、执行反馈。新增豆包SearchProvider和私有搜索尝试API，先落库保留预算再请求，unknown不自动重试；见[搜索接入](SEARCH_SETUP.md)。已接Goal内主动搜索页面，未接自动查询/搜索Workflow；首批PlanDraft后端已实现，手机审阅及完整校验仍待实现，旧后台来源任务仍仅公开GET。候选供应商、费用及完整流程见[搜索实现策略](SEARCH_STRATEGY.md)，产品验收以[PRD](PRD.md)为准。
+2026-10-11 已确认后续方案方法：目标倒推、约束规划、按需搜索、生成后校验/修订、执行反馈。新增豆包SearchProvider和私有搜索尝试API，先落库保留预算再请求，unknown不自动重试；见[搜索接入](SEARCH_SETUP.md)。已接Goal内主动搜索页面，未接自动查询/搜索Workflow；首批PlanDraft后端已实现，手机审阅已接入，完整校验仍待实现，旧后台来源任务仍仅公开GET。候选供应商、费用及完整流程见[搜索实现策略](SEARCH_STRATEGY.md)，产品验收以[PRD](PRD.md)为准。
 
 ## 模块与边界
 
@@ -59,3 +59,5 @@ npx wrangler secret put DEEPSEEK_API_KEY --config wrangler.cloud.json
 ### 首批计划生成隔离
 
 PlanDraft使用独立计划system提示/1800输出Token，与原澄清提示/650 Token分开。输入最多8500字符，最多3份900字符来源，条件和证据先冻结，引用/任务依赖/范围验证后保存。规则失败不自动修订或重试付费调用；草稿只待用户审阅，时间匹配与排程未校验。API、额度及限制见[PLAN_DRAFT](PLAN_DRAFT.md)，不是完整M1/领域安全验收。
+
+草稿真机校验失败后补充结构/任务/引用/依赖/安全内容固定错误码；不保存原始模型错误内容。evidence_ref E1/E2/E3由后端限定映射为本人目标冻结UUID，重复同源引用去重、未知引用拒绝。明确否定效果承诺不误识别为肯定承诺，部分风险词规则仍不是完整语义安全门槛；不自动再次调用模型，详细边界见[PLAN_DRAFT](PLAN_DRAFT.md)。
