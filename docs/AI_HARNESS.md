@@ -2,6 +2,8 @@
 
 用户于 2026-10-10 指定先使用自己的 DeepSeek API，主要开发 harness。当前 Provider 为 DeepSeek 的 `deepseek-flash`，使用 [官方 Chat Completions 接口](https://api-docs.deepseek.com/api/create-chat-completion/)，非流式、thinking disabled、JSON object；Provider 可替换，业务控制不交给模型。
 
+2026-10-11 已确认后续方案方法：目标倒推、约束规划、按需搜索、生成后校验/修订、执行反馈。当前澄清实现和后台来源任务是基础，不代表SearchProvider/PlanDraft已经实现。候选供应商、费用及接入边界见[搜索实现策略](SEARCH_STRATEGY.md)，产品验收以[PRD](PRD.md)为准。
+
 ## 模块与边界
 
 | 层 | 职责 |
