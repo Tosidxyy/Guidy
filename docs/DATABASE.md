@@ -216,3 +216,7 @@ D1 没有 PostgreSQL RLS。所有私有对象按已验证会话用户 ID 做服�
 search_attempts按goal/owner复合外键存私人查询、版本、幂等键、submitted/succeeded/failed/unknown、安全错误和结果JSON；每Goal仅一项submitted。结果是后端生成source_id的不可变供应商快照，带searched_at和内容类型，不把搜索时间当retrieved_at，不标verified。Goal删除级联清除查询/结果。
 
 search_usage仅存随机尝试ID、owner、创建时间，与尝试在D1 batch同事务保留；无Goal外键，删除目标不重置当日预算；账号删除级联。账号每日6/全局30（UTC），每Goal版本3；成功/失败/unknown都占额度。当前billing_status固定reserved_unknown，表示未核实供应商账单，不宣称成功免费或失败未扣费。生命周期清理待发布前实现。具体合同见[SEARCH_SETUP](SEARCH_SETUP.md)，迁移/部署验证记录见[TODO](TODO.md)。
+
+### 0012：私人PlanDraft尝试与费用保留
+
+plan_draft_attempts保存goal/owner复合外键、版本、账号幂等键、冻结上下文、submitted/succeeded/failed/unknown、草稿JSON及Token计数。每Goal一条submitted，新生成创建新记录，终态草稿API不覆盖；不是核心plan_versions，无确认或入历接口。Goal删除清理私人查询/草稿。plan_draft_usage仅随机ID/owner/时间，与尝试在同一batch占用；Goal删除不释放当日预算、账号删除级联，生命周期清理待发布前实现。详见[PLAN_DRAFT](PLAN_DRAFT.md)。

@@ -2,7 +2,7 @@
 
 用户于 2026-10-10 指定先使用自己的 DeepSeek API，主要开发 harness。当前 Provider 为 DeepSeek 的 `deepseek-flash`，使用 [官方 Chat Completions 接口](https://api-docs.deepseek.com/api/create-chat-completion/)，非流式、thinking disabled、JSON object；Provider 可替换，业务控制不交给模型。
 
-2026-10-11 已确认后续方案方法：目标倒推、约束规划、按需搜索、生成后校验/修订、执行反馈。新增豆包SearchProvider和私有搜索尝试API，先落库保留预算再请求，unknown不自动重试；见[搜索接入](SEARCH_SETUP.md)。已接Goal内主动搜索页面，未接自动查询/搜索Workflow/PlanDraft，旧后台来源任务仍仅公开GET。候选供应商、费用及完整流程见[搜索实现策略](SEARCH_STRATEGY.md)，产品验收以[PRD](PRD.md)为准。
+2026-10-11 已确认后续方案方法：目标倒推、约束规划、按需搜索、生成后校验/修订、执行反馈。新增豆包SearchProvider和私有搜索尝试API，先落库保留预算再请求，unknown不自动重试；见[搜索接入](SEARCH_SETUP.md)。已接Goal内主动搜索页面，未接自动查询/搜索Workflow；首批PlanDraft后端已实现，手机审阅及完整校验仍待实现，旧后台来源任务仍仅公开GET。候选供应商、费用及完整流程见[搜索实现策略](SEARCH_STRATEGY.md)，产品验收以[PRD](PRD.md)为准。
 
 ## 模块与边界
 
@@ -55,3 +55,7 @@ npx wrangler secret put DEEPSEEK_API_KEY --config wrangler.cloud.json
 云配置 GUIDY_AI_ENABLED=true、GUIDY_AI_MODEL=deepseek-flash。部署 guard 只捕获核对 secret 名称，不显示值；本地无 Key 时 POST 为 AI_NOT_CONFIGURED，仍可读对话。需要本地真实测试时只在忽略的 backend/.dev.vars 配置同名 Key/开关，不放 App .env 或 Git。
 
 测试方式：真实临时 D1 + 模拟 Provider 验证 harness；受控 API 回复验证 UI。真实 DeepSeek 质量与 iPhone 输入/多轮恢复必须另外验收，不能将固定测试回复当成真正模型输出。
+
+### 首批计划生成隔离
+
+PlanDraft使用独立计划system提示/1800输出Token，与原澄清提示/650 Token分开。输入最多8500字符，最多3份900字符来源，条件和证据先冻结，引用/任务依赖/范围验证后保存。规则失败不自动修订或重试付费调用；草稿只待用户审阅，时间匹配与排程未校验。API、额度及限制见[PLAN_DRAFT](PLAN_DRAFT.md)，不是完整M1/领域安全验收。

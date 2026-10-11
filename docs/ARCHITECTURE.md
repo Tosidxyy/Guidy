@@ -112,4 +112,8 @@ M0：TS Worker 探活/错误/日志、基础 CI、D1 开发/测试迁移、Bette
 
 ### 首批搜索尝试接口（2026-10-11）
 
-SearchProvider.search独立于网页ResearchProvider.read；首批豆包Custom Adapter调用固定API，不抓取搜索结果URL。GET/POST /api/v1/goals/{id}/search-runs要求会话/owner、版本和已确认基础条件；D1原子保留尝试/预算，先持久保存再请求。首批同步12秒等待、30秒lease，不复用网页Workflow；崩溃/不明结果不自动重试，完整搜索编排仍待实现。合同与Key配置见[SEARCH_SETUP](SEARCH_SETUP.md)，已接Goal内主动搜索页面；自动查询/PlanDraft未实现。
+SearchProvider.search独立于网页ResearchProvider.read；首批豆包Custom Adapter调用固定API，不抓取搜索结果URL。GET/POST /api/v1/goals/{id}/search-runs要求会话/owner、版本和已确认基础条件；D1原子保留尝试/预算，先持久保存再请求。首批同步12秒等待、30秒lease，不复用网页Workflow；崩溃/不明结果不自动重试，完整搜索编排仍待实现。合同与Key配置见[SEARCH_SETUP](SEARCH_SETUP.md)，已接Goal内主动搜索页面；自动查询未实现，首批PlanDraft后端见下方说明。
+
+### 首批PlanDraft后端（2026-10-11）
+
+GET/POST plan-drafts冻结本人当前版本的确认条件/搜索证据，独立DeepSeek计划提示生成私人待审阅草稿。严格结构+引用/依赖/部分风险规则校验，持久用量与unknown不自动重跑；不修改Goal/Slot/核心PlanVersion/日历。自由文本时间无法可靠排程，强制needs_user_review/not_checked；手机审阅、完整领域校验/模型修订/持久计划Workflow仍未实现。接口与验证边界见[PLAN_DRAFT](PLAN_DRAFT.md)。
