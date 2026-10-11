@@ -7,6 +7,14 @@ import {
   type AgentProvider,
 } from "./provider.ts";
 
+import {
+  chatCapture,
+  captureStatements,
+  nextChatSlot,
+  type CaptureKey,
+  type ChatCondition,
+} from "./chat-capture.ts";
+
 type Reply = {
   schema_version: 1;
   kind: "question" | "referral";
@@ -14,6 +22,8 @@ type Reply = {
   reason: string;
   source: "deepseek" | "policy";
   suggestions?: SlotSuggestion[];
+  requested_slot?: CaptureKey | null;
+  stage?: "clarifying" | "research_ready";
 };
 function validateReply(content: string, userText: string): Reply {
   let value;
@@ -27,8 +37,14 @@ function validateReply(content: string, userText: string): Reply {
     Array.isArray(value) ||
     typeof value !== "object" ||
     Object.keys(value).some(
-      (k) => !["question", "reason", "suggestions"].includes(k),
+      (k) =>
+        !["question", "reason", "suggestions", "requested_slot"].includes(k),
     ) ||
+    (value.requested_slot !== undefined &&
+      value.requested_slot !== null &&
+      !["outcome", "available_time", "constraints"].includes(
+        value.requested_slot,
+      )) ||
     typeof value.question !== "string" ||
     !value.question.trim() ||
     value.question.length > 240 ||
@@ -51,6 +67,9 @@ function validateReply(content: string, userText: string): Reply {
     reason: value.reason.trim(),
     source: "deepseek",
     suggestions: checkedSuggestions(value.suggestions, userText),
+    ...(value.requested_slot === undefined
+      ? {}
+      : { requested_slot: value.requested_slot }),
   };
 }
 export async function dialogueResponse(
@@ -95,16 +114,23 @@ export async function dialogueResponse(
   const columns =
     "id,turn_index,user_text,status,reply_json,error_code,input_tokens,output_tokens,requested_model,context_schema_version,harness_version,goal_revision,created_at";
   const snapshot = async () => {
-    const rows = await db
-      .prepare(
-        `SELECT ${columns} FROM agent_runs WHERE goal_id=? AND owner_id=? ORDER BY turn_index DESC LIMIT 30`,
-      )
-      .bind(goalId, owner)
-      .all();
+    const rows = await db.batch<Record<string, unknown>>([
+      db
+        .prepare(
+          "SELECT id,title,description,timeframe_note,status,revision FROM goals WHERE id=? AND owner_id=?",
+        )
+        .bind(goalId, owner),
+      db
+        .prepare(
+          `SELECT ${columns} FROM agent_runs WHERE goal_id=? AND owner_id=? ORDER BY turn_index DESC LIMIT 30`,
+        )
+        .bind(goalId, owner),
+    ]);
+    const liveGoal = rows[0].results[0];
     return {
-      goal,
-      chat_revision: rows.results[0]?.turn_index ?? 0,
-      runs: rows.results.reverse().map((r) => ({
+      goal: liveGoal,
+      chat_revision: rows[1].results[0]?.turn_index ?? 0,
+      runs: rows[1].results.reverse().map((r) => ({
         ...r,
         reply_json: undefined,
         reply: r.reply_json ? JSON.parse(r.reply_json as string) : null,
@@ -201,7 +227,7 @@ export async function dialogueResponse(
   const claimed = await db.batch([
     db
       .prepare(
-        `INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running','clarify-v2',?,?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=?)=? AND (SELECT count(*) FROM agent_runs WHERE owner_id=? AND created_at>=?)<8 AND (SELECT count(*) FROM agent_runs WHERE created_at>=?)<20`,
+        `INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running','clarify-v3',?,?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=?)=? AND (SELECT count(*) FROM agent_runs WHERE owner_id=? AND created_at>=?)<8 AND (SELECT count(*) FROM agent_runs WHERE created_at>=?)<20`,
       )
       .bind(
         id,
@@ -272,7 +298,12 @@ export async function dialogueResponse(
         .bind(goalId),
       db
         .prepare(
-          "SELECT user_text,reply_json FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' ORDER BY turn_index DESC LIMIT 2",
+          "SELECT id,turn_index,user_text,reply_json,coalesce((SELECT resulting_goal_revision FROM chat_condition_captures WHERE run_id=agent_runs.id),goal_revision) effective_revision FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' ORDER BY turn_index DESC LIMIT 2",
+        )
+        .bind(goalId, owner),
+      db
+        .prepare(
+          "SELECT 1 found FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' AND json_extract(reply_json,'$.source')='policy' LIMIT 1",
         )
         .bind(goalId, owner),
     ]);
@@ -285,6 +316,20 @@ export async function dialogueResponse(
       contextGoal.status !== "draft"
     )
       throw new AgentError("CONTEXT_CHANGED");
+    const conditions: ChatCondition[] = slots.results.map((s) => ({
+      key: String(s.key),
+      value: JSON.parse(s.value_json as string),
+    }));
+    const last = history.results.find((r) => r.turn_index === chatRevision);
+    const lastReply = last ? JSON.parse(last.reply_json as string) : null;
+    const preceding = lastReply
+      ? {
+          id: String(last!.id),
+          goal_revision: Number(last!.effective_revision),
+          requested_slot: lastReply.requested_slot,
+          source: lastReply.source,
+        }
+      : null;
     const context = JSON.stringify({
       goal: {
         description: contextGoal.description || contextGoal.title,
@@ -305,6 +350,12 @@ export async function dialogueResponse(
           };
         })(),
       })),
+      answer_to:
+        preceding?.goal_revision === goalRevision
+          ? (preceding.requested_slot ?? null)
+          : null,
+      next_missing_slot: nextChatSlot(conditions),
+      capture_protocol: "chat-capture-v1",
       user_message: text,
     });
     if (context.length > 5000) throw new AgentError("CONTEXT_TOO_LARGE");
@@ -315,6 +366,7 @@ export async function dialogueResponse(
       .bind(context, id, owner)
       .run();
     let reply: Reply;
+    let capture: ReturnType<typeof chatCapture> = null;
     let inputTokens: number | null = null;
     let outputTokens: number | null = null;
     // Safety is based on user facts, never on an assistant's hypothetical question.
@@ -325,6 +377,7 @@ export async function dialogueResponse(
       text,
     }).replace(/没有(?:已知)?伤病|无伤病/g, "");
     if (
+      contextRows[3].results.length ||
       /处方|停药|减药|增药|药物剂量|药量|诊断|自杀|自残|伤害他人|伤病|怀孕|糖尿病|心脏病/i.test(
         policyInput,
       )
@@ -343,10 +396,55 @@ export async function dialogueResponse(
         timeout,
       ]);
       reply = validateReply(completion.content, text);
+      if (reply.requested_slot !== undefined) {
+        capture = chatCapture(
+          text,
+          reply.suggestions ?? [],
+          preceding,
+          goalRevision,
+          conditions,
+        );
+        const after = capture
+          ? [
+              ...conditions.filter((s) => s.key !== capture!.key),
+              { key: capture.key, value: capture.value },
+            ]
+          : conditions;
+        const target = nextChatSlot(after);
+        const questionFits =
+          target === null ||
+          {
+            outcome: /目标|希望|达成|达到|结果|成果|目的/,
+            available_time: /时间|时段|分钟|小时|每周|每天|几次|次数/,
+            constraints: /限制|资源|条件|要求|已有|器材|顾虑|注意/,
+          }[target].test(reply.question);
+        if (reply.requested_slot !== target || !questionFits) {
+          const fallback = {
+            outcome: "你希望这个目标最终达到什么具体结果？",
+            available_time: "你每周能投入多少时间，通常哪些时段有空？",
+            constraints: "有什么需要考虑的限制或已有资源？也可以暂不确定。",
+          };
+          reply.question = target
+            ? fallback[target]
+            : "基本信息已收集，还有其他希望补充的内容吗？";
+          reply.reason = "根据你的回答继续补齐必要信息，暂不安排日历。";
+        }
+        reply.requested_slot = target;
+        reply.stage =
+          after.some(
+            (s) => s.key === "outcome" && s.value.state === "confirmed",
+          ) &&
+          after.some(
+            (s) => s.key === "available_time" && s.value.state === "confirmed",
+          )
+            ? "research_ready"
+            : "clarifying";
+      }
       inputTokens = completion.inputTokens;
       outputTokens = completion.outputTokens;
       const normalized = (s: string) => s.replace(/[\s，。?？!！]/g, "");
       if (
+        reply.requested_slot === undefined &&
         history.results.some(
           (r) =>
             normalized(JSON.parse(r.reply_json as string).question) ===
@@ -360,7 +458,7 @@ export async function dialogueResponse(
     await db.batch([
       db
         .prepare(
-          "UPDATE agent_runs SET status='succeeded',reply_json=?,input_tokens=?,output_tokens=?,updated_at=? WHERE id=? AND owner_id=? AND status='running' AND lease_until>? AND EXISTS(SELECT 1 FROM goals WHERE id=goal_id AND owner_id=? AND status='draft' AND revision=?)",
+          "UPDATE agent_runs SET status='succeeded',reply_json=?,input_tokens=?,output_tokens=?,updated_at=? WHERE id=? AND owner_id=? AND status='running' AND lease_until>? AND EXISTS(SELECT 1 FROM goals WHERE id=goal_id AND owner_id=? AND status='draft' AND revision=? AND (active_plan_version_id IS NULL OR ?=0)) AND NOT EXISTS(SELECT 1 FROM agent_runs p WHERE p.goal_id=agent_runs.goal_id AND p.owner_id=agent_runs.owner_id AND p.status='succeeded' AND json_extract(p.reply_json,'$.source')='policy' AND ?=1)",
         )
         .bind(
           JSON.stringify(reply),
@@ -372,7 +470,20 @@ export async function dialogueResponse(
           completed,
           owner,
           goalRevision,
+          capture ? 1 : 0,
+          capture ? 1 : 0,
         ),
+      ...(capture
+        ? captureStatements(
+            db,
+            capture,
+            id,
+            goalId,
+            owner,
+            goalRevision,
+            completed,
+          )
+        : []),
       db
         .prepare(
           "INSERT OR IGNORE INTO agent_messages(id,run_id,goal_id,role,content,created_at) SELECT ?,id,goal_id,'assistant',reply_json,updated_at FROM agent_runs WHERE id=? AND owner_id=? AND status='succeeded'",

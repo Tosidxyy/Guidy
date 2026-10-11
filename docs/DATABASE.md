@@ -230,3 +230,7 @@ plan_draft_reviews以source attempt/Goal/owner复合外键保存独立draft_json
 ### 0014 审阅版本每周可用分钟
 
 plan_draft_reviews追加weekly_capacity_minutes INTEGER，可NULL，CHECK 0–10080。旧行NULL代表未知；仅随新审阅INSERT，不原地修改旧记录。用户可仅保存容量变化；省略字段兼容旧客户端并继承最新值、显式null清空。它绑定来源草稿审阅版本，不修改Goal revision/确认Slot，不是精确日历时间窗或生效计划。
+
+### 0015 聊天采集依据
+
+chat_condition_captures以run_id唯一记录当前回答和question_run_id、Goal/owner、slot_key/value_json、整条用户原文、提取版本及resulting_goal_revision。回答/问题均通过agent_runs(id,goal_id,owner_id)复合FK校验，删除目标/账号/相关run级联。与Goal版本增加、目标Slot写入、成功回复/助手消息同一D1 batch，失败全部回滚；不覆盖旧run、Goal条件仍source=user/private，仅有限明确回答可确认。未知confirmed_at=NULL，旧手工确认数据不自动改写。

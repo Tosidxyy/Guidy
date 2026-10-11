@@ -6,7 +6,6 @@ import { useAccount } from '../../../src/auth/AuthProvider';
 import { useTheme } from '../../../src/theme/ThemeProvider';
 import { getDialogue, sendDialogue } from '../../../src/goals/api';
 import { dialogueError, type Dialogue } from '../../../src/goals/dialogue';
-import { questions } from '../../../src/goals/clarification';
 
 export default function GoalChat(){
   const {id}=useLocalSearchParams<{id:string}>();const {user}=useAccount();
@@ -59,21 +58,16 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
       {!!error&&<AppText accessibilityRole="alert" accessibilityLiveRegion="polite">{error}</AppText>}
       {owner&&<Action label="重新读取对话状态" secondary disabled={sending||loading} onPress={()=>setRefresh(n=>n+1)}/>}
       {data&&<>
-        <Badge>DeepSeek · 澄清建议</Badge>
-        <Card><AppText>{data.goal.description||data.goal.title}</AppText><Caption>已确认条件作为上下文。对话建议不会自动改变条件或日历。</Caption></Card>
+        <Badge>与 Agent 制订方案</Badge>
+        <Card><AppText>{data.goal.description||data.goal.title}</AppText><Caption>直接回答问题即可。系统会记录明确回答，含糊或未知的信息继续澄清；确认方案前不会写入日历。</Caption></Card>
         {!data.runs.length&&<><Caption>AI 会结合你的目标和已保存条件，一次询问一个重要问题。</Caption><Action label="开始 AI 澄清" disabled={!enabled||sending} onPress={()=>send('请根据我的目标和已确认条件，提出一个必要的澄清问题。')}/></>}
         {data.runs.map(run=><View key={run.id} style={{gap:12}}>
           <Card style={{backgroundColor:colors.action}}><AppText style={{color:colors.onAction}}>{run.user_text}</AppText></Card>
-          {run.status==='running'?<Caption>正在生成建议，你的消息已保存。</Caption>:run.status==='failed'?<Card><AppText>这次生成未完成</AppText><Caption>{dialogueError(run.error_code??'')}</Caption><Action label="把这条消息填回输入框" secondary disabled={sending||active} onPress={()=>setText(run.user_text)}/></Card>:run.reply&&<Card><Badge>{run.reply.source==='policy'?'系统安全提示':'AI 建议 · 待确认'}</Badge><AppText style={{fontSize:21,fontWeight:'600'}}>{run.reply.question}</AppText><Caption>{run.reply.reason}</Caption></Card>}
+          {run.status==='running'?<Caption>正在生成建议，你的消息已保存。</Caption>:run.status==='failed'?<Card><AppText>这次生成未完成</AppText><Caption>{dialogueError(run.error_code??'')}</Caption><Action label="把这条消息填回输入框" secondary disabled={sending||active} onPress={()=>setText(run.user_text)}/></Card>:run.reply&&<Card><Badge>{run.reply.source==='policy'?'系统安全提示':'Agent'}</Badge><AppText style={{fontSize:21,fontWeight:'600'}}>{run.reply.question}</AppText><Caption>{run.reply.reason}</Caption></Card>}
         </View>)}
-        {data.runs.filter(run=>run.status==='succeeded'&&!!run.reply?.suggestions?.length).map(run=><Card key={`suggestions:${run.id}`}>
-          <Badge>第 {run.turn_index} 轮条件建议 · 待你确认</Badge>
-          {run.reply!.suggestions!.map(s=><View key={s.key}><AppText>{questions.find(q=>q.key===s.key)?.label}</AppText><Caption>原文：{s.evidence}</Caption></View>)}
-          <Action label="审阅这轮条件建议" secondary disabled={sending||active||!enabled||run.goal_revision!==data.goal.revision} onPress={()=>router.push({pathname:'/goal/[id]/clarify',params:{id,suggestionRun:run.id}})}/>
-          {run.goal_revision!==data.goal.revision&&<Caption>目标条件已改变，此建议仅保留为历史记录。</Caption>}
-        </Card>)}
+        {data.runs.at(-1)?.reply?.stage==='research_ready'&&data.runs.at(-1)?.reply?.requested_slot===null&&<Caption>基本信息已收集。自动研究与方案生成还在接入，这里尚不会安排日历。</Caption>}
         {!enabled&&<Caption>当前目标只读，暂停草稿请先在详情页继续。</Caption>}
-        <Caption>回答保存在当前目标内。需要确认或修改条件时，返回「澄清目标与条件」；当前不生成计划或执行操作。</Caption>
+        <Caption>对话会保存在这个目标内。你可以继续补充；已记录条件的更正和自动生成方案将在后续接通。</Caption>
       </>}
     </Screen>
   </KeyboardAvoidingView>;

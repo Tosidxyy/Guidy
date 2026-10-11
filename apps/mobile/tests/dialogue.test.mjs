@@ -24,3 +24,8 @@ test('failure messages describe retained state without exposing raw provider err
   assert.match(dialogueError('CONTEXT_CHANGED'),/输入仍保留/);
   assert.ok(!dialogueError('upstream-private-key').includes('upstream-private-key'));
 });
+
+test('chat collection metadata accepts internal keys but cannot masquerade as policy or arbitrary phases',()=>{
+ const reply={...base.runs[0].reply,requested_slot:'outcome',stage:'clarifying'};assert.equal(checkedDialogue({...base,runs:[{...base.runs[0],reply}]}).runs[0].reply.requested_slot,'outcome');
+ for(const override of [{requested_slot:'calendar'},{stage:'scheduled'},{source:'policy',kind:'referral'}])assert.throws(()=>checkedDialogue({...base,runs:[{...base.runs[0],reply:{...reply,...override}}]}));
+});

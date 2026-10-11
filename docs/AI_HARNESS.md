@@ -16,7 +16,7 @@
 | D1 agent_messages | 关联运行的用户消息与已通过校验的回复；同一 run/role 唯一、同 Goal 复合外键、随目标删除级联 |
 | Goal 内对话页 | 展示建议/系统边界，输入、失败保留、恢复/状态读取；账号/目标切换不复用私有输入 |
 
-AI 输出一个澄清问题、简短理由和可选的条件建议，不能写 goal_slots、PlanVersion、Calendar 或通知，也不提供 tools 列表。对话回答不自动变成确认 Slot。
+以下为clarify-v1/v2历史桥接；当前新聊天采集见本文clarify-v3章节。AI 输出一个澄清问题、简短理由和可选的条件建议，不能写 goal_slots、PlanVersion、Calendar 或通知，也不提供 tools 列表。对话回答不自动变成确认 Slot。
 
 `clarify-v2` 的 `suggestions` 最多三项，key 仅 outcome/available_time/constraints 且唯一。text/evidence 必须相同、最多300字、逐字存在于本次用户消息；模型不能改写或用历史/助手文字充当依据。分类仍可能有误，原文匹配并不证明语义正确。旧回复无 suggestions 时作为空建议兼容，旧 run/version 不改写；policy 不提供条件建议。建议随已校验 reply_json 私有保存，无需新迁移，不附加独立模型请求。
 
@@ -65,3 +65,13 @@ PlanDraft使用独立计划system提示/1800输出Token，与原澄清提示/650
 草稿真机校验失败后补充结构/任务/引用/依赖/安全内容固定错误码；不保存原始模型错误内容。evidence_ref E1/E2/E3由后端限定映射为本人目标冻结UUID，重复同源引用去重、未知引用拒绝。明确否定效果承诺不误识别为肯定承诺，部分风险词规则仍不是完整语义安全门槛；不自动再次调用模型，详细边界见[PLAN_DRAFT](PLAN_DRAFT.md)。
 
 计划输出已切换DeepSeek官方Beta strict Schema：emit_plan仅是响应格式，不进入工具registry/dispatcher，不执行任何操作；仅一个固定函数/参数返回可接受，仍经本地结构/引用/依赖/安全校验。对象字段/类型/额外字段由输出schema约束，数组数量/唯一/依赖继续代码校验。澄清普通JSON模式与拒绝工具调用不变。开发环境曾临时每日4次验证，用户确认成功后已恢复每日3/全局10，旧用量和草稿保留；见[PLAN_DRAFT](PLAN_DRAFT.md)。
+
+## clarify-v3 首批聊天条件采集（2026-10-11）
+
+新澄清回复允许内部requested_slot（outcome/available_time/constraints/null）和harness派生stage，前端不展示字段或建议表单。当前仍一次单问/650 Token、8/20 UTC日限额，不增加独立提取请求；旧回复无requested_slot时仅保留历史建议，不自动套用。
+
+harness只接受上一成功且紧邻当前turn、有效Goal版本的问题所对应的完整回答；模型建议必须逐字等于整条用户消息、同一key，且通过保守未知/疑问/命令/更正/长度过滤。partial quote、其他字段、旧问或已confirmed条件不自动保存；不是完整语义理解或纠正能力。明确暂不确定保存unknown（text空、confirmed_at NULL），未知必需条件继续补问。已有policy提示持续阻止新采集，不能通过换词/修改条件解除。
+
+模型question字段与下一缺项不匹配时，harness使用该缺项的固定补问并标为同一内部target；简单关键词检查不是全面语义证明。基础成果/时间确认后stage可为research_ready，仍不是排程可用；约束再问一次，可未知。自动研究/方案和自然语言更正尚未接通，聊天如实说明。
+
+0015 chat_condition_captures保存回答run、问题run、owner/Goal、key/value/原文、chat-capture-v1及resulting_goal_revision；两端复合FK防跨目标/账号。单个D1 batch完成成功reply、Goal revision+1、Slot和依据、助手消息，失败一起回滚。run.goal_revision保留请求输入版；下一轮用捕获回执版对齐上一问题，GET/POST返回新的Goal一致快照。同键只读持久结果，不重提取/调用/涨版本。没有核心PlanVersion、日历或提醒写入。

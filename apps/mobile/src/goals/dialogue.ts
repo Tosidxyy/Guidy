@@ -1,7 +1,7 @@
 import type { AccountGoal } from './api';
 import type { SlotInput } from './clarification';
 export type SlotSuggestion = { key: SlotInput['key']; text: string; evidence: string };
-export type DialogueReply = { schema_version: 1; kind: 'question'|'referral'; question: string; reason: string; source: 'deepseek'|'policy'; suggestions?: SlotSuggestion[] };
+export type DialogueReply = { schema_version: 1; kind: 'question'|'referral'; question: string; reason: string; source: 'deepseek'|'policy'; suggestions?: SlotSuggestion[];requested_slot?: SlotInput['key']|null;stage?:'clarifying'|'research_ready' };
 export type DialogueRun = { id:string;turn_index:number;user_text:string;status:'running'|'succeeded'|'failed';reply:DialogueReply|null;error_code:string|null;goal_revision?:number };
 export type Dialogue = { goal:AccountGoal;chat_revision:number;runs:DialogueRun[] };
 export function checkedDialogue(value: Dialogue): Dialogue {
@@ -11,6 +11,9 @@ export function checkedDialogue(value: Dialogue): Dialogue {
     if(run.status==='succeeded'){
       const r=run.reply;
       if(!r||r.schema_version!==1||!['question','referral'].includes(r.kind)||!['deepseek','policy'].includes(r.source)||typeof r.question!=='string'||!r.question.trim()||r.question.length>240||typeof r.reason!=='string'||r.reason.length>160||(r.kind==='question'?r.source!=='deepseek':r.source!=='policy'))throw new Error('AI 回复未通过校验。');
+      if(r.requested_slot!==undefined&&r.requested_slot!==null&&!['outcome','available_time','constraints'].includes(r.requested_slot))throw new Error('对话问题格式不正确。');
+      if(r.stage!==undefined&&(!['clarifying','research_ready'].includes(r.stage)||r.source!=='deepseek'||r.requested_slot===undefined))throw new Error('对话阶段格式不正确。');
+      if(r.source==='policy'&&(r.requested_slot!==undefined||r.stage!==undefined))throw new Error('安全提示不能采集条件。');
       if(r.suggestions!==undefined){
         if(r.source!=='deepseek'||!Array.isArray(r.suggestions)||r.suggestions.length>3)throw new Error('条件建议格式不正确。');
         const seen=new Set<string>();
