@@ -88,6 +88,7 @@
 
 ### M1-B 可恢复研究与结构化计划
 
+- [x] 来源页阅读区域修复：添加表单默认收起、主动展开、收起保留/成功自动收起、失败保留；来源/任务安全错误码保留，全部失败明确显示。（浏览器/类型/lint/状态/iOS导出通过；新iPhone布局待确认，British Council云端HTTP520未恢复。）
 - [x] 首批持久后台来源任务：Cloudflare Workflows、D1 agent_jobs/逐项快照、同实例派发恢复、lease/检查点/版本保护；最多3份来源，页面离开后可恢复进度。（真实Workers Workflow+受控UI通过并部署，云空任务2步成功；实际iPhone来源任务待验收，不代表搜索/事实研究/计划生成完成。）
 - [x] 首批来源准备：独立网页 ResearchProvider、精确官网HTTPS白名单、大小/超时/跳转/类型限制；用户指定来源与待核对问题，D1保存短摘录/访问时间/限制/unverified，Goal内恢复/失败明确重试。（本地真实D1+受控UI、电脑实际公开网页读取通过并部署；不是自动搜索/事实核验或后台研究Job，iPhone云端来源读取仍待验收。）
 - [ ] 实现搜索/网页提取 Provider 抽象；保存来源 URL、获取时间、适用条件、未知项。
@@ -680,3 +681,15 @@ flowchart TD
 - 云部署9a8e66c0-496c-429d-9fe4-67d6d9623949，Workflow guidy-research-development创建成功。私有CLI触发空测试实例guidy-smoke-20261011-4b7a6fa3，jobId为不存在的全零UUID；云status=complete、start/finish两步success，无网页/模型请求、无用户数据写入。仅证明云持久执行基础，不扩大为真实账号/来源整链验收。health正常，research-runs匿名GET/POST401/UNAUTHORIZED PASS。
 - 架构/数据库/UI/来源/预览文档、相对链接、diff/暂存范围检查PASS；实现Commit：74cdd206961d273891ce6ea1d6981ddefadf8baf。TODO单独提交后push origin/main并核对远程SHA。
 - 未验证：iPhone实际任务提交/离开后结果、云来源读取CPU/供应商可用性、VoiceOver/大字体。完整自动检索、事实证据核验、专业风险流程、PlanDraft/排程、长任务heartbeat/费用策略保持未完成。下一轮把确认条件与来源接入可审阅的结构化计划草稿，仍不直接写日历。
+
+### 2026-10-11 — 来源页遮挡 / 云端读取失败诊断
+
+- 用户截图确认固定添加底栏长期压缩阅读区，任务1/1处理却1项失败；本轮修复可控UI与诊断，不把失败误记为后台成功获取。表单默认隐藏，仅添加/填回时展开，可收起保留输入，成功收起并关闭键盘，失败继续保留；幂等重放失败记录也不清空输入。全部来源失败单独标出，旧记录不回填猜测原因。
+- 根因之一：客户端request仅把messages/409包装GoalApiError，evidence/research-runs的502/503等被泛化，外层具体sourceError/jobError失效。新增安全错误码分支，保留401/404行为及输入；来源区分拒绝/不存在/限流/上游5xx数字/网络/超时，平台正文/异常原文不返回。目标版本/幂等冲突仍说明需读最新状态。
+- 云只读统计该公开URL：直接失败1、任务失败2，旧码均SOURCE_UNAVAILABLE，不读取邮箱/目标正文/OTP。两次使用独立临时测试账号/Goal/job的实际云Workflow读取：首次确认上游5xx，细分后复测为SOURCE_SERVER_ERROR_520、摘录0；全部诊断行通过精确测试账号UUID级联清理，无用户记录修改/邮件/模型调用。测试Workflow仅保留非敏感编号步骤状态。
+- 官方公开fetch兼容模式试验未恢复该URL，配置已撤回，最终Git无相关配置改动，不保留无证据修复。电脑Node成功不等于云访问成功；目前HTTP520仍未解决，原因在上游/网关响应，不能替第三方修复或伪造摘录。仍需来源不可用时的替代方案，链接读成功项保持未验收。
+- 快速检查：backend typecheck/lint/format、完整56项回归PASS；安全5xx细分后9项source/job专项PASS、build:cloud PASS。mobile typecheck/lint、18项状态测试PASS、export:ios PASS；最后冲突文案/断言补充后类型/lint/18项复查PASS，未重复无关后台回归。无迁移或依赖变更，核心历史保留。
+- Browser plugin not available，按既有前端调试/React技能用Playwright/Edge：真实本地登录/Goal+受控来源错误，默认无输入框、展开/收起保留、成功自动收起、失败保留及真实安全错误码提示、320×480输入/按钮可见、520提示/全部失败徽标/收起后全阅读区PASS；聊天/退出回归PASS，0意外错误/警告，预期400/422/502。首次具体错误提示等待失败促成发现client丢码，修正后复测通过；这不是云网站恢复证明。脚本/截图仓库外。
+- 云部署最终845a6540-e9dc-46e3-a550-b03a10c224ec，health正常、evidence匿名401保护PASS。云复测一次自动审批未在deadline完成，命令未执行；按规则仅重试一次后通过，不把超时判为不安全或绕过审批。没有遗留阻塞审批动作。
+- UI/来源文档、链接、diff/暂存范围检查PASS；实现Commit：a242baf65f1cfa82dbca038037b0d6b0a85434c5。TODO单独提交后push origin/main并核对远程SHA。
+- 未验证：新iPhone表单收起/键盘与VO/大字，当前British Council实际云读取恢复。下一步优先补充不可用来源的替代路径，再推进计划草稿；不再只用电脑读取或空任务证明真实来源链路。
