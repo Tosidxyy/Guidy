@@ -99,6 +99,7 @@
 - [ ] 使用 TypeScript Agent Provider 生成 `PlanDraft`，按运行时 Schema 与领域规则两次校验。
 - [ ] 研究/计划生成改为D1 持久 Agent Job + 经验证的 Cloudflare 后台编排/消费者（lease、heartbeat、重试、检查点）。
 - [ ] 实现 Job 状态轮询，恢复后能继续查看阶段进度而不重复扣费/重复生成副作用。
+- [x] 首批手动数字审阅：任务时长/每周次数、实时投入、独立不可变审阅版本、原稿/Task IDs/依赖/引用保留、版本冲突保留输入。（真实本地API/D1/浏览器及类型/lint/iOS导出通过；云已部署，iPhone新增保存/键盘专项待反馈。不等于完整任务编辑、领域/时间校验或计划批准。）
 - [ ] 计划详情展示任务、阶段、依据、预算/时间投入、阻塞原因和未确认条件。
 - [x] 手机基础真实生成与草稿展示：strict输出修正后用户确认iPhone「已出现草稿」。（仅基础生成/展示；内容质量、引用语义、时间适配、异常恢复/VO/大字及确认入历未验收。旧失败与用量保留。）
 - [ ] 建立健身、学习、护肤各 1 套可重复的评估样例，避免把 LLM 无法验证的产品参数当事实。
@@ -768,3 +769,15 @@ flowchart TD
 - Browser plugin not available，Playwright/Edge既有QA脚本：初次本地8090超时未记通过，核对Guidy监听进程PID32236后只重启该QA预览（不改手机8089/环境文件）；最终额度4告知→GET恢复3、不自动模型POST/历史和失败恢复/终态禁用/新请求确认/320×480无横溢PASS，0意外错误/警告、POST4/3不同键。受控回复不代替用户真机反馈，精确清QA账号、截图/脚本仓库外。
 - PLAN_DRAFT/架构/harness/iPhone说明、链接/diff/暂存范围PASS；代码Commit：55b74ec6ce99625bebdde6319ab0993c3fe695fd。TODO单独提交后push origin/main并核对SHA；完整M1/领域校验/编辑批准/PlanVersion排程仍未完成。
 - 下一步：在已可生成/展示的草稿基础上实现用户任务审阅与必要调整，再收集结构化时间/预算并做确定性可执行检查；用户确认前保持不写日历。
+
+### 2026-10-11 — 手动时长/频次调整 / 不可变审阅版本
+
+- Scope：M1草稿页进入独立调整页，仅5–120整数分钟/周1–7次；保存新的私有review，不调用模型/搜索，不消耗每日生成用量，不改原AI/Task IDs/内容/依赖/引用/Goal/Slot/核心PlanVersion/日历。新数值可能与步骤文字不一致，显式提示核对；适配/成本/排程仍未知。
+- 0013新增plan_draft_reviews：source attempt/Goal/owner复合FK（Parent新增唯一scope索引）、revision1–20、Owner幂等key/payload/草稿JSON/时间。仅条件INSERT再次核对Goal/source/policy/MAX revision，并发只能抢一条下一版本；相同请求返回原receipt_revision，最新版本另显示，不混淆两者。Goal/source删除级联，已有数据/迁移不改写。
+- GET/POST draft-reviews?attempt_id要求已验证会话/owner及成功来源；非法值/额外字段/任务/无变化422、Goal/审阅版本/请求键冲突409、匿名401/他人404、20版本只读。原稿/旧review不覆盖，Goal与模型用量不变；保存是审阅建议，不是批准执行。
+- UI按账号/Goal/来源key隔离，读取取消/旧响应丢弃，同页输入/请求保留；并发版本改变禁用保存，明确加载/确认替换再调。全角数字规范化、拒绝小数/非法后缀/越界，不静默截数。AI原稿保留原页，保存历史摘要可见；未提交输入只在内存，系统返回/键盘/VO/大字真机未验证。
+- 快速检查：backend typecheck/lint/format、完整78项回归PASS（新增4项review真实D1，原稿/引用/ID/core不变、不可变多版本/幂等、数字/字段/owner/旧版本/并发、20上限与跨Goal FK）；mobile typecheck/lint、24项状态测试、export:ios PASS。初次D1 batch默认{}导致TS字段错误，补泛型/显式revision转换后复查；一条字符串替换解析失败未执行，改正确转义后检查通过。不虚报初次结果。
+- Browser plugin not available，使用前端调试/React质量原则与03-plan-detail视觉。Playwright/Edge真实本地登录/Goal/slots + 受控原稿，但审阅GET/POST均真实：保存1→另设备保存2→本页35输入保留/保存禁用→确认加载40→保存3/Reload恢复40×2；D1三版投入90/120/80，原AI仍20×3、Goal版本和active_plan不变、模型usage0。320×480输入/固定按钮可见无横溢，0意外error/warn。首次预览超时不记通过，核对Guidy 8090监听后仅重启QA服务，再复测PASS；未影响手机8089，精确清QA账号，脚本截图仓库外。
+- dev/test/cloud 0013迁移PASS，build:cloud PASS、最终云部署ca3bb7b0-74d3-407d-b649-cf7e0fdbec48，health正常、draft-reviews匿名GET/POST401 PASS。无真实模型/云邮件调用或真实账号/目标数据读取；云认证成功保存和新增iPhone键盘/恢复已发起体验问题，尚未收到反馈。
+- PLAN_DRAFT/数据库/架构/UI/iPhone说明、相对链接/diff/暂存范围PASS；代码Commit：db6ac90ab351210990dfb8559cb8851e2a5a47a3。TODO单独提交后push origin/main并核对远程SHA；完整M1详情/任务编辑/域规则保持未完成。
+- 下一步：完善结构化时间/预算与计划审阅差异，在确定性检查后准备用户批准；现阶段不写日历、不会将保存审阅等同任务完成或计划已生效。
