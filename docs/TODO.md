@@ -95,6 +95,7 @@
 - [x] Goal内主动搜索入口与来源审阅：通用查询、可收起输入、正文/摘要/片段标识、结果/旧版本恢复、同键重放及另开搜索确认。（类型/lint/20项状态测试/iOS导出/受控供应商浏览器验证PASS；用户确认iPhone已出现真实搜索结果；来源质量、键盘/VO/大字及完整异常恢复真机验收未完成。）
 - [ ] 实现搜索/网页提取 Provider 抽象；保存来源 URL、获取时间、适用条件、未知项。
 - [ ] 增加外部网页不可信输入隔离与 SSRF/超时/重定向限制。
+- [x] 首批PlanDraft后端：冻结确认条件/当前搜索证据、独立DeepSeek计划提示、私人草稿保存、结构/引用/依赖/部分风险校验及费用/幂等/版本保护。（受控模型+真实临时D1检查通过并部署；手机审阅、真实生成质量、完整领域/预算/时间校验仍未验证或实现。）
 - [ ] 使用 TypeScript Agent Provider 生成 `PlanDraft`，按运行时 Schema 与领域规则两次校验。
 - [ ] 研究/计划生成改为D1 持久 Agent Job + 经验证的 Cloudflare 后台编排/消费者（lease、heartbeat、重试、检查点）。
 - [ ] 实现 Job 状态轮询，恢复后能继续查看阶段进度而不重复扣费/重复生成副作用。
@@ -733,3 +734,14 @@ flowchart TD
 - 用户针对本轮搜索入口回复「已出现搜索结果」，确认iPhone App → 云端认证搜索API → 豆包结果展示基础链路可用；未提供密钥或私人查询，不扩大为召回质量、事实核验、键盘/VO/大字或异常恢复通过。
 - 本轮仅更新TODO验收说明。检查：git diff --check与记录范围核对PASS；无代码变更，未重复应用测试、部署或付费搜索。单独文档提交后push origin/main并核对远程SHA。
 - 下一轮推进已确认条件下的查询组织/证据筛选及带引用PlanDraft，规则校验与用户确认边界保持。
+
+### 2026-10-11 — 首批PlanDraft后端 / 冻结证据与结构校验
+
+- Scope从M1-B拆出独立草稿后端小任务：GET/POST plan-drafts、私有尝试/用量、DeepSeek计划提示、严格结构与引用/依赖/部分安全规则。不改手机页面、导航/品牌、Goal/Slot/核心PlanVersion/日历；生成结果只待审阅，完整原M1项保持未勾选。参考AI SDK技能的结构化输出原则，保持用户既定直接DeepSeek接口和Cloudflare栈，未引入SDK/Gateway或更换框架。
+- 选择1–3个本人目标当前版本成功搜索，确定性取最多3份有正文/摘要的来源各900字符，Snippet不足则拒绝；冻结条件、来源URL/source_id/search_id/request_id/searched_at与目标描述，context最多8500字符。不是语义排序/事实核验。独立计划system/1800输出Token，澄清默认system/650不变；官方接口/JSON字段已核对。
+- 1–6任务：阶段/说明、5–120分钟/周1–7次、mandatory、依赖与证据。Schema拒绝多余字段/错误类型；规则拒绝假引用、缺引用、未知依赖/环/逆阶段及部分已执行/药物剂量表述。后端生成Task UUID和依赖映射，计算每周投入；强制unverified/time_fit=needs_user_review/cost=unknown/scheduling=not_checked，自由文本条件不能冒充硬时间/预算/领域完整校验。
+- 0012 plan_draft_attempts/usage同D1 batch先保留额度再模型：每Goal10条、账号每日3/全局10（UTC，独立于澄清/搜索预算，失败/unknown占用）；同键不重复调用，新记录不覆写终态草稿，Goal删除清私人快照但不退款当日usage。25秒等待/45秒lease，过期/网络不明不自动重跑，无自动模型修订/第二次调用。提交及保存均核对版本/历史policy，生成中新增policy拒绝保存。billing_status保留unknown、Token不等于真实账单。
+- 快速检查：backend typecheck/lint/format:check PASS；完整69项回归PASS，补充全局预算/policy竞态及最后来源元数据后7项计划专项复测PASS。受控模型、真实临时D1覆盖快照/UUID引用、结构/循环/伪执行、幂等/并发、owner/匿名、条件/来源不足、版本变化、用量/级联与过期恢复。早期一条PowerShell字符串替换解析失败未执行，改精确patch复查；不把未执行记成功。
+- dev/test/cloud 0012迁移PASS、build:cloud PASS；补全冻结来源元数据后最终云部署246ef455-f0dd-4a66-b76a-1f24b3baf26a，health正常、plan-drafts匿名GET/POST401/UNAUTHORIZED PASS。无真实模型/搜索/云邮件调用、无Key或用户数据读取；真实草稿质量与云认证成功生成尚未验证。
+- PLAN_DRAFT/架构/数据库/harness/搜索说明、相对链接、diff/暂存范围PASS；代码Commit：0eb12af2859bdc28f05630d22f9eeeb3404c138e。前端无改动，未重复移动端/浏览器/真机测试。TODO单独提交后push origin/main并核对远程SHA。
+- 下一轮接手机来源选择、生成按钮和草稿审阅，完成真实DeepSeek生成；再推进结构化时间/预算、引用语义与领域安全/修订评估，用户确认前不写日历。完整可恢复计划Workflow、编辑/批准/PlanVersion与排程仍未完成。
