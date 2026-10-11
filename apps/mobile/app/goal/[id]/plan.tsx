@@ -27,7 +27,8 @@ function PlanBody({id,owner}:{id:string;owner?:string}){
     {!eligible.length&&<Caption>暂无有正文或摘要的资料，请先搜索。</Caption>}
     {eligible.map(a=><Action key={a.id} label={`${selected.includes(a.id)?'取消选择':'选择资料'}：${a.query}`} secondary disabled={busy||reading||hasOperation||(!selected.includes(a.id)&&selected.length===3)} onPress={()=>setSelected(old=>old.includes(a.id)?old.filter(id=>id!==a.id):[...old,a.id])}/>)}
     <Action label={busy?'正在生成草稿…':ended?'本次生成已结束':hasOperation?'恢复本次生成请求':`生成计划草稿（已选 ${selected.length} / 3）`} disabled={busy||reading||ended||(!hasOperation&&(!selected.length||active))} onPress={()=>{void generate();}}/>
-    <Caption>每账号每日最多3次生成尝试，失败或结果不明也占额度。恢复同一请求不另建尝试。</Caption>
+    <Caption>每账号每日最多 {data.daily_limit??3} 次生成尝试，失败或结果不明也占额度。恢复同一请求不另建尝试。</Caption>
+    {data.daily_limit===4&&<Caption>开发环境临时增加一次修正验证机会；旧记录仍计入，只有主动生成才会调用模型。</Caption>}
     {ended&&<Caption>本次请求已结束；恢复不会改变结果。如需再次生成，请明确另开请求。</Caption>}
    {hasOperation&&<Action label="另生成一份草稿" secondary disabled={busy||reading||active} onPress={()=>setConfirm(true)}/>}
     {confirm&&<><Caption>新的生成请求可能再次计费，已有草稿保留。</Caption><Action label="确认另开生成请求" disabled={busy||active} onPress={()=>{operation.current=null;setHasOperation(false);setEnded(false);setConfirm(false);setSelected([]);setError('');}}/><Action label="保留当前请求" secondary onPress={()=>setConfirm(false)}/></>}

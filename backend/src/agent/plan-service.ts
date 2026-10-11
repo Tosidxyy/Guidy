@@ -19,6 +19,7 @@ export async function planResponse(
   provider?: AgentProvider,
 ): Promise<Response> {
   const goalId = new URL(request.url).pathname.split("/").at(-2)!;
+  const dailyLimit = 3;
   const ok = (data: unknown, status = 200) =>
     Response.json({ data, error: null, request_id: requestId }, { status });
   const fail = (status: number, code: string) =>
@@ -48,6 +49,7 @@ export async function planResponse(
     .bind(goalId, owner, Date.now())
     .run();
   const snapshot = async () => ({
+    daily_limit: dailyLimit,
     goal,
     attempts: (
       await db
@@ -187,7 +189,7 @@ export async function planResponse(
   const claimed = await db.batch([
     db
       .prepare(
-        "INSERT OR IGNORE INTO plan_draft_attempts(id,goal_id,owner_id,goal_revision,request_key,request_payload,context_json,status,created_at,lease_until) SELECT ?,id,owner_id,revision,?,?,?,'submitted',?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT count(*) FROM plan_draft_attempts WHERE goal_id=?)<10 AND (SELECT count(*) FROM plan_draft_usage WHERE owner_id=? AND created_at>=?)<3 AND (SELECT count(*) FROM plan_draft_usage WHERE created_at>=?)<10 AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' AND json_extract(reply_json,'$.source')='policy')",
+        "INSERT OR IGNORE INTO plan_draft_attempts(id,goal_id,owner_id,goal_revision,request_key,request_payload,context_json,status,created_at,lease_until) SELECT ?,id,owner_id,revision,?,?,?,'submitted',?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT count(*) FROM plan_draft_attempts WHERE goal_id=?)<10 AND (SELECT count(*) FROM plan_draft_usage WHERE owner_id=? AND created_at>=?)<? AND (SELECT count(*) FROM plan_draft_usage WHERE created_at>=?)<10 AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' AND json_extract(reply_json,'$.source')='policy')",
       )
       .bind(
         id,
@@ -202,6 +204,7 @@ export async function planResponse(
         goalId,
         owner,
         day,
+        dailyLimit,
         day,
         goalId,
         owner,
@@ -272,6 +275,7 @@ export async function planResponse(
         "AI_RATE_LIMITED",
       ].includes(code) ||
       code.startsWith("PLAN_INVALID_") ||
+      code.startsWith("PLAN_SCHEMA_") ||
       code === "PLAN_UNSAFE_CONTENT"
         ? "failed"
         : "unknown";

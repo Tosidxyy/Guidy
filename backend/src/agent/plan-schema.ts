@@ -19,7 +19,7 @@ type ModelDraft = {
   tasks: DraftTask[];
 };
 export function checkedPlan(content: string, sourceIds: string[]) {
-  const fail = (code = "PLAN_INVALID_SCHEMA") => {
+  const fail = (code = "PLAN_SCHEMA_JSON") => {
     throw new AgentError(code);
   };
   let v: ModelDraft;
@@ -32,24 +32,22 @@ export function checkedPlan(content: string, sourceIds: string[]) {
     typeof s === "string" && !!s.trim() && s.length <= max;
   const list = (x: unknown) =>
     Array.isArray(x) && x.length <= 5 && x.every((s) => text(s, 160));
+  if (!v || typeof v !== "object" || Array.isArray(v))
+    fail("PLAN_SCHEMA_OBJECT");
   if (
-    !v ||
-    typeof v !== "object" ||
-    Array.isArray(v) ||
     Object.keys(v).some(
       (k) => !["title", "summary", "assumptions", "risks", "tasks"].includes(k),
-    ) ||
-    !text(v.title, 80) ||
-    !text(v.summary, 300) ||
-    !list(v.assumptions) ||
-    !list(v.risks) ||
-    !Array.isArray(v.tasks) ||
-    v.tasks.length < 1 ||
-    v.tasks.length > 6
+    )
   )
-    fail();
+    fail("PLAN_SCHEMA_FIELDS");
+  if (!text(v.title, 80)) fail("PLAN_SCHEMA_TITLE");
+  if (!text(v.summary, 300)) fail("PLAN_SCHEMA_SUMMARY");
+  if (!list(v.assumptions)) fail("PLAN_SCHEMA_ASSUMPTIONS");
+  if (!list(v.risks)) fail("PLAN_SCHEMA_RISKS");
+  if (!Array.isArray(v.tasks) || v.tasks.length < 1 || v.tasks.length > 6)
+    fail("PLAN_SCHEMA_TASKS");
   const keys = new Set(v.tasks.map((t) => t?.key));
-  if (keys.size !== v.tasks.length) fail();
+  if (keys.size !== v.tasks.length) fail("PLAN_SCHEMA_KEYS");
   for (const t of v.tasks) {
     if (
       !t ||

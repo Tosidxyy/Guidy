@@ -57,3 +57,9 @@ test('draft review rejects fake acceptance, unknown citations, cycles and forged
  assert.match(planError('PLAN_RESULT_UNKNOWN'),/不会自动/);
  assert.ok(!planError('private raw response').includes('private'));
 });
+
+test('draft limit and field diagnostics do not silently grant arbitrary model budgets',()=>{
+ assert.match(planError('PLAN_SCHEMA_SUMMARY'),/摘要/);
+ assert.match(planError('PLAN_SCHEMA_FIELDS'),/字段/);
+ const bad={daily_limit:99,goal:{id:'00000000-0000-0000-0000-000000000001',revision:0,status:'draft'},attempts:[]};assert.throws(()=>checkedPlans(bad,bad.goal.id));assert.equal(checkedPlans({...bad,daily_limit:4},bad.goal.id).daily_limit,4);
+});

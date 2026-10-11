@@ -4,11 +4,12 @@ export type PlanDraft={schema_version:1;status:'draft';verification_status:'unve
 export type PlanSource=SearchSource&{search_id:string;searched_at:number;provider_request_id:string};
 export type PlanContext={schema_version:1;goal:{description:string;timeframe_note:string};conditions:{key:string;source:'user';confirmed_at:number|null;value:{schema_version:1;state:'confirmed'|'unknown';text:string}}[];sources:PlanSource[]};
 export type PlanAttempt={id:string;goal_revision:number;status:'submitted'|'succeeded'|'failed'|'unknown';error_code:string|null;draft:PlanDraft|null;context:PlanContext;billing_status:'reserved_unknown';created_at:number};
-export type PlanSnapshot={goal:{id:string;revision:number;status:string};attempts:PlanAttempt[]};
+export type PlanSnapshot={daily_limit?:3|4;goal:{id:string;revision:number;status:string};attempts:PlanAttempt[]};
 const uuid=(s:unknown)=>typeof s==='string'&&/^[0-9a-f-]{36}$/.test(s);
 const text=(s:unknown,max:number)=>typeof s==='string'&&!!s.trim()&&s.length<=max;
 export function checkedPlans(v:PlanSnapshot,goalId:string):PlanSnapshot{
  const fail=()=>{throw new Error('草稿数据未通过校验，请读取最新状态。');};
+ if(v?.daily_limit!==undefined&&![3,4].includes(v.daily_limit))fail();
  if(!v?.goal||!uuid(goalId)||v.goal.id!==goalId||!Number.isSafeInteger(v.goal.revision)||v.goal.revision<0||typeof v.goal.status!=='string'||!Array.isArray(v.attempts)||v.attempts.length>10)fail();
  if(new Set(v.attempts.map(a=>a?.id)).size!==v.attempts.length)fail();
  for(const a of v.attempts){
@@ -28,6 +29,6 @@ export function checkedPlans(v:PlanSnapshot,goalId:string):PlanSnapshot{
  return v;
 }
 export function planError(code:string):string{
- const map:Record<string,string>={RESEARCH_NOT_READY:'请先确认目标成果与可用时间；有安全提示的目标需先核对。',PLAN_INVALID_SOURCES:'请选择当前目标版本中已成功搜索的资料。',PLAN_INSUFFICIENT_EVIDENCE:'这些资料只有搜索片段，没有足够正文或相关摘要，请补充搜索资料。',PLAN_INVALID_DRAFT:'旧草稿未通过校验，当时未记录细分原因。原请求不会重新生成。',PLAN_INVALID_SCHEMA:'AI草稿的字段或整体格式不符合要求，未保存草稿。',PLAN_INVALID_TASK:'AI任务的时长、频率或字段不符合要求，未保存草稿。',PLAN_INVALID_CITATION:'AI引用了未提供的资料或没有有效引用，未保存草稿。',PLAN_INVALID_DEPENDENCY:'AI任务依赖存在无效引用、循环或阶段冲突，未保存草稿。',PLAN_UNSAFE_CONTENT:'AI草稿包含不允许的效果承诺、执行表述、网址或剂量建议，未保存草稿。',PLAN_LIMIT_OR_BUSY:'已有草稿请求尚未结束或达到生成上限，请先读取状态。',PLAN_RESULT_UNKNOWN:'尚不能确定生成是否完成或计费。请读取状态，不会自动重新生成。',AI_NOT_CONFIGURED:'AI服务尚未配置。',AI_CREDENTIAL_INVALID:'AI服务凭据无效，请检查服务端配置。',AI_BALANCE_REQUIRED:'AI服务余额不足。',AI_RATE_LIMITED:'AI服务暂时限流，本次尝试已记录。',CONTEXT_CHANGED:'目标或安全状态已改变，旧草稿未保存；请读取最新状态。',IDEMPOTENCY_CONFLICT:'请求内容已改变，请先读取状态。'};
+ const map:Record<string,string>={PLAN_SCHEMA_JSON:'AI未返回有效的草稿数据，未保存草稿。',PLAN_SCHEMA_OBJECT:'AI草稿整体格式不符合要求，未保存草稿。',PLAN_SCHEMA_FIELDS:'AI草稿包含不支持的字段，未保存草稿。',PLAN_SCHEMA_TITLE:'AI草稿标题不符合格式要求，未保存草稿。',PLAN_SCHEMA_SUMMARY:'AI草稿摘要不符合格式要求，未保存草稿。',PLAN_SCHEMA_ASSUMPTIONS:'AI草稿假设列表不符合要求，未保存草稿。',PLAN_SCHEMA_RISKS:'AI草稿风险列表不符合要求，未保存草稿。',PLAN_SCHEMA_TASKS:'AI草稿任务列表或数量不符合要求，未保存草稿。',PLAN_SCHEMA_KEYS:'AI草稿任务编号重复，未保存草稿。',RESEARCH_NOT_READY:'请先确认目标成果与可用时间；有安全提示的目标需先核对。',PLAN_INVALID_SOURCES:'请选择当前目标版本中已成功搜索的资料。',PLAN_INSUFFICIENT_EVIDENCE:'这些资料只有搜索片段，没有足够正文或相关摘要，请补充搜索资料。',PLAN_INVALID_DRAFT:'旧草稿未通过校验，当时未记录细分原因。原请求不会重新生成。',PLAN_INVALID_SCHEMA:'AI草稿的字段或整体格式不符合要求，未保存草稿。',PLAN_INVALID_TASK:'AI任务的时长、频率或字段不符合要求，未保存草稿。',PLAN_INVALID_CITATION:'AI引用了未提供的资料或没有有效引用，未保存草稿。',PLAN_INVALID_DEPENDENCY:'AI任务依赖存在无效引用、循环或阶段冲突，未保存草稿。',PLAN_UNSAFE_CONTENT:'AI草稿包含不允许的效果承诺、执行表述、网址或剂量建议，未保存草稿。',PLAN_LIMIT_OR_BUSY:'已有草稿请求尚未结束或达到生成上限，请先读取状态。',PLAN_RESULT_UNKNOWN:'尚不能确定生成是否完成或计费。请读取状态，不会自动重新生成。',AI_NOT_CONFIGURED:'AI服务尚未配置。',AI_CREDENTIAL_INVALID:'AI服务凭据无效，请检查服务端配置。',AI_BALANCE_REQUIRED:'AI服务余额不足。',AI_RATE_LIMITED:'AI服务暂时限流，本次尝试已记录。',CONTEXT_CHANGED:'目标或安全状态已改变，旧草稿未保存；请读取最新状态。',IDEMPOTENCY_CONFLICT:'请求内容已改变，请先读取状态。'};
  return map[code]??'草稿未完成，请先读取状态；不会自动重新调用模型。';
 }

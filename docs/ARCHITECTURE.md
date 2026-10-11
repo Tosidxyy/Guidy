@@ -117,3 +117,5 @@ SearchProvider.search独立于网页ResearchProvider.read；首批豆包Custom A
 ### 首批PlanDraft后端（2026-10-11）
 
 GET/POST plan-drafts冻结本人当前版本的确认条件/搜索证据，独立DeepSeek计划提示生成私人待审阅草稿。严格结构+引用/依赖/部分风险规则校验，持久用量与unknown不自动重跑；不修改Goal/Slot/核心PlanVersion/日历。自由文本时间无法可靠排程，强制needs_user_review/not_checked；手机资料选择/草稿审阅已接入；完整领域校验/模型修订/持久计划Workflow仍未实现。接口与验证边界见[PLAN_DRAFT](PLAN_DRAFT.md)。
+
+计划后端采用strict结构化输出，固定emit_plan仅承载响应，绝不执行模型工具；schema不代替引用/依赖/领域规则。增加字段级安全错误码，不读取/记录失败原文。用户确认iPhone生成后已恢复每日3/全局10；开发曾临时第4次验证，已有记录不退款或重写，详见[PLAN_DRAFT](PLAN_DRAFT.md)。

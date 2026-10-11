@@ -61,3 +61,5 @@ npx wrangler secret put DEEPSEEK_API_KEY --config wrangler.cloud.json
 PlanDraft使用独立计划system提示/1800输出Token，与原澄清提示/650 Token分开。输入最多8500字符，最多3份900字符来源，条件和证据先冻结，引用/任务依赖/范围验证后保存。规则失败不自动修订或重试付费调用；草稿只待用户审阅，时间匹配与排程未校验。API、额度及限制见[PLAN_DRAFT](PLAN_DRAFT.md)，不是完整M1/领域安全验收。
 
 草稿真机校验失败后补充结构/任务/引用/依赖/安全内容固定错误码；不保存原始模型错误内容。evidence_ref E1/E2/E3由后端限定映射为本人目标冻结UUID，重复同源引用去重、未知引用拒绝。明确否定效果承诺不误识别为肯定承诺，部分风险词规则仍不是完整语义安全门槛；不自动再次调用模型，详细边界见[PLAN_DRAFT](PLAN_DRAFT.md)。
+
+计划输出已切换DeepSeek官方Beta strict Schema：emit_plan仅是响应格式，不进入工具registry/dispatcher，不执行任何操作；仅一个固定函数/参数返回可接受，仍经本地结构/引用/依赖/安全校验。对象字段/类型/额外字段由输出schema约束，数组数量/唯一/依赖继续代码校验。澄清普通JSON模式与拒绝工具调用不变。开发环境曾临时每日4次验证，用户确认成功后已恢复每日3/全局10，旧用量和草稿保留；见[PLAN_DRAFT](PLAN_DRAFT.md)。

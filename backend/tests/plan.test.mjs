@@ -171,14 +171,31 @@ test("plan provider has distinct JSON prompt/output cap and preserves existing t
       assert.equal(b.max_tokens, 1800);
       assert.match(b.messages[0].content, /计划草稿/);
       assert.equal(options.redirect, "manual");
-      assert.equal(url, "https://api.deepseek.com/chat/completions");
+      assert.equal(url, "https://api.deepseek.com/beta/chat/completions");
+      assert.equal(b.tools[0].function.strict, true);
+      assert.equal(b.tools[0].function.parameters.additionalProperties, false);
+      assert.deepEqual(
+        b.tools[0].function.parameters.properties.tasks.items.properties
+          .evidence_ids.items.enum,
+        ["E1"],
+      );
+      assert.equal(b.tool_choice.function.name, "emit_plan");
       return globalThis.Response.json({
         choices: [
           {
-            finish_reason: "stop",
+            finish_reason: "tool_calls",
             message: {
               role: "assistant",
-              content: JSON.stringify(modelDraft()),
+              content: null,
+              tool_calls: [
+                {
+                  type: "function",
+                  function: {
+                    name: "emit_plan",
+                    arguments: JSON.stringify(modelDraft()),
+                  },
+                },
+              ],
             },
           },
         ],
@@ -188,8 +205,12 @@ test("plan provider has distinct JSON prompt/output cap and preserves existing t
     "plan",
   );
   assert.equal(
-    (await provider.complete("{}", new globalThis.AbortController().signal))
-      .outputTokens,
+    (
+      await provider.complete(
+        '{"sources":[{"evidence_ref":"E1"}]}',
+        new globalThis.AbortController().signal,
+      )
+    ).outputTokens,
     20,
   );
 });
@@ -630,7 +651,7 @@ test("safe validation reasons distinguish citation/task/structure failures and n
   for (const [change, code] of [
     [(d) => (d.tasks[0].evidence_ids = ["invented"]), "PLAN_INVALID_CITATION"],
     [(d) => (d.tasks[0].duration_minutes = 0), "PLAN_INVALID_TASK"],
-    [(d) => (d.extra = "bad"), "PLAN_INVALID_SCHEMA"],
+    [(d) => (d.extra = "bad"), "PLAN_SCHEMA_FIELDS"],
     [(d) => (d.tasks[0].depends_on = ["t2"]), "PLAN_INVALID_DEPENDENCY"],
   ]) {
     const d = modelDraft();
@@ -677,4 +698,82 @@ test("short model evidence aliases resolve only to frozen source UUIDs", async (
   assert.deepEqual(body.data.attempts[0].draft.tasks[0].evidence_ids, [
     sourceId,
   ]);
+});
+
+test("strict plan output carrier rejects extra/unknown calls, truncation and missing source context without dispatching tools", async () => {
+  const context = JSON.stringify({ sources: [{ evidence_ref: "E1" }] });
+  const call = {
+    type: "function",
+    function: { name: "emit_plan", arguments: JSON.stringify(modelDraft()) },
+  };
+  for (const choice of [
+    {
+      finish_reason: "tool_calls",
+      message: {
+        role: "assistant",
+        tool_calls: [
+          { ...call, function: { ...call.function, name: "delete_goal" } },
+        ],
+      },
+    },
+    {
+      finish_reason: "tool_calls",
+      message: { role: "assistant", tool_calls: [call, call] },
+    },
+    {
+      finish_reason: "length",
+      message: { role: "assistant", tool_calls: [call] },
+    },
+    {
+      finish_reason: "stop",
+      message: { role: "assistant", content: JSON.stringify(modelDraft()) },
+    },
+  ])
+    await assert.rejects(
+      deepseekProvider(
+        env,
+        async () => globalThis.Response.json({ choices: [choice] }),
+        "plan",
+      ).complete(context, new globalThis.AbortController().signal),
+      (e) => e.code === "AI_INVALID_RESPONSE",
+    );
+  let calls = 0;
+  await assert.rejects(
+    deepseekProvider(
+      env,
+      async () => {
+        calls++;
+      },
+      "plan",
+    ).complete("{}", new globalThis.AbortController().signal),
+    (e) => e.code === "AI_INVALID_RESPONSE",
+  );
+  assert.equal(calls, 0);
+});
+
+test("default daily cap is restored to three after validation, without deleting prior usage", async (t) => {
+  const f = await setup(t);
+  for (let i = 0; i < 4; i++)
+    await f.db
+      .prepare(
+        "INSERT INTO plan_draft_usage(id,owner_id,created_at) VALUES(?,?,?)",
+      )
+      .bind(globalThis.crypto.randomUUID(), f.owner, Date.now())
+      .run();
+  const r = await planResponse(
+    f.req("after-validation-cap"),
+    f.db,
+    f.owner,
+    "test",
+    env,
+    f.model,
+  );
+  assert.equal(r.status, 409);
+  assert.equal(f.calls(), 0);
+  const get = await planResponse(f.get(), f.db, f.owner, "test", env, f.model);
+  assert.equal((await get.json()).data.daily_limit, 3);
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM plan_draft_usage").first()).n,
+    4,
+  );
 });

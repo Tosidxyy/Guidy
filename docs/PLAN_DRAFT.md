@@ -20,7 +20,7 @@ search_ids去重最多3项，必须属于本人目标、当前Goal版本且搜�
 
 ## 生成与校验
 
-沿用DeepSeek deepseek-flash、thinking disabled、JSON模式和固定HTTPS endpoint；独立计划system提示，输出1800 Token，不改变澄清650 Token提示。响应最大64KiB、非stop/工具调用拒绝，原始模型错误/推理不回传或记录。依据[官方Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)与[JSON Output](https://api-docs.deepseek.com/guides/json_mode/)。
+沿用DeepSeek deepseek-flash与thinking disabled。计划生成改用固定Beta Chat Completions endpoint与strict JSON Schema，仅允许一个名为emit_plan的格式载体；不执行该函数、不派发工具或跟进调用，未知/多个调用或截断均拒绝。参数仍送入原有引用/依赖/安全校验，输出1800 Token、响应最大64KiB。澄清保持原普通endpoint/JSON object/650 Token，并继续拒绝工具调用。原始模型错误/推理不回传或记录。依据[官方Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)与[JSON Output](https://api-docs.deepseek.com/guides/json_mode/)。
 
 首批字段：标题/摘要、假设/风险各最多5条、1–6个任务。任务含阶段1–3、标题/说明、每次5–120分钟、每周1–7次、mandatory、依赖及证据ID。后端分两层检查：严格字段/类型/数量/范围；再检查任务key唯一、依赖存在/无环/阶段方向、引用必须存在于当次冻结来源、至少一项引用，以及部分明显已执行/保证效果/药物剂量表述。
 
@@ -46,4 +46,17 @@ search_ids去重最多3项，必须属于本人目标、当前Goal版本且搜�
 
 修复已复现的规则误判：明确「不/不能/无法保证成功或治愈」的否定提醒不再被当作肯定承诺；同时出现肯定承诺、剂量/已执行/网址表述仍拒绝。此规则不是全面语义或医学安全识别。模型提示明确字段与整数范围，用E1/E2/E3短evidence_ref；只在当前冻结来源内映射回source_id并去重，已有合法UUID引用向后兼容，未知引用仍拒绝。没有自动修订/第二次模型调用或放宽领域、依赖、时间/频率边界。
 
-手机已结束的成功/失败请求禁用无效恢复，unknown仍可读取回执，另开请求须明确确认可能计费；旧记录与每日3次额度不清除。真机失败后修正的实际结果待用户下一次明确生成反馈，不宣称修复已通过真实模型验收。
+手机已结束的成功/失败请求禁用无效恢复，unknown仍可读取回执，另开请求须明确确认可能计费；旧记录与每日3次额度不清除。本阶段细分提示修正后用户仍报告结构失败；后续strict阶段的真实反馈见下文。
+
+
+## 严格输出与开发验证（2026-10-11）
+
+用户进一步确认第三次为PLAN_INVALID_SCHEMA；只读错误统计为旧通用2、结构1，不读取用户目标/条件或模型原文，无法恢复具体坏字段。增加固定字段分类（JSON/对象/额外字段/标题/摘要/假设/风险/任务数/任务编号），不暴露任意输出字段名或原文。
+
+依据[官方严格模式](https://api-docs.deepseek.com/zh-cn/guides/tool_calls/)，所有object字段required且additionalProperties=false，引用enum仅当前E1/E2/E3，字符串长度用受支持pattern、整数上下界由schema及本地双检。官方不支持array minItems/maxItems，因此数量/唯一/依赖/安全/事实适用性仍由本地规则/用户核对承担。严格输出不保证事实正确。
+
+隔离云端验证：只为测试身份写入短期验证哈希，经真实登录/Goal/slots API取得测试会话，使用标明非真实抓取的受控来源；一次普通模式、一次最终strict模式均201生成成功。没有发送邮件、读取Key/真实用户正文或保存原始模型回复，按精确测试身份清理。它证明真实云Provider与该受控样例，不证明用户原目标已成功或健身建议有效。首次fixture数字日期与认证库ISO存储不符，登录400且未调用模型；修正后通过。
+
+本轮iPhone验证时曾仅development临时提供每日第4次，用户确认草稿出现后已恢复全部环境默认3，全局10不变；原记录/用量均不清除、失败/unknown占用，只允许用户主动另开，客户端显示服务端daily_limit。第5次仍阻断。临时验证已结束；没有自动重试/补偿或按字段错误自动再调模型。
+
+用户随后确认iPhone原目标「已出现草稿」，基础真实生成/展示验收通过；不代表内容质量、专业事实、时间适配、VO/大字或入历验收。当天4条尝试/用量与已成功草稿保留，恢复3次默认后当天不再允许新生成，读取/审阅不受影响。
