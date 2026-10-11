@@ -224,3 +224,7 @@ plan_draft_attempts保存goal/owner复合外键、版本、账号幂等键、冻
 ### 0013：用户数字审阅版本
 
 plan_draft_reviews以source attempt/Goal/owner复合外键保存独立draft_json快照、revision1–20、Goal revision、幂等key/payload及时间；不UPDATE原AI输出或旧审阅，Task UUID和所有只读字段保留，只有duration_minutes/frequency_per_week与派生weekly_minutes改变。唯一attempt+revision防竞争、owner+key防重复；条件INSERT核对Goal/source/MAX revision/policy。删除Goal/来源级联，不改核心PlanVersion/Task/执行历史或模型用量；见[PLAN_DRAFT](PLAN_DRAFT.md)。
+
+### 0014 审阅版本每周可用分钟
+
+plan_draft_reviews追加weekly_capacity_minutes INTEGER，可NULL，CHECK 0–10080。旧行NULL代表未知；仅随新审阅INSERT，不原地修改旧记录。用户可仅保存容量变化；省略字段兼容旧客户端并继承最新值、显式null清空。它绑定来源草稿审阅版本，不修改Goal revision/确认Slot，不是精确日历时间窗或生效计划。

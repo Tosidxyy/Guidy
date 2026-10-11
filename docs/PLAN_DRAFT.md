@@ -63,12 +63,18 @@ search_ids去重最多3项，必须属于本人目标、当前Goal版本且搜�
 
 ## 私有时长/频次审阅版本（2026-10-11）
 
-草稿页「调整时长与频次」进入独立二级页，读取原稿及最新审阅版本。仅修改每次5–120整数分钟、每周1–7次；AI原稿、Task UUID/key/顺序、依赖、引用、说明和假设/风险不改。重算weekly_minutes，新数值可能与原步骤文字不一致，仍需用户核对；time_fit/cost/scheduling与draft/unverified标志保持，不形成核心PlanVersion或批准日历。
+草稿页「调整时长与频次」进入独立二级页，读取原稿及最新审阅版本。修改每次5–120整数分钟、每周1–7次；每周可用分钟见下节；AI原稿、Task UUID/key/顺序、依赖、引用、说明和假设/风险不改。重算weekly_minutes，新数值可能与原步骤文字不一致，仍需用户核对；time_fit/cost/scheduling与draft/unverified标志保持，不形成核心PlanVersion或批准日历。
 
-GET/POST `/api/v1/goals/{id}/draft-reviews?attempt_id={UUID}` 要求会话、Goal/来源owner及已成功原稿。GET返回source、按revision倒序的最多20份reviews/current_revision/can_edit；POST幂等键和JSON仅expected_goal_revision、expected_review_revision、changes，changes每项task_id/duration_minutes/frequency_per_week，最多6个唯一任务。没有实际改变422；值/字段/任务非法422；旧Goal、policy、审阅版本或键冲突409；未拥有对象404，匿名401。保存200，receipt_revision说明本请求保存的版本，不混淆最新版本；重放不再插入。
+GET/POST `/api/v1/goals/{id}/draft-reviews?attempt_id={UUID}` 要求会话、Goal/来源owner及已成功原稿。GET返回source、按revision倒序的最多20份reviews/current_revision/can_edit；POST幂等键和JSON包含expected_goal_revision、expected_review_revision、changes，以及可选weekly_capacity_minutes（见下节），changes每项task_id/duration_minutes/frequency_per_week，最多6个唯一任务。没有实际改变422；值/字段/任务非法422；旧Goal、policy、审阅版本或键冲突409；未拥有对象404，匿名401。保存200，receipt_revision说明本请求保存的版本，不混淆最新版本；重放不再插入。
 
 0013为plan_draft_reviews建立源attempt/Goal/owner复合外键及唯一attempt+revision/owner+key。每次只INSERT不可变快照、revision1–20；单条条件INSERT再次核对Goal/来源版本/状态/policy及MAX审阅revision，防并发覆盖。Goal/来源删除级联清私有审阅。不涉及模型/搜索/每日生成用量/Goal或Slot更新。
 
-输入先显示基准版本，读取最新状态保留未提交输入；如果已有另一版本，禁用保存，明确加载最新并确认替换后再调整。保存历史摘要显示版本/投入/时间，AI原稿仍在原草稿页；逐版任务详情选择/回退待实现。未提交输入只保留同页内存，不承诺跨Reload/账号持久；返回按钮有放弃确认，系统返回/真实键盘专项待验收。
+输入先显示基准版本，读取最新状态保留未提交输入；如果已有另一版本，禁用保存，明确加载最新并确认替换后再调整。保存历史摘要显示版本/投入/时间，AI原稿仍在原草稿页；逐版任务详情选择/回退待实现。未提交输入只保留同页内存，不承诺跨Reload/账号持久；返回按钮有放弃确认，前轮用户已确认任务数字输入/保存恢复正常；系统返回与本轮新增可用时间输入真机尚未验证。
 
 状态变化或20份上限后只读，明确说明；保存不代表符合时间预算或健康适用性。任务内容编辑、删除任务/依赖、完整资源/预算、接受计划、入历均尚未实现。部署与验证进度见[TODO](TODO.md)。
+
+## 每周可用时间与总量比较（2026-10-11）
+
+审阅页新增用户填写的每周可用分钟，0–10080整数、null表示未知。保存与任务调整同一不可变审阅版本，允许只改可用时间；POST可选weekly_capacity_minutes，旧客户端省略则继承前版，明确null清空。原有请求负载和幂等回执保持，旧版本迁移后为NULL，不从自由文本或AI推断。GET每份review返回该字段；客户端校验范围并在加载/保存/重进时恢复，刷新或版本冲突保留输入。
+
+总量比较按所有任务duration×frequency之和，显示未知、超出、刚好或剩余分钟。跨阶段任务未必同周执行，这是全部任务每周执行的估算，不是排程可行性判定；超出仍可保存待审草稿，不自动删任务、模型修订或批准。没有修改Goal/Slot、time_fit或日历；具体可用日期/时区/时间窗、截止、冲突/间隔、金钱预算和专业适用性仍待实现。0014仅追加nullable受CHECK约束的列，不覆写已有快照。

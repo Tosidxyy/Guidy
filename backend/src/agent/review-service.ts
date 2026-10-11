@@ -54,7 +54,7 @@ export async function reviewResponse(
     const reviews = (
       await db
         .prepare(
-          "SELECT id,revision,draft_json,created_at FROM plan_draft_reviews WHERE attempt_id=? AND goal_id=? AND owner_id=? ORDER BY revision DESC LIMIT 20",
+          "SELECT id,revision,draft_json,created_at,weekly_capacity_minutes FROM plan_draft_reviews WHERE attempt_id=? AND goal_id=? AND owner_id=? ORDER BY revision DESC LIMIT 20",
         )
         .bind(attemptId, goalId, owner)
         .all()
@@ -117,6 +117,7 @@ export async function reviewResponse(
             "expected_goal_revision",
             "expected_review_revision",
             "changes",
+            "weekly_capacity_minutes",
           ].includes(k),
       ) ||
       !Number.isSafeInteger(body.expected_goal_revision) ||
@@ -124,6 +125,11 @@ export async function reviewResponse(
       !Number.isInteger(body.expected_review_revision) ||
       body.expected_review_revision < 0 ||
       body.expected_review_revision > 20 ||
+      (body.weekly_capacity_minutes !== undefined &&
+        body.weekly_capacity_minutes !== null &&
+        (!Number.isInteger(body.weekly_capacity_minutes) ||
+          body.weekly_capacity_minutes < 0 ||
+          body.weekly_capacity_minutes > 10080)) ||
       !Array.isArray(body.changes) ||
       body.changes.length < 1 ||
       body.changes.length > 6 ||
@@ -180,7 +186,7 @@ export async function reviewResponse(
     return fail(409, "REVIEW_CONTEXT_CHANGED");
   const previous = await db
     .prepare(
-      "SELECT revision,draft_json FROM plan_draft_reviews WHERE attempt_id=? AND owner_id=? ORDER BY revision DESC LIMIT 1",
+      "SELECT revision,draft_json,weekly_capacity_minutes FROM plan_draft_reviews WHERE attempt_id=? AND owner_id=? ORDER BY revision DESC LIMIT 1",
     )
     .bind(attemptId, owner)
     .first();
@@ -189,7 +195,11 @@ export async function reviewResponse(
   const draft: EditableDraft = JSON.parse(
     String(previous?.draft_json ?? source.draft_json),
   );
-  let changed = false;
+  const capacity =
+    body.weekly_capacity_minutes === undefined
+      ? (previous?.weekly_capacity_minutes ?? null)
+      : body.weekly_capacity_minutes;
+  let changed = capacity !== (previous?.weekly_capacity_minutes ?? null);
   for (const c of body.changes) {
     const task = draft.tasks.find((t) => t.id === c.task_id);
     if (!task) return fail(422, "REVIEW_INVALID_CHANGES");
@@ -209,7 +219,7 @@ export async function reviewResponse(
   const revision = body.expected_review_revision + 1;
   const claim = await db
     .prepare(
-      "INSERT OR IGNORE INTO plan_draft_reviews(id,attempt_id,goal_id,owner_id,revision,goal_revision,request_key,request_payload,draft_json,created_at) SELECT ?,p.id,p.goal_id,p.owner_id,?,p.goal_revision,?,?,?,? FROM plan_draft_attempts p JOIN goals g ON g.id=p.goal_id AND g.owner_id=p.owner_id WHERE p.id=? AND p.goal_id=? AND p.owner_id=? AND p.status='succeeded' AND g.status='draft' AND g.revision=? AND p.goal_revision=g.revision AND (SELECT coalesce(max(revision),0) FROM plan_draft_reviews WHERE attempt_id=p.id)=? AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=p.goal_id AND owner_id=p.owner_id AND status='succeeded' AND json_extract(reply_json,'$.source')='policy')",
+      "INSERT OR IGNORE INTO plan_draft_reviews(id,attempt_id,goal_id,owner_id,revision,goal_revision,request_key,request_payload,draft_json,created_at,weekly_capacity_minutes) SELECT ?,p.id,p.goal_id,p.owner_id,?,p.goal_revision,?,?,?,?,? FROM plan_draft_attempts p JOIN goals g ON g.id=p.goal_id AND g.owner_id=p.owner_id WHERE p.id=? AND p.goal_id=? AND p.owner_id=? AND p.status='succeeded' AND g.status='draft' AND g.revision=? AND p.goal_revision=g.revision AND (SELECT coalesce(max(revision),0) FROM plan_draft_reviews WHERE attempt_id=p.id)=? AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=p.goal_id AND owner_id=p.owner_id AND status='succeeded' AND json_extract(reply_json,'$.source')='policy')",
     )
     .bind(
       crypto.randomUUID(),
@@ -218,6 +228,7 @@ export async function reviewResponse(
       payload,
       JSON.stringify(draft),
       Date.now(),
+      capacity,
       attemptId,
       goalId,
       owner,

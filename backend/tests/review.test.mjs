@@ -336,3 +336,62 @@ test("version ceiling is read-only and database rejects a review attached to ano
       .run(),
   );
 });
+
+test("weekly capacity saves independently, replays exactly and legacy clients preserve it", async (t) => {
+  const f = await setup(t);
+  async function save(key, capacity, revision = 0, minutes = 20) {
+    const r = f.request(key, minutes, 3, revision);
+    const b = await r.json();
+    if (capacity !== undefined) b.weekly_capacity_minutes = capacity;
+    return reviewResponse(
+      new globalThis.Request(r.url, {
+        method: "POST",
+        headers: r.headers,
+        body: JSON.stringify(b),
+      }),
+      f.db,
+      f.owner,
+      "test",
+    );
+  }
+  for (const c of [-1, 10081, 1.5, "90", {}, true])
+    assert.equal((await save("invalid-capacity-" + String(c), c)).status, 422);
+  const a = await save("capacity-only-save", 50);
+  assert.equal(a.status, 200);
+  const first = (await a.json()).data;
+  assert.equal(first.reviews[0].weekly_capacity_minutes, 50);
+  assert.equal(first.reviews[0].draft.weekly_minutes, 60);
+  assert.deepEqual(first.source.draft, first.reviews[0].draft);
+  assert.equal(
+    (await save("legacy-preserve-save", undefined, 1, 30)).status,
+    200,
+  );
+  const replay = (await (await save("capacity-only-save", 50)).json()).data;
+  assert.equal(replay.receipt_revision, 1);
+  assert.equal(replay.reviews[0].weekly_capacity_minutes, 50);
+  assert.equal(replay.reviews[1].weekly_capacity_minutes, 50);
+  assert.equal((await save("capacity-only-save", 60)).status, 409);
+  assert.equal((await save("capacity-stale-save", 90, 1, 30)).status, 409);
+  assert.equal((await save("capacity-zero-save", 0, 2, 30)).status, 200);
+  assert.equal((await save("capacity-unknown-save", null, 3, 30)).status, 200);
+  assert.equal((await save("capacity-unchanged", null, 4, 30)).status, 422);
+  const snap = (
+    await (await reviewResponse(f.get(), f.db, f.owner, "test")).json()
+  ).data;
+  assert.equal(snap.reviews[0].weekly_capacity_minutes, null);
+  assert.equal(snap.reviews[1].weekly_capacity_minutes, 0);
+  assert.equal(snap.source.draft.weekly_minutes, 60);
+  await assert.rejects(
+    f.db
+      .prepare("UPDATE plan_draft_reviews SET weekly_capacity_minutes=-1")
+      .run(),
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT revision FROM goals").first()).revision,
+    0,
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM plan_draft_usage").first()).n,
+    0,
+  );
+});
