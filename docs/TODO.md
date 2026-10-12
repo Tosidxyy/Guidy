@@ -131,6 +131,7 @@
 - [ ] 建立 `plan_versions/tasks/task_dependencies/calendar_events/schedule_proposals/scheduled_occurrences` 表及迁移。
 - [ ] 实现 Task 与 Occurrence 分离，支持重复规则、最短间隔、固定/柔性时间、前置条件。
 - [ ] 实现确定性 `SchedulingService`：识别硬约束、筛选合法候选、返回冲突原因与 1–3 个备选（若有）。
+- [x] 首批纯排程预览内核：明确 UTC 实例/时间窗及 IANA 时区，检查占用、依赖/环、固定时间、截止及系列休息间隔，返回拟安排/未安排原因。（9项自动测试及构建通过；有界贪心非最优，未接聊天/API/真实日历，无批准写入，完整服务项保持未完成；见 [排程预览说明](SCHEDULING_PREVIEW.md)。）
 - [ ] 跨日、时区、夏令时、重叠、依赖环、无可用窗口增加自动化测试。
 - [ ] 完成 App 内日历 Agenda 与日/周视图的最小实现。
 - [ ] 实现预览/确认事务：`expected_goal_revision + Idempotency-Key`；并发冲突返回 409，不能静默覆盖。
@@ -883,3 +884,12 @@ flowchart TD
 - 隔离云身份/真实登录/Goal API、受控无检索原稿与completed Job：真实messages定量建议→显式review采用→同键重放仍1版→planning最新review15/原plan20→客户端Schema通过，Goal revision0/active_plan NULL，模型/搜索/邮件调用0；精确清验证/测试身份/级联，无Key或真实用户正文读取。不能当真实LLM全文改稿或用户iPhone通过。
 - 无迁移，最终部署b622ecfd-5a1f-434d-85d7-fc10c034db7e；health、匿名messages/review401通过。云改稿样例在c8d666a2版本验证，随后仅扩序号空格/全角的确定性解析，本地专项/最终前端检查通过，未重复云样例。新增iPhone差异/采用/键盘/恢复未验证。
 - 文档44个相对链接、diff/暂存范围通过，无环境/凭据改动；实现Commit：dd8f7a08774458833b7f20580557849622f499d3。TODO单独提交后push origin/main核对SHA，完整自然语言修改/时间窗/批准入历保持未完成。下一轮推进任务内容修订或具体时间窗与确定性排程，用户批准前不入历。
+
+### 2026-10-12 — 有界确定性排程预览内核
+
+- 从具体时间窗与排程拆出纯服务小任务。previewSchedule接已明确任务实例/UTC毫秒/有效IANA时区，列表上限100、跨度31天，先校验身份/时刻/未知依赖/环再计算；合并窗口，稳定身份拓扑顺序选最早合法位置，半开边界、不拆分任务，检查已有占用/拟安排/earliest/deadline/fixed_start及同系列双方最大休息间隔。历史依赖只接已核实完成时间，不从提醒推测完成。
+- 输出preview_only与版本化算法名、拟安排和dependency_unplaced/no_legal_window；输入不改。贪心不保证最优/所有可行解，可能早期任务占用后续固定任务位置；文档明确无合法候选不是不可行证明。未展开周频次/阶段周期、未做本地时间DST歧义转换/资源互斥/备选优化，不把每周60分钟偏好当空闲窗。
+- backend typecheck/lint/format:check通过；node --experimental-strip-types --test tests/scheduling-preview.test.mjs：9项通过，含40组有界场景合法性检查、半开占用、输入不变/置换稳定、依赖/环/未知/未来完成、固定/截止/不拆分、休息间隔、跨日及DST真实UTC时长、畸形输入。首次lint因测试structuredClone全局未声明失败，改为JSON副本后重跑全部本轮检查通过；DST测试不等于自然语言时间转换已实现。
+- build:cloud dry-run完成，首次沙箱阻止Wrangler日志写入，提升权限重跑无错误通过；无迁移/部署/API调用/模型搜索邮件。本模块尚未被Worker入口引用，构建只确认现有Worker仍可构建，模块本身由类型检查/Node测试验证。未做新增UI/浏览器/iPhone测试，无界面变更。
+- 新增[SCHEDULING_PREVIEW](SCHEDULING_PREVIEW.md)合同/限制/后续，3个相对链接和diff/暂存范围检查通过；实现Commit：e91b2e74b45405a091cdf1969bf274fccaef1f7c。只勾选首批内核子项，完整SchedulingService/时间采集/批准入历仍未完成。TODO单独提交后push origin/main并核对远程SHA。
+- 下一轮优先聊天中日期/时区/可用窗采集与明确确认、冻结草稿审阅版本及拟安排展示；真实日历快照/完整约束/持久预览和确认事务继续后续实现，不能把本轮后台内核说成手机已可自动排程。
