@@ -132,6 +132,7 @@
 - [ ] 实现 Task 与 Occurrence 分离，支持重复规则、最短间隔、固定/柔性时间、前置条件。
 - [ ] 实现确定性 `SchedulingService`：识别硬约束、筛选合法候选、返回冲突原因与 1–3 个备选（若有）。
 - [x] 首批纯排程预览内核：明确 UTC 实例/时间窗及 IANA 时区，检查占用、依赖/环、固定时间、截止及系列休息间隔，返回拟安排/未安排原因。（9项自动测试及构建通过；有界贪心非最优，未接聊天/API/真实日历，无批准写入，完整服务项保持未完成；见 [排程预览说明](SCHEDULING_PREVIEW.md)。）
+- [x] 聊天首批时段核对/试排：明确北京时间或UTC日期窗口，确认后首阶段各项一次，冻结草稿/审阅版本、解释未安排、原文/确认/预览恢复；旧来源/条件/审阅/过期拒绝，配额耗尽仍可零模型试排。（真实D1/浏览器/隔离云API通过并部署；iPhone新版未验证。未展开完整周频次/阶段周期、通用自然日期/全时区、真实日历占用或批准入历。）
 - [ ] 跨日、时区、夏令时、重叠、依赖环、无可用窗口增加自动化测试。
 - [ ] 完成 App 内日历 Agenda 与日/周视图的最小实现。
 - [ ] 实现预览/确认事务：`expected_goal_revision + Idempotency-Key`；并发冲突返回 409，不能静默覆盖。
@@ -893,3 +894,18 @@ flowchart TD
 - build:cloud dry-run完成，首次沙箱阻止Wrangler日志写入，提升权限重跑无错误通过；无迁移/部署/API调用/模型搜索邮件。本模块尚未被Worker入口引用，构建只确认现有Worker仍可构建，模块本身由类型检查/Node测试验证。未做新增UI/浏览器/iPhone测试，无界面变更。
 - 新增[SCHEDULING_PREVIEW](SCHEDULING_PREVIEW.md)合同/限制/后续，3个相对链接和diff/暂存范围检查通过；实现Commit：e91b2e74b45405a091cdf1969bf274fccaef1f7c。只勾选首批内核子项，完整SchedulingService/时间采集/批准入历仍未完成。TODO单独提交后push origin/main并核对远程SHA。
 - 下一轮优先聊天中日期/时区/可用窗采集与明确确认、冻结草稿审阅版本及拟安排展示；真实日历快照/完整约束/持久预览和确认事务继续后续实现，不能把本轮后台内核说成手机已可自动排程。
+
+### 2026-10-12 — 聊天具体时段核对 / 首阶段一次试排
+
+- 已生成聊天草稿新增「预览首阶段具体时间」，harness询问日期/时区，受控解析用户原文完整时段后展示核对卡；确认固定消息后才调用内核并保存独立成功run。schedule-chat-v1私有产物复用messages/agent_runs，无新表；记录source attempt/Goal/Review、UTC窗口/IANA、稳定任务身份/原文与确认来源run、preview_only及未安排原因。未自动改Goal/Slot/PlanVersion/日历/提醒。
+- 只支持未来31天内最多7个不重叠同日完整日期窗口、北京时间/Asia/Shanghai或UTC，完整日期回转检查拒绝无效日期/24:00/命令/含糊相对时间/其他时区。时段上下文含糊回答仍给免费受控指导，定量改稿与显式继续澄清保持独立；每Goal最多40次，模型/搜索/邮件0，不占澄清/生成预算，不为未知内容猜测窗口。
+- 用户明确确认首阶段各项一次，选草稿最早阶段，不展开frequency/阶段周期，不猜测休息间隔或领域约束。范围外依赖不冒充已完成；busy为空，界面与协议明确未检查真实日历占用/完整约束、非完整周计划/非最优、未入历。独立schedule_proposals表/真实日历快照及一次批准事务仍未完成。
+- same-key重放只读原产物；Goal/聊天版本、归属、在途/只读状态、风险历史保护。提议/确认conditional INSERT再次检查最新生成源/Review；仅紧邻提议能确认，另端改稿/新来源/条件改变/过期拒绝。GET派生过期标志，旧记录保留并禁用；新窗口重新确认。确认按钮保留未发送输入，主动发送成功才清输入。
+- 聊天卡片结合03-plan-detail/02-agent-chat及设计系统，应用React/前端调试技能和多TSX质量检查，不改导航/品牌，不新增字段表单。顺带修正同处草稿展示仍读取原稿数值的问题，展示已采用review的任务/投入，原稿保留；与本轮试排实际时长保持一致。
+- backend typecheck/lint/format:check、build:cloud通过；node --experimental-strip-types --test tests/draft-edit.test.mjs tests/scheduling-preview.test.mjs tests/chat-capture.test.mjs tests/planning-jobs.test.mjs共39项通过，真实临时D1/受控Provider覆盖确认前无preview、重放/恢复、未安排、首阶段限制/过期、另端review失效/最新时长、owner/版本/policy、含糊免费指导与额度8耗尽仍试排、原定量改稿/捕获/自动Job回归。未重复无关全量回归。
+- mobile typecheck/lint、test:ui-state共32项与export:ios通过，新增harness来源/preview_only/精确时长/窗口/依赖/循环/重复结果校验。首次PowerShell多文件修改脚本引号解析失败未执行，改成正确字面量后通过；首次iOS导出因沙箱临时目录字节码写入权限失败，提升权限重跑成功，未计首次为通过。
+- Browser plugin not available，Playwright/Edge真实本地登录/条件、受控原稿但时段消息/试排/审阅API及D1真实：询问→含糊指导→窗口提议（preview0）→明确确认→恢复→另端审阅25分钟→旧提议拒绝/重进禁用→新确认25分钟预览，原稿20分钟/active_plan NULL不变，未发送输入保留，模型0；393×852/320×480无横溢/输入发送可见、0意外error/warn，截图已检查，静态黑白参考保持，状态卡有意增加。
+- 旧8090服务超时，核对仅停止Guidy QA PID22960并重启8090，手机8089未动。首轮UI脚本等待旧确认卡导致新提议保存与peer写入竞态，脚本改等真实POST响应/新按钮可用后通过；补拍滚动到最终预览截图。脚本截图仓库外，精确清测试账号，不把早期失败当成功。
+- 无迁移，开发云部署148eb3eb-e021-478d-a412-1a05d4858c9a；health200、匿名messages GET/POST401通过。隔离身份/真实云登录与Goal API、受控原稿+completed Job→真实时段提议→明确确认preview→同键重放仅3个run→GET恢复/客户端Schema通过，Goal revision0/active_plan NULL不变。模型/搜索/邮件0，精确清验证/测试身份/级联，无Key或真实用户正文读取。新增iPhone时段/确认/Intl显示/键盘专项未验证，不能当真机验收。
+- 排程协议3个相对链接、diff/暂存范围检查通过，无环境/凭据改动；实现Commit：70c759ff5bf9e7080c1cf638d2225ebb3d045cdb。只完成新增试排子项，完整M2/批准入历保持未完成；TODO单独提交后push origin/main核对远程SHA。
+- 下一轮推进明确的阶段周期与重复实例、真实App日历占用及版本化预览，再接一次批准原子入历；用户不需人工填写Slot，未经批准不产生生效日历事件。
