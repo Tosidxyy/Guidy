@@ -1,3 +1,7 @@
+import {
+  clarificationBudget,
+  clarificationLimits,
+} from "./clarification-budget.ts";
 import { planningStatements, dispatchPlanning } from "./planning-jobs.ts";
 import type { WorkflowBinding } from "../research/jobs.ts";
 import type { D1Database } from "@cloudflare/workers-types";
@@ -88,6 +92,7 @@ export async function dialogueResponse(
 ): Promise<Response> {
   const goalId = new URL(request.url).pathname.split("/").at(-2)!;
   const now = Date.now();
+  const limits = clarificationLimits(env);
   const ok = (data: unknown, status = 200) =>
     Response.json({ data, error: null, request_id: requestId }, { status });
   const fail = (status: number, code: string) =>
@@ -154,6 +159,7 @@ export async function dialogueResponse(
     return {
       goal: liveGoal,
       asked_topics: await askedTopics(),
+      clarification_budget: await clarificationBudget(db, owner, env),
       chat_revision: rows[1].results[0]?.turn_index ?? 0,
       runs: rows[1].results.reverse().map((r) => ({
         ...r,
@@ -256,7 +262,7 @@ export async function dialogueResponse(
   const claimed = await db.batch([
     db
       .prepare(
-        `INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running',?,?,?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=?)=? AND ((?=1 AND (SELECT count(*) FROM agent_runs WHERE goal_id=goals.id AND harness_version='clarify-stop-v1')<10) OR (?=0 AND (SELECT count(*) FROM agent_runs WHERE owner_id=? AND created_at>=? AND harness_version!='clarify-stop-v1')<8 AND (SELECT count(*) FROM agent_runs WHERE created_at>=? AND harness_version!='clarify-stop-v1')<20))`,
+        `INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running',?,?,?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=?)=? AND ((?=1 AND (SELECT count(*) FROM agent_runs WHERE goal_id=goals.id AND harness_version='clarify-stop-v1')<10) OR (?=0 AND (SELECT count(*) FROM agent_runs WHERE owner_id=? AND created_at>=? AND harness_version!='clarify-stop-v1')<? AND (SELECT count(*) FROM agent_runs WHERE created_at>=? AND harness_version!='clarify-stop-v1')<?))`,
       )
       .bind(
         id,
@@ -277,7 +283,9 @@ export async function dialogueResponse(
         stop ? 1 : 0,
         owner,
         day,
+        limits.personal,
         day,
+        limits.global,
       ),
     db
       .prepare(
@@ -303,9 +311,11 @@ export async function dialogueResponse(
       )
       .bind(owner, day)
       .first();
-    return Number(counts?.total) >= 20 || Number(counts?.personal) >= 8
-      ? fail(429, "AI_DAILY_LIMIT")
-      : fail(409, "CONVERSATION_CHANGED");
+    return Number(counts?.total) >= limits.global
+      ? fail(429, "AI_GLOBAL_LIMIT")
+      : Number(counts?.personal) >= limits.personal
+        ? fail(429, "AI_DAILY_LIMIT")
+        : fail(409, "CONVERSATION_CHANGED");
   }
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout>;

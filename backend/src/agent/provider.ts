@@ -16,6 +16,7 @@ export interface AgentProvider {
   complete(context: string, signal: AbortSignal): Promise<Completion>;
 }
 export type AgentEnv = {
+  GUIDY_ENVIRONMENT?: string;
   DEEPSEEK_API_KEY?: string;
   GUIDY_AI_ENABLED?: string;
   GUIDY_AI_MODEL?: string;

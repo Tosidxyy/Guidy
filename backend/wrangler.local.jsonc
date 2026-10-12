@@ -12,7 +12,11 @@
       "class_name": "ResearchWorkflow",
     },
   ],
-  "vars": { "GUIDY_CORS_ORIGINS": "[]", "GUIDY_AUTH_MODE": "local-inbox" },
+  "vars": {
+    "GUIDY_CORS_ORIGINS": "[]",
+    "GUIDY_AUTH_MODE": "local-inbox",
+    "GUIDY_ENVIRONMENT": "development",
+  },
   "d1_databases": [
     {
       "binding": "DB",

@@ -3,10 +3,11 @@ import type { SlotInput } from './clarification';
 export type SlotSuggestion = { key: SlotInput['key']; text: string; evidence: string };
 export type DialogueReply = { schema_version: 1; kind: 'question'|'referral'|'notice'; question: string; reason: string; source: 'deepseek'|'policy'|'harness'; suggestions?: SlotSuggestion[];requested_slot?: SlotInput['key']|null;stage?:'clarifying'|'research_ready'|'needs_information'|'draft_requested';time_proposal?:'weekly_60_v1' };
 export type DialogueRun = { id:string;turn_index:number;user_text:string;status:'running'|'succeeded'|'failed';reply:DialogueReply|null;error_code:string|null;goal_revision?:number };
-export type Dialogue = { asked_topics?: SlotInput['key'][];goal:AccountGoal;chat_revision:number;runs:DialogueRun[] };
+export type Dialogue = { clarification_budget?:{daily_limit:8|24;used:number;remaining:number;reset_at:number;global_limited:boolean;allowed:boolean};asked_topics?: SlotInput['key'][];goal:AccountGoal;chat_revision:number;runs:DialogueRun[] };
 export function checkedDialogue(value: Dialogue): Dialogue {
   if(!value||!Number.isSafeInteger(value.chat_revision)||value.chat_revision<0||!Array.isArray(value.runs)||value.runs.length>30)throw new Error('对话响应格式不正确。');
   if(value.asked_topics!==undefined&&(!Array.isArray(value.asked_topics)||value.asked_topics.length>3||new Set(value.asked_topics).size!==value.asked_topics.length||value.asked_topics.some(k=>!['outcome','available_time','constraints'].includes(k))))throw new Error('澄清进度格式不正确。');
+  const budget=value.clarification_budget;if(value.clarification_budget!==undefined&&!budget)throw new Error('澄清额度格式不正确。');if(budget&&(![8,24].includes(budget.daily_limit)||!Number.isSafeInteger(budget.used)||budget.used<0||!Number.isSafeInteger(budget.remaining)||budget.remaining!==Math.max(0,budget.daily_limit-budget.used)||!Number.isSafeInteger(budget.reset_at)||budget.reset_at<=0||typeof budget.global_limited!=='boolean'||budget.allowed!==(budget.remaining>0&&!budget.global_limited)))throw new Error('澄清额度格式不正确。');
   for(const run of value.runs){
     if(!run||typeof run.id!=='string'||!Number.isSafeInteger(run.turn_index)||run.turn_index<1||typeof run.user_text!=='string'||run.user_text.length>600||!['running','succeeded','failed'].includes(run.status))throw new Error('对话响应格式不正确。');
     if(run.status==='succeeded'){
@@ -40,7 +41,8 @@ export function dialogueError(code:string):string {
   if(code==='AI_NOT_CONFIGURED')return 'AI 服务尚未配置，请先完成服务端设置。';
   if(code==='AI_CREDENTIAL_INVALID')return 'AI 服务密钥未通过验证，请更新服务端配置。';
   if(code==='AI_BALANCE_REQUIRED')return 'AI 服务余额不足，请补充测试账户额度。';
-  if(code==='AI_DAILY_LIMIT')return '今日 AI 测试额度已用完，请明天再试。';
+  if(code==='AI_DAILY_LIMIT')return '当天累计澄清次数已用完；三项核心信息已问过时，可以停止提问并准备草稿。已有回答和输入仍保留。';
+  if(code==='AI_GLOBAL_LIMIT')return '当前测试服务的澄清总量已达上限；三项核心信息已问过时，可以停止提问并准备草稿。';
   if(code==='AI_RATE_LIMITED')return 'AI 服务请求较多，请稍后再试。';
   if(code==='AI_INVALID_RESPONSE'||code==='AI_REPEATED_QUESTION')return 'AI 建议未通过校验，未保存回复。可查看状态后重试。';
   if(['CONTEXT_CHANGED','CONVERSATION_CHANGED','IDEMPOTENCY_CONFLICT'].includes(code))return '目标或对话已改变，请重新读取。你的输入仍保留。';

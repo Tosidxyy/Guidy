@@ -1,3 +1,7 @@
+import {
+  clarificationLimits,
+  clarificationBudget,
+} from "../src/agent/clarification-budget.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { URL } from "node:url";
@@ -519,4 +523,136 @@ test("stop requires three distinct core questions, works without a model at paid
       .n,
     0,
   );
+});
+
+test("development daily budget extends existing attempts without deleting records; production retains the original cap", async (t) => {
+  const f = await setup(t);
+  for (let i = 1; i <= 8; i++)
+    await f.db
+      .prepare(
+        "INSERT INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,created_at,updated_at,lease_until) VALUES(?,?,?,?, '{}',?,0,'budget','failed',?,?,1)",
+      )
+      .bind(
+        globalThis.crypto.randomUUID(),
+        f.goal,
+        f.owner,
+        "old-budget-" + i,
+        i,
+        Date.now(),
+        Date.now(),
+      )
+      .run();
+  assert.deepEqual(clarificationLimits({}), { personal: 8, global: 20 });
+  assert.deepEqual(clarificationLimits({ GUIDY_ENVIRONMENT: "production" }), {
+    personal: 8,
+    global: 20,
+  });
+  const before = await clarificationBudget(f.db, f.owner, {
+    GUIDY_ENVIRONMENT: "development",
+  });
+  assert.equal(before.used, 8);
+  assert.equal(before.remaining, 16);
+  const r = await dialogueResponse(
+    f.req("继续澄清", "development-budget-resume", 8, 0),
+    f.db,
+    f.owner,
+    "test",
+    { GUIDY_ENVIRONMENT: "development" },
+    f.provider,
+  );
+  assert.equal(r.status, 200);
+  const data = (await r.json()).data;
+  assert.equal(data.clarification_budget.used, 9);
+  assert.equal(data.clarification_budget.remaining, 15);
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM agent_runs").first()).n,
+    9,
+  );
+  for (let i = 10; i <= 24; i++)
+    await f.db
+      .prepare(
+        "INSERT INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,created_at,updated_at,lease_until) VALUES(?,?,?,?, '{}',?,0,'budget','failed',?,?,1)",
+      )
+      .bind(
+        globalThis.crypto.randomUUID(),
+        f.goal,
+        f.owner,
+        "new-budget-" + i,
+        i,
+        Date.now(),
+        Date.now(),
+      )
+      .run();
+  const blocked = await dialogueResponse(
+    f.req("继续", "development-budget-limit", 24, 0),
+    f.db,
+    f.owner,
+    "test",
+    { GUIDY_ENVIRONMENT: "development" },
+    f.provider,
+  );
+  assert.equal(blocked.status, 429);
+  assert.equal((await blocked.json()).error.code, "AI_DAILY_LIMIT");
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM agent_runs").first()).n,
+    24,
+  );
+});
+
+test("development global limit blocks model work without exposing other account usage", async (t) => {
+  const f = await setup(t),
+    other = "budget-other",
+    otherGoal = globalThis.crypto.randomUUID();
+  await f.db
+    .prepare(
+      'INSERT INTO "user"(id,name,email,emailVerified,createdAt,updatedAt) VALUES(?,?,?,0,1,1)',
+    )
+    .bind(other, "Test", "other@example.invalid")
+    .run();
+  await f.db
+    .prepare(
+      "INSERT INTO profiles(user_id,created_at,updated_at) VALUES(?,1,1)",
+    )
+    .bind(other)
+    .run();
+  await f.db
+    .prepare(
+      "INSERT INTO goals(id,owner_id,title,created_at,updated_at) VALUES(?,?,?,1,1)",
+    )
+    .bind(otherGoal, other, "Test")
+    .run();
+  for (let i = 1; i <= 60; i++)
+    await f.db
+      .prepare(
+        "INSERT INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,created_at,updated_at,lease_until) VALUES(?,?,?,?, '{}',?,0,'budget','failed',?,?,1)",
+      )
+      .bind(
+        globalThis.crypto.randomUUID(),
+        otherGoal,
+        other,
+        "global-budget-" + i,
+        i,
+        Date.now(),
+        Date.now(),
+      )
+      .run();
+  const budget = await clarificationBudget(f.db, f.owner, {
+    GUIDY_ENVIRONMENT: "development",
+  });
+  assert.equal(budget.used, 0);
+  assert.equal(budget.remaining, 24);
+  assert.equal(budget.global_limited, true);
+  assert.equal(budget.allowed, false);
+  assert.equal(JSON.stringify(budget).includes(other), false);
+  const response = await dialogueResponse(
+    f.req("开始", "global-budget-blocked"),
+    f.db,
+    f.owner,
+    "test",
+    { GUIDY_ENVIRONMENT: "development" },
+    f.provider,
+  );
+  assert.equal(response.status, 429);
+  assert.equal((await response.json()).error.code, "AI_GLOBAL_LIMIT");
+  assert.equal(f.calls(), 0);
 });

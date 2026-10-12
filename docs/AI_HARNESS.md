@@ -91,3 +91,9 @@ asked_topics从本人Goal成功DeepSeek问题的三个内部target去重，包�
 研究判断返回needs_search与固定七类通用topic，查询由harness固定词表生成并冻结，不发送用户时间/限制/邮箱/原文到搜索。健康/健身/护肤关键词强制检索，是保守规则非全面领域分类。确定性选前三份有正文/摘要来源各900字，保存URL/供应商request_id/search_id/searched_at/未核实，不把摘要当事实核验；没有正文失败，不静默降级为已研究。need_search=false才允许无来源个人行动草稿，仍unverified且明确未检索。
 
 计划复用strict emit_plan与Schema/引用/依赖/风险校验，不执行工具；未知成果/时间/限制在服务端补入assumptions，保留unknown事实。只chat_auto_v1支持来源0与未知必需字段，原手动搜索/生成门槛不放宽；无来源禁止虚构引用，不能认定专业事实。生成前后检查owner/Goal版本/状态/policy，通过才同batch保存私有plan_draft_attempt与completed，稳定Task IDs/未排程标志，完全不写核心PlanVersion/日历。研究判断不是全面知识缺口或语义事实评估。
+
+## 开发澄清额度与核心信息进度
+
+用户在「发送并继续」遇到额度用完，原因是账号当天所有Goal累计的澄清尝试（旧循环/失败也计），不是三个核心信息计数。GUIDY_ENVIRONMENT=development改为个人24/全局60；其他环境默认8/20保留，不能由请求参数改预算。未删除旧run/重置费用记录，650 Token与幂等/lease保护不变；停止clarify-stop-v1仍不占澄清额度，方案3/10和搜索6/30不变。
+
+GET/POST messages的clarification_budget返回本人daily_limit/used/remaining/reset_at与global_limited/allowed，UTC日界重置；不返回其他用户计数/身份。个人上限与服务总量分别返回AI_DAILY_LIMIT/AI_GLOBAL_LIMIT。聊天显示核心信息0–3和剩余次数；发送/未知/继续完善在额度不足时禁用并保留输入，中止在三项问过后仍独立可用，按钮移至历史上方，不需要滚过全部消息。
