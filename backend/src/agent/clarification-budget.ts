@@ -14,7 +14,7 @@ export async function clarificationBudget(
     day = Math.floor(now / 86400000) * 86400000;
   const row = await db
     .prepare(
-      "SELECT count(*) total,coalesce(sum(CASE WHEN owner_id=? THEN 1 ELSE 0 END),0) personal FROM agent_runs WHERE created_at>=? AND harness_version!='clarify-stop-v1'",
+      "SELECT count(*) total,coalesce(sum(CASE WHEN owner_id=? THEN 1 ELSE 0 END),0) personal FROM agent_runs WHERE created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1')",
     )
     .bind(owner, day)
     .first();

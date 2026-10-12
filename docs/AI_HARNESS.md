@@ -97,3 +97,9 @@ asked_topics从本人Goal成功DeepSeek问题的三个内部target去重，包�
 用户在「发送并继续」遇到额度用完，原因是账号当天所有Goal累计的澄清尝试（旧循环/失败也计），不是三个核心信息计数。GUIDY_ENVIRONMENT=development改为个人24/全局60；其他环境默认8/20保留，不能由请求参数改预算。未删除旧run/重置费用记录，650 Token与幂等/lease保护不变；停止clarify-stop-v1仍不占澄清额度，方案3/10和搜索6/30不变。
 
 GET/POST messages的clarification_budget返回本人daily_limit/used/remaining/reset_at与global_limited/allowed，UTC日界重置；不返回其他用户计数/身份。个人上限与服务总量分别返回AI_DAILY_LIMIT/AI_GLOBAL_LIMIT。聊天显示核心信息0–3和剩余次数；发送/未知/继续完善在额度不足时禁用并保留输入，中止在三项问过后仍独立可用，按钮移至历史上方，不需要滚过全部消息。
+
+### draft-edit-v1 单项免费定量意图
+
+已生成最新自动草稿时，含任务序号/时长/频次调整的消息进入受控解析，先验证owner/Goal状态/聊天与Goal版本，无Provider配置也可处理。保存用户消息和harness notice（edit_proposed/edit_guidance）同batch，提案无审阅写入；疑问/多项/残留命令不猜值，高风险用户事实保存policy提示并阻止确认。最多40轮，属于独立免费动作，澄清个人/全局计数均排除draft-edit-v1；非支持表达仍按原澄清流程，不能称所有自然语言改稿都免费。
+
+采用由业务审阅Service验证proposal_run_id/请求键/完整提议、旧Goal/Review/newest planning source/policy，conditional INSERT防覆盖；Model从未直接写表。messages用源提议run返回edit_receipt_revision和edit_proposal_stale，已保存历史显示真实版本，未采用过期项禁用；未知网络可同键读取原回执，不自动重生成。

@@ -129,3 +129,5 @@ GET/POST plan-drafts冻结本人当前版本的确认条件/搜索证据，独�
 clarify-v3已接首批聊天答案受控保存，见[AI harness](AI_HARNESS.md)：针对上一问题的完整原文建议经保守规则通过后，Service原子更新条件/版本和依据；Provider仍不访问DB。前端聊天无逐项Slot确认入口。自动研究/计划编排、已知条件自然语言纠正和完整端到端批准入历仍待实现，不能把本轮采集当作全部Agent闭环。
 
 停止提问已接chat_auto_v1：持久Job→研究判断/按需通用检索→证据快照→strict草稿校验，复用ResearchWorkflow按D1 Job类型分发，客户端只轮询并在聊天显示最终草稿。付费阶段claim/配额/版本/policy受harness控制，不重跑未知调用。API GET/POST planning-runs仅本人进度与同ID派发恢复；停止同键只返回原任务，另生成要明确确认。详见[AI harness](AI_HARNESS.md)。自然语言改稿、完整领域核验、具体时间窗/批准入历仍待实现。
+
+Goal聊天已接draft-edit-v1确定性单项数字提案与明确采用，复用现有review不可变版本和JSON提议，不新增表/迁移；费用统计排除无模型edit run。服务端绑定原提议与Goal/审阅/最新来源，规划GET返回原plan及latest review；详见[PlanDraft](PLAN_DRAFT.md)。这不等于自然语言任意改步骤、领域核验或计划批准排程。

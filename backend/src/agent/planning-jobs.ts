@@ -488,7 +488,7 @@ export async function planningResponse(
   const jobs = (
     await db
       .prepare(
-        "SELECT j.id,j.source_run_id,j.goal_revision,j.status,j.error_code,j.dispatched,j.created_at,p.context_json,p.draft_json FROM planning_jobs j LEFT JOIN plan_draft_attempts p ON p.id=j.id AND p.owner_id=j.owner_id WHERE j.goal_id=? AND j.owner_id=? ORDER BY j.created_at DESC,j.id DESC LIMIT 10",
+        "SELECT j.id,j.source_run_id,j.goal_revision,j.status,j.error_code,j.dispatched,j.created_at,p.context_json,p.draft_json,r.id review_id,r.revision review_revision,r.draft_json review_json,r.created_at review_created_at,r.weekly_capacity_minutes FROM planning_jobs j LEFT JOIN plan_draft_attempts p ON p.id=j.id AND p.owner_id=j.owner_id LEFT JOIN plan_draft_reviews r ON r.id=(SELECT id FROM plan_draft_reviews WHERE attempt_id=p.id AND owner_id=j.owner_id ORDER BY revision DESC LIMIT 1) WHERE j.goal_id=? AND j.owner_id=? ORDER BY j.created_at DESC,j.id DESC LIMIT 10",
       )
       .bind(goalId, owner)
       .all()
@@ -500,6 +500,15 @@ export async function planningResponse(
     error_code: r.error_code,
     dispatched: r.dispatched,
     created_at: r.created_at,
+    review: r.review_json
+      ? {
+          id: r.review_id,
+          revision: r.review_revision,
+          draft: JSON.parse(String(r.review_json)),
+          created_at: r.review_created_at,
+          weekly_capacity_minutes: r.weekly_capacity_minutes,
+        }
+      : null,
     plan: r.draft_json
       ? {
           id: r.id,

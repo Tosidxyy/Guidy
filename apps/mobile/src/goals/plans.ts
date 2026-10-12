@@ -51,7 +51,7 @@ export function reviewNumber(value:string,min:number,max:number):number|null{
  const s=value.replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xfee0)).trim();if(!/^\d{1,5}$/.test(s))return null;const n=Number(s);return n>=min&&n<=max?n:null;
 }
 export function reviewError(code:string):string{
- const map:Record<string,string>={REVIEW_LIMIT_REACHED:'这份草稿已达到20个审阅版本上限，已有版本仍可查看。',REVIEW_INVALID_CHANGES:'请检查任务：每次5–120整数分钟，每周1–7次，每周可用时间为0–10080整数分钟或留空；不修改任务编号或其他字段。',REVIEW_NO_CHANGES:'任务时长、频次与可用时间没有变化，无需保存新版本。',REVIEW_VERSION_CHANGED:'已有新的审阅版本，请读取并核对。你的输入仍保留。',REVIEW_CONTEXT_CHANGED:'目标条件或安全状态已改变，这份旧草稿目前不可调整。输入仍保留。',REVIEW_IDEMPOTENCY_CONFLICT:'保存请求内容不一致，请读取审阅版本后核对。',REVIEW_INVALID_SOURCE:'草稿来源地址不正确。'};return map[code]??'审阅版本未保存，请读取状态；输入仍保留。';
+ const map:Record<string,string>={REVIEW_SOURCE_CHANGED:'已有新的方案草稿，请基于最新草稿重新描述调整；旧建议不会套用。',REVIEW_LIMIT_REACHED:'这份草稿已达到20个审阅版本上限，已有版本仍可查看。',REVIEW_INVALID_CHANGES:'请检查任务：每次5–120整数分钟，每周1–7次，每周可用时间为0–10080整数分钟或留空；不修改任务编号或其他字段。',REVIEW_NO_CHANGES:'任务时长、频次与可用时间没有变化，无需保存新版本。',REVIEW_VERSION_CHANGED:'已有新的审阅版本，请读取并核对。你的输入仍保留。',REVIEW_CONTEXT_CHANGED:'目标条件或安全状态已改变，这份旧草稿目前不可调整。输入仍保留。',REVIEW_IDEMPOTENCY_CONFLICT:'保存请求内容不一致，请读取审阅版本后核对。',REVIEW_INVALID_SOURCE:'草稿来源地址不正确。'};return map[code]??'审阅版本未保存，请读取状态；输入仍保留。';
 }
 
 export function effortSummary(total:number|null,capacity:number|null):string{

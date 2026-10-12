@@ -1,3 +1,4 @@
+import {DraftEditProposal} from '../../../src/components/DraftEditProposal';
 import {AutomaticPlanning} from '../../../src/components/AutomaticPlanning';
 import { useCallback, useRef, useState } from 'react';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -6,7 +7,7 @@ import { Action, AppText, Badge, Caption, Card, Screen } from '../../../src/comp
 import { useAccount } from '../../../src/auth/AuthProvider';
 import { useTheme } from '../../../src/theme/ThemeProvider';
 import { getDialogue, sendDialogue } from '../../../src/goals/api';
-import { dialogueError, type Dialogue } from '../../../src/goals/dialogue';
+import { isDraftEditText, dialogueError, type Dialogue } from '../../../src/goals/dialogue';
 
 export default function GoalChat(){
   const {id}=useLocalSearchParams<{id:string}>();const {user}=useAccount();
@@ -34,7 +35,7 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
   },[load,refresh]));
   async function send(override?:string){
     if(!data||!owner||busy.current||data.goal.status!=='draft'||data.runs.some(r=>r.status==='running'))return;
-    const value=(override??text).trim();if(data.clarification_budget?.allowed===false&&value!=='先到这里，请根据现有信息准备方案草稿。'){setError(dialogueError(data.clarification_budget.global_limited?'AI_GLOBAL_LIMIT':'AI_DAILY_LIMIT'));return;}if(!value){setError('请先输入要补充的内容。');return;}
+    const value=(override??text).trim();if(data.clarification_budget?.allowed===false&&value!=='先到这里，请根据现有信息准备方案草稿。'&&!isDraftEditText(value)){setError(dialogueError(data.clarification_budget.global_limited?'AI_GLOBAL_LIMIT':'AI_DAILY_LIMIT'));return;}if(!value){setError('请先输入要补充的内容。');return;}
     const body={text:value,expected_chat_revision:data.chat_revision,expected_goal_revision:data.goal.revision};const payload=JSON.stringify(body);
     if(operation.current?.payload!==payload)operation.current={payload,key:`chat_${Date.now()}_${Math.random().toString(36).slice(2,12)}`};
     const scope=generation.current;busy.current=true;setSending(true);setError('');
@@ -49,7 +50,7 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
     <Screen title="目标对话" bottomInset footer={data&&<>
       <TextInput accessibilityLabel="回复或补充条件" multiline scrollEnabled maxLength={600} value={text} onChangeText={setText} editable={!!enabled&&!sending&&!active} placeholder="回答上面的问题，或补充新的条件" placeholderTextColor={colors.secondary} style={{backgroundColor:colors.surface,color:colors.text,borderColor:colors.divider,borderWidth:1,borderRadius:15,padding:12,height:104,textAlignVertical:'top',fontSize:17}}/>
       <View style={{flexDirection:'row',gap:8}}>
-        <View style={{flex:2}}><Action label={sending?'正在请求…':active?'等待本次生成完成':quotaBlocked?'澄清额度暂已用完':'发送并继续'} disabled={!enabled||sending||active||quotaBlocked||!text.trim()} onPress={()=>send()}/></View>
+        <View style={{flex:2}}><Action label={sending?'正在请求…':active?'等待本次生成完成':quotaBlocked&&!isDraftEditText(text)?'澄清额度暂已用完':isDraftEditText(text)?'发送调整':'发送并继续'} disabled={!enabled||sending||active||(quotaBlocked&&!isDraftEditText(text))||!text.trim()} onPress={()=>send()}/></View>
         <View style={{flex:1}}><Action label="暂不确定" secondary disabled={!enabled||sending||active||!data.runs.length||quotaBlocked||data.runs.at(-1)?.reply?.requested_slot===null} onPress={()=>send('暂不确定，请考虑其他必要条件。')}/></View>
       </View>
     </>}>
@@ -69,6 +70,7 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
         {data.runs.map(run=><View key={run.id} style={{gap:12}}>
           <Card style={{backgroundColor:colors.action}}><AppText style={{color:colors.onAction}}>{run.user_text}</AppText></Card>
           {run.status==='running'?<Caption>正在生成建议，你的消息已保存。</Caption>:run.status==='failed'?<Card><AppText>这次生成未完成</AppText><Caption>{dialogueError(run.error_code??'')}</Caption><Action label="把这条消息填回输入框" secondary disabled={sending||active} onPress={()=>setText(run.user_text)}/></Card>:run.reply&&<Card><Badge>{run.reply.source==='policy'?'系统安全提示':'Agent'}</Badge><AppText style={{fontSize:21,fontWeight:'600'}}>{run.reply.question}</AppText><Caption>{run.reply.reason}</Caption></Card>}
+          {run.reply?.edit_proposal&&<DraftEditProposal key={run.id} id={id} runId={run.id} proposal={run.reply.edit_proposal} receipt={run.edit_receipt_revision} stale={run.edit_proposal_stale} editable={!!enabled&&!sending&&!active&&data.goal.revision===run.reply.edit_proposal.goal_revision} onSaved={()=>setRefresh(n=>n+1)}/> }
         </View>)}
         {data.runs.at(-1)?.reply?.stage==='research_ready'&&data.runs.at(-1)?.reply?.requested_slot===null&&<Caption>基本信息已收集。可以停止提问并准备草稿，确认方案前不会安排日历。</Caption>}
         {data.runs.at(-1)?.reply?.stage==='needs_information'&&<Card><Caption>尚有必要信息待确定，可以先保留目标，不会自动安排日历。</Caption><Action label="继续完善" secondary disabled={sending||active||!enabled||quotaBlocked} onPress={()=>send('请继续澄清仍未明确的条件。')}/></Card>}

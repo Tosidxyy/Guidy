@@ -118,6 +118,7 @@ export async function reviewResponse(
             "expected_review_revision",
             "changes",
             "weekly_capacity_minutes",
+            "proposal_run_id",
           ].includes(k),
       ) ||
       !Number.isSafeInteger(body.expected_goal_revision) ||
@@ -157,6 +158,37 @@ export async function reviewResponse(
   } catch {
     return fail(422, "REVIEW_INVALID_CHANGES");
   }
+  if (body.proposal_run_id !== undefined) {
+    if (
+      typeof body.proposal_run_id !== "string" ||
+      !/^[0-9a-f-]{36}$/.test(body.proposal_run_id) ||
+      key !== `chat_edit_${body.proposal_run_id}`
+    )
+      return fail(422, "REVIEW_INVALID_CHANGES");
+    const run = await db
+      .prepare(
+        "SELECT reply_json FROM agent_runs WHERE id=? AND goal_id=? AND owner_id=? AND status='succeeded' AND harness_version='draft-edit-v1'",
+      )
+      .bind(body.proposal_run_id, goalId, owner)
+      .first();
+    const reply = run ? JSON.parse(String(run.reply_json)) : null,
+      p = reply?.edit_proposal;
+    if (
+      reply?.source !== "harness" ||
+      reply?.stage !== "edit_proposed" ||
+      !p ||
+      p.attempt_id !== attemptId ||
+      p.goal_revision !== body.expected_goal_revision ||
+      p.review_revision !== body.expected_review_revision ||
+      body.weekly_capacity_minutes !== undefined ||
+      body.changes.length !== 1 ||
+      body.changes[0].task_id !== p.task_id ||
+      body.changes[0].duration_minutes !== p.after.duration_minutes ||
+      body.changes[0].frequency_per_week !== p.after.frequency_per_week
+    )
+      return fail(422, "REVIEW_INVALID_CHANGES");
+  } else if (key.startsWith("chat_edit_"))
+    return fail(422, "REVIEW_INVALID_CHANGES");
   body.changes.sort((a: { task_id: string }, b: { task_id: string }) =>
     a.task_id.localeCompare(b.task_id),
   );
@@ -175,6 +207,15 @@ export async function reviewResponse(
   };
   const cached = await replay();
   if (cached) return cached;
+  if (body.proposal_run_id) {
+    const latest = await db
+      .prepare(
+        "SELECT id FROM planning_jobs WHERE goal_id=? AND owner_id=? ORDER BY created_at DESC,id DESC LIMIT 1",
+      )
+      .bind(goalId, owner)
+      .first();
+    if (latest?.id !== attemptId) return fail(409, "REVIEW_SOURCE_CHANGED");
+  }
   if (body.expected_review_revision === 20)
     return fail(409, "REVIEW_LIMIT_REACHED");
   if (
@@ -219,7 +260,7 @@ export async function reviewResponse(
   const revision = body.expected_review_revision + 1;
   const claim = await db
     .prepare(
-      "INSERT OR IGNORE INTO plan_draft_reviews(id,attempt_id,goal_id,owner_id,revision,goal_revision,request_key,request_payload,draft_json,created_at,weekly_capacity_minutes) SELECT ?,p.id,p.goal_id,p.owner_id,?,p.goal_revision,?,?,?,?,? FROM plan_draft_attempts p JOIN goals g ON g.id=p.goal_id AND g.owner_id=p.owner_id WHERE p.id=? AND p.goal_id=? AND p.owner_id=? AND p.status='succeeded' AND g.status='draft' AND g.revision=? AND p.goal_revision=g.revision AND (SELECT coalesce(max(revision),0) FROM plan_draft_reviews WHERE attempt_id=p.id)=? AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=p.goal_id AND owner_id=p.owner_id AND status='succeeded' AND json_extract(reply_json,'$.source')='policy')",
+      "INSERT OR IGNORE INTO plan_draft_reviews(id,attempt_id,goal_id,owner_id,revision,goal_revision,request_key,request_payload,draft_json,created_at,weekly_capacity_minutes) SELECT ?,p.id,p.goal_id,p.owner_id,?,p.goal_revision,?,?,?,?,? FROM plan_draft_attempts p JOIN goals g ON g.id=p.goal_id AND g.owner_id=p.owner_id WHERE p.id=? AND p.goal_id=? AND p.owner_id=? AND p.status='succeeded' AND g.status='draft' AND g.revision=? AND p.goal_revision=g.revision AND (SELECT coalesce(max(revision),0) FROM plan_draft_reviews WHERE attempt_id=p.id)=? AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=p.goal_id AND owner_id=p.owner_id AND status='succeeded' AND json_extract(reply_json,'$.source')='policy') AND (? IS NULL OR (SELECT id FROM planning_jobs WHERE goal_id=p.goal_id AND owner_id=p.owner_id ORDER BY created_at DESC,id DESC LIMIT 1)=p.id)",
     )
     .bind(
       crypto.randomUUID(),
@@ -234,6 +275,7 @@ export async function reviewResponse(
       owner,
       body.expected_goal_revision,
       body.expected_review_revision,
+      body.proposal_run_id ?? null,
     )
     .run();
   if (!claim.meta.changes)

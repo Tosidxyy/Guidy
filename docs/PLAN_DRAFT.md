@@ -86,3 +86,11 @@ GET/POST `/api/v1/goals/{id}/draft-reviews?attempt_id={UUID}` 要求会话、Goa
 用户三个核心信息问过后停止提问，无需挑选搜索或填写Slot。后台按需检索生成结果保存为独立plan_draft_attempt；Goal版本/原稿/执行历史不变。context.generation_mode=chat_auto_v1允许三个条件unknown；仅未检索分支可sources=[]，所有引用为空、assumptions明确未外部核实。生成时服务端补入未知成果/时间/基础限制提示，总投入仍建议、time_fit待审阅、cost未知、scheduling未检查。原手动端点仍要求已确认基础条件与来源，strict输出不能因此伪造来源或用户事实。
 
 GET /goals/{id}/planning-runs读取最多10项状态及completed.plan，POST {job_id}仅恢复同一已有任务的派发，不新增模型尝试（稳定jobID实现幂等）；通过会话/owner授权，未知/失败不自动再生成。聊天可明确另开停止请求生成新草稿，旧结果保留，共享每日3/10生成配额。自然语言改稿及一次批准排程仍未实现。
+
+## 聊天中的单项定量调整（2026-10-12）
+
+自动草稿任务按第1–6项编号展示。用户可以说「把第一项改成每次15分钟，每周4次」，或使用唯一完整任务标题；支持明确整数/常用中文数字及全角数字。harness确定性解析同一项的时长5–120分钟和频率1–7次，未提字段沿用原值；多项、含糊、否定/复杂前后改写、越界不猜测，只给说明。此为数字调整，不是任意任务步骤/领域内容的AI改写。
+
+建议以draft-edit-v1 agent run私有保存，最多每Goal40轮免费提议/说明，不调用模型/搜索、不会自动写审阅。edit_proposed包含来源attempt、Goal/审阅基准版、稳定Task ID、前后数值与周投入差异；用户「采用这次调整」才POST原draft-reviews，proposal_run_id与固定chat_edit_键绑定已保存建议，字段必须逐一匹配。Goal/审阅版本、最新生成来源和policy在读取/条件INSERT核对，冲突保留建议且标过期。旧建议的幂等回执只读，不再插入。
+
+确认后新增不可变review（仍20份上限），原AI/任务内容/依赖/引用/执行历史不改，不批准入历；可能与旧步骤文字不一致，卡片提示核对。planning-runs同时返回原plan和latest review，聊天展示最新review；messages返回保存回执及过期标志，Reload不重新提交。保留原稿仅本页收起建议，未承诺永久拒绝历史。
