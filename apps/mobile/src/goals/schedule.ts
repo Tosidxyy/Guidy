@@ -1,0 +1,20 @@
+export const ASK_SCHEDULE='请帮我预览首阶段各项一次的具体时间。';
+export const CONFIRM_SCHEDULE='确认这些时段，预览首阶段各项一次。';
+export function isScheduleText(text:string){return text===ASK_SCHEDULE||text===CONFIRM_SCHEDULE||/^可用时段[：:]/.test(text)||/(?:北京时间|Asia\/Shanghai|UTC).*(?:\d{4}-\d{2}-\d{2}|明天|周[一二三四五六日天])/.test(text);}
+type Interval={start_at:number;end_at:number};
+export type ScheduleData={attempt_id:string;goal_revision:number;review_revision:number;timezone:'Asia/Shanghai'|'UTC';windows:Interval[];scope:'first_stage_once_v1';tasks:{id:string;title:string;duration_minutes:number;depends_on:string[]}[];confirmed_from_run_id?:string;preview?:{schema_version:1;status:'preview_only';strategy:'stable_topological_earliest_v1';timezone:string;placements:(Interval&{task_id:string})[];unplaced:{task_id:string;reason:'dependency_unplaced'|'no_legal_window'}[]}};
+const uuid=(value:unknown)=>typeof value==='string'&&/^[0-9a-f-]{36}$/.test(value);
+const range=(value:Interval)=>!!value&&Number.isSafeInteger(value.start_at)&&Number.isSafeInteger(value.end_at)&&value.start_at>=0&&value.end_at>value.start_at&&value.end_at<=8640000000000000;
+export function checkedSchedule(s:ScheduleData|undefined,stage:string){
+ const fail=()=>{throw new Error('排程预览格式不正确。');};
+ if(!s||!uuid(s.attempt_id)||!Number.isSafeInteger(s.goal_revision)||s.goal_revision<0||!Number.isSafeInteger(s.review_revision)||s.review_revision<0||s.review_revision>20||!['Asia/Shanghai','UTC'].includes(s.timezone)||s.scope!=='first_stage_once_v1'||!Array.isArray(s.windows)||s.windows.length<1||s.windows.length>7||!s.windows.every(range)||s.windows.some((w,i)=>i>0&&w.start_at<s.windows[i-1].end_at)||s.windows.at(-1)!.end_at-s.windows[0].start_at>31*86400000||!Array.isArray(s.tasks)||!s.tasks.length||s.tasks.length>6) return fail();
+ const ids=new Set(s.tasks.map(t=>t?.id));if(ids.size!==s.tasks.length)return fail();
+ for(const t of s.tasks){if(!t||!uuid(t.id)||typeof t.title!=='string'||!t.title.trim()||t.title.length>80||!Number.isInteger(t.duration_minutes)||t.duration_minutes<5||t.duration_minutes>120||!Array.isArray(t.depends_on)||new Set(t.depends_on).size!==t.depends_on.length||t.depends_on.some(d=>d===t.id||!ids.has(d)))return fail();}
+ const visited=new Set<string>();let pending=[...s.tasks];while(pending.length){const ready=pending.filter(t=>t.depends_on.every(id=>visited.has(id)));if(!ready.length)return fail();ready.forEach(t=>visited.add(t.id));pending=pending.filter(t=>!visited.has(t.id));}
+ if(stage==='schedule_proposed'){if(s.preview!==undefined||s.confirmed_from_run_id!==undefined)return fail();return;}
+ const p=s.preview;if(stage!=='schedule_preview'||!uuid(s.confirmed_from_run_id)||!p||p.schema_version!==1||p.status!=='preview_only'||p.strategy!=='stable_topological_earliest_v1'||p.timezone!==s.timezone||!Array.isArray(p.placements)||!Array.isArray(p.unplaced)||p.placements.length+p.unplaced.length!==s.tasks.length)return fail();
+ const seen=new Set<string>();
+ for(const item of p.placements){const t=s.tasks.find(t=>t.id===item?.task_id);if(!t||seen.has(t.id)||!range(item)||item.end_at-item.start_at!==t.duration_minutes*60000||!s.windows.some(w=>item.start_at>=w.start_at&&item.end_at<=w.end_at)||p.placements.some(other=>other!==item&&other.start_at<item.end_at&&item.start_at<other.end_at)||t.depends_on.some(id=>!p.placements.some(dep=>dep.task_id===id&&dep.end_at<=item.start_at)))return fail();seen.add(t.id);}
+ for(const item of p.unplaced){if(!item||!ids.has(item.task_id)||seen.has(item.task_id)||!['dependency_unplaced','no_legal_window'].includes(item.reason))return fail();seen.add(item.task_id);}
+}
+export function scheduleTime(at:number,timezone:string){return new Intl.DateTimeFormat('zh-CN',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(at);}

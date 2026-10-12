@@ -1,4 +1,5 @@
 import { proposeChatEdit } from "./draft-edit.ts";
+import { scheduleChat } from "../scheduling/chat.ts";
 import {
   clarificationBudget,
   clarificationLimits,
@@ -124,7 +125,7 @@ export async function dialogueResponse(
     .bind(now, goalId, owner, now)
     .run();
   const columns =
-    "id,turn_index,user_text,status,reply_json,error_code,input_tokens,output_tokens,requested_model,context_schema_version,harness_version,goal_revision,created_at,(SELECT revision FROM plan_draft_reviews WHERE owner_id=agent_runs.owner_id AND request_key='chat_edit_'||agent_runs.id) edit_receipt_revision,CASE WHEN json_extract(reply_json,'$.stage')='edit_proposed' THEN CASE WHEN json_extract(reply_json,'$.edit_proposal.review_revision')!=(SELECT coalesce(max(revision),0) FROM plan_draft_reviews WHERE owner_id=agent_runs.owner_id AND attempt_id=json_extract(agent_runs.reply_json,'$.edit_proposal.attempt_id')) OR json_extract(reply_json,'$.edit_proposal.attempt_id')!=coalesce((SELECT id FROM planning_jobs WHERE goal_id=agent_runs.goal_id AND owner_id=agent_runs.owner_id ORDER BY created_at DESC,id DESC LIMIT 1),'') THEN 1 ELSE 0 END ELSE 0 END edit_proposal_stale";
+    "id,turn_index,user_text,status,reply_json,error_code,input_tokens,output_tokens,requested_model,context_schema_version,harness_version,goal_revision,created_at,(SELECT revision FROM plan_draft_reviews WHERE owner_id=agent_runs.owner_id AND request_key='chat_edit_'||agent_runs.id) edit_receipt_revision,CASE WHEN json_extract(reply_json,'$.stage')='edit_proposed' THEN CASE WHEN json_extract(reply_json,'$.edit_proposal.review_revision')!=(SELECT coalesce(max(revision),0) FROM plan_draft_reviews WHERE owner_id=agent_runs.owner_id AND attempt_id=json_extract(agent_runs.reply_json,'$.edit_proposal.attempt_id')) OR json_extract(reply_json,'$.edit_proposal.attempt_id')!=coalesce((SELECT id FROM planning_jobs WHERE goal_id=agent_runs.goal_id AND owner_id=agent_runs.owner_id ORDER BY created_at DESC,id DESC LIMIT 1),'') THEN 1 ELSE 0 END ELSE 0 END edit_proposal_stale,CASE WHEN json_extract(reply_json,'$.schedule.attempt_id') IS NOT NULL THEN CASE WHEN json_extract(reply_json,'$.schedule.review_revision')!=(SELECT coalesce(max(revision),0) FROM plan_draft_reviews WHERE owner_id=agent_runs.owner_id AND attempt_id=json_extract(agent_runs.reply_json,'$.schedule.attempt_id')) OR json_extract(reply_json,'$.schedule.attempt_id')!=coalesce((SELECT id FROM planning_jobs WHERE goal_id=agent_runs.goal_id AND owner_id=agent_runs.owner_id ORDER BY created_at DESC,id DESC LIMIT 1),'') THEN 1 ELSE 0 END ELSE 0 END schedule_stale";
   const askedTopics = async () =>
     (
       await db
@@ -165,6 +166,12 @@ export async function dialogueResponse(
       runs: rows[1].results.reverse().map((r) => ({
         ...r,
         edit_proposal_stale: r.edit_proposal_stale === 1,
+        schedule_stale:
+          r.schedule_stale === 1 ||
+          (!!JSON.parse(String(r.reply_json ?? "null"))?.schedule &&
+            (r.goal_revision !== liveGoal.revision ||
+              JSON.parse(String(r.reply_json)).schedule.windows[0].start_at <=
+                now)),
         reply_json: undefined,
         reply: r.reply_json ? JSON.parse(r.reply_json as string) : null,
       })),
@@ -251,6 +258,20 @@ export async function dialogueResponse(
   }
   if (goal.status !== "draft" || goal.revision !== goalRevision)
     return fail(409, "CONTEXT_CHANGED");
+  const schedule = await scheduleChat(
+    db,
+    owner,
+    goalId,
+    text,
+    key,
+    payload,
+    chatRevision,
+    goalRevision,
+  );
+  if (schedule)
+    return schedule.status === 200
+      ? ok(await snapshot())
+      : fail(schedule.status, schedule.code!);
   const edit = await proposeChatEdit(
     db,
     owner,
@@ -278,7 +299,7 @@ export async function dialogueResponse(
   const claimed = await db.batch([
     db
       .prepare(
-        `INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running',?,?,?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=?)=? AND ((?=1 AND (SELECT count(*) FROM agent_runs WHERE goal_id=goals.id AND harness_version='clarify-stop-v1')<10) OR (?=0 AND (SELECT count(*) FROM agent_runs WHERE owner_id=? AND created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1'))<? AND (SELECT count(*) FROM agent_runs WHERE created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1'))<?))`,
+        `INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running',?,?,?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=?)=? AND ((?=1 AND (SELECT count(*) FROM agent_runs WHERE goal_id=goals.id AND harness_version='clarify-stop-v1')<10) OR (?=0 AND (SELECT count(*) FROM agent_runs WHERE owner_id=? AND created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1'))<? AND (SELECT count(*) FROM agent_runs WHERE created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1'))<?))`,
       )
       .bind(
         id,
@@ -323,7 +344,7 @@ export async function dialogueResponse(
     }
     const counts = await db
       .prepare(
-        "SELECT count(*) AS total,sum(CASE WHEN owner_id=? THEN 1 ELSE 0 END) AS personal FROM agent_runs WHERE created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1')",
+        "SELECT count(*) AS total,sum(CASE WHEN owner_id=? THEN 1 ELSE 0 END) AS personal FROM agent_runs WHERE created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1')",
       )
       .bind(owner, day)
       .first();

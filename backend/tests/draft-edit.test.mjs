@@ -10,6 +10,12 @@ import {
   planningResponse,
 } from "../src/agent/planning-jobs.ts";
 import { parseDraftEdit } from "../src/agent/draft-edit.ts";
+import {
+  parseWindows,
+  ASK_SCHEDULE,
+  CONFIRM_SCHEDULE,
+} from "../src/scheduling/chat.ts";
+import { checkedDialogue } from "../../apps/mobile/src/goals/dialogue.ts";
 import { dialogueResponse } from "../src/agent/harness.ts";
 import { reviewResponse } from "../src/agent/review-service.ts";
 async function setup(t) {
@@ -191,6 +197,276 @@ async function ready(t) {
   await generatePlanning(f.db, f.id, {}, f.model);
   return f;
 }
+function futureWindows(minutes = 60) {
+  const date = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+  return `可用时段：北京时间，${date} 20:00-20:${String(minutes).padStart(2, "0")}`;
+}
+test("concrete date windows reject impossible, ambiguous, overlapping or unsupported local times", () => {
+  const now = Date.parse("2026-10-12T00:00:00Z");
+  const parsed = parseWindows(
+    "可用时段：北京时间，2026-10-13 20:00-21:00",
+    now,
+  );
+  assert.equal(parsed.timezone, "Asia/Shanghai");
+  assert.equal(parsed.windows[0].start_at, Date.parse("2026-10-13T12:00:00Z"));
+  assert.equal(
+    parseWindows("UTC，2026-10-13 20:00-21:00", now).timezone,
+    "UTC",
+  );
+  for (const text of [
+    "北京时间，明天晚上",
+    "北京时间，2026-10-13 24:00-24:30",
+    "北京时间，2026-10-13 21:00-20:00",
+    "北京时间，2026-02-30 20:00-21:00",
+    "北京时间，2026-10-11 20:00-21:00",
+    "UTC，2026-12-13 20:00-21:00",
+    "America/New_York，2026-10-13 20:00-21:00",
+    "北京时间，2026-10-13 20:00-21:00；2026-10-13 20:30-21:30",
+    "北京时间，2026-10-13 20:00-21:00然后停药",
+  ])
+    assert.equal(parseWindows(text, now), null);
+});
+test("vague followup remains a free concrete-time question, not another model clarification", async (t) => {
+  const f = await ready(t);
+  await message(f, ASK_SCHEDULE, "schedule-context-ask");
+  const answer = checkedDialogue(
+    (
+      await (
+        await message(f, "你来安排吧", "schedule-vague-followup", 2)
+      ).json()
+    ).data,
+  );
+  assert.equal(answer.runs.at(-1).reply.stage, "schedule_guidance");
+  assert.equal(answer.runs.at(-1).reply.schedule, undefined);
+  assert.equal(answer.clarification_budget.used, 0);
+});
+test("exhausted model quota still permits deterministic window confirmation", async (t) => {
+  const f = await ready(t);
+  for (let index = 2; index <= 9; index++) {
+    const id = globalThis.crypto.randomUUID();
+    await f.db
+      .prepare(
+        "INSERT INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) VALUES(?,?,?,?, '{}',?,0,'fixture','failed','clarify-v3',?,?,?)",
+      )
+      .bind(id, f.goal, f.owner, id, index, Date.now(), Date.now(), Date.now())
+      .run();
+  }
+  const p = checkedDialogue(
+    (
+      await (
+        await message(f, futureWindows(30), "schedule-quota-propose", 9)
+      ).json()
+    ).data,
+  );
+  assert.equal(p.clarification_budget.allowed, false);
+  assert.equal(p.clarification_budget.used, 8);
+  const result = checkedDialogue(
+    (
+      await (
+        await message(f, CONFIRM_SCHEDULE, "schedule-quota-confirm", 10)
+      ).json()
+    ).data,
+  );
+  assert.equal(result.runs.at(-1).reply.schedule.preview.placements.length, 1);
+  assert.equal(result.clarification_budget.used, 8);
+});
+test("trial respects first-stage boundary and reports expired declarations without reusing them", async (t) => {
+  const f = await ready(t);
+  const source = await f.db
+    .prepare("SELECT draft_json FROM plan_draft_attempts WHERE id=?")
+    .bind(f.id)
+    .first();
+  const draft = JSON.parse(source.draft_json);
+  draft.tasks.push({
+    ...draft.tasks[0],
+    id: globalThis.crypto.randomUUID(),
+    stage: 2,
+    depends_on: [draft.tasks[0].id],
+  });
+  draft.weekly_minutes = 120;
+  await f.db
+    .prepare("UPDATE plan_draft_attempts SET draft_json=? WHERE id=?")
+    .bind(JSON.stringify(draft), f.id)
+    .run();
+  const p = checkedDialogue(
+    (await (await message(f, futureWindows(30), "schedule-stage")).json()).data,
+  ).runs.at(-1);
+  assert.equal(p.reply.schedule.tasks.length, 1);
+  p.reply.schedule.windows = [
+    { start_at: Date.now() - 60000, end_at: Date.now() + 60000 },
+  ];
+  await f.db
+    .prepare("UPDATE agent_runs SET reply_json=? WHERE id=?")
+    .bind(JSON.stringify(p.reply), p.id)
+    .run();
+  const result = checkedDialogue(
+    (await (await message(f, CONFIRM_SCHEDULE, "schedule-expired", 2)).json())
+      .data,
+  );
+  assert.equal(result.runs.at(-1).reply.stage, "schedule_guidance");
+  assert.equal(result.runs.find((run) => run.id === p.id).schedule_stale, true);
+});
+test("chat trial only follows explicit window confirmation, persists and replays without quota or core writes", async (t) => {
+  const f = await ready(t);
+  const ask = await message(f, ASK_SCHEDULE, "schedule-ask");
+  assert.equal(ask.status, 200);
+  assert.equal(
+    (await ask.json()).data.runs.at(-1).reply.stage,
+    "schedule_guidance",
+  );
+  const p = await message(f, futureWindows(30), "schedule-windows", 2);
+  assert.equal(p.status, 200);
+  const proposal = checkedDialogue((await p.json()).data);
+  assert.equal(proposal.runs.at(-1).reply.stage, "schedule_proposed");
+  assert.equal(proposal.runs.at(-1).reply.schedule.preview, undefined);
+  const confirmResponse = await message(
+    f,
+    CONFIRM_SCHEDULE,
+    "schedule-confirm",
+    3,
+  );
+  assert.equal(confirmResponse.status, 200);
+  const result = checkedDialogue((await confirmResponse.json()).data);
+  assert.equal(result.runs.at(-1).reply.schedule.preview.placements.length, 1);
+  assert.equal(result.runs.at(-1).reply.schedule.tasks.length, 1);
+  assert.equal(result.clarification_budget.used, 0);
+  const replay = await message(f, CONFIRM_SCHEDULE, "schedule-confirm", 3);
+  assert.equal(replay.status, 200);
+  assert.equal((await replay.json()).data.runs.length, 4);
+  const reloaded = checkedDialogue(
+    (
+      await (
+        await dialogueResponse(
+          new globalThis.Request(
+            `http://localhost/api/v1/goals/${f.goal}/messages`,
+          ),
+          f.db,
+          f.owner,
+          "test",
+          {},
+        )
+      ).json()
+    ).data,
+  );
+  assert.deepEqual(
+    reloaded.runs.at(-1).reply.schedule,
+    result.runs.at(-1).reply.schedule,
+  );
+  const goal = await f.db
+    .prepare("SELECT revision,active_plan_version_id FROM goals WHERE id=?")
+    .bind(f.goal)
+    .first();
+  assert.deepEqual(goal, { revision: 0, active_plan_version_id: null });
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM plan_draft_reviews").first()).n,
+    0,
+  );
+});
+test("insufficient windows explain unscheduled trial without pretending success", async (t) => {
+  const f = await ready(t);
+  await message(f, futureWindows(10), "schedule-small");
+  const result = await message(
+    f,
+    CONFIRM_SCHEDULE,
+    "schedule-small-confirm",
+    2,
+  );
+  const preview = checkedDialogue((await result.json()).data).runs.at(-1).reply
+    .schedule.preview;
+  assert.equal(preview.placements.length, 0);
+  assert.equal(preview.unplaced[0].reason, "no_legal_window");
+});
+test("peer draft review invalidates owned window proposal and old confirmation; fresh proposal uses review", async (t) => {
+  const f = await ready(t);
+  const p = (
+    await (await message(f, futureWindows(30), "schedule-peer")).json()
+  ).data.runs.at(-1);
+  const taskId = p.reply.schedule.tasks[0].id;
+  const response = await reviewResponse(
+    new globalThis.Request(
+      `http://localhost/api/v1/goals/${f.goal}/draft-reviews?attempt_id=${f.id}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "schedule-peer-review",
+        },
+        body: JSON.stringify({
+          expected_goal_revision: 0,
+          expected_review_revision: 0,
+          changes: [
+            { task_id: taskId, duration_minutes: 25, frequency_per_week: 3 },
+          ],
+        }),
+      },
+    ),
+    f.db,
+    f.owner,
+    "test",
+  );
+  assert.equal(response.status, 200);
+  const result = checkedDialogue(
+    (
+      await (
+        await message(f, CONFIRM_SCHEDULE, "schedule-old-confirm", 2)
+      ).json()
+    ).data,
+  );
+  assert.equal(result.runs.at(-1).reply.stage, "schedule_guidance");
+  assert.equal(result.runs.find((r) => r.id === p.id).schedule_stale, true);
+  const fresh = checkedDialogue(
+    (
+      await (
+        await message(f, futureWindows(30), "schedule-new-windows", 3)
+      ).json()
+    ).data,
+  ).runs.at(-1).reply.schedule;
+  assert.equal(fresh.review_revision, 1);
+  assert.equal(fresh.tasks[0].duration_minutes, 25);
+});
+test("schedule cannot bypass ownership, chat revision, Goal changes or policy", async (t) => {
+  const f = await ready(t);
+  assert.equal(
+    (await message(f, futureWindows(30), "schedule-wrong-revision", 0)).status,
+    409,
+  );
+  const wrong = await dialogueResponse(
+    new globalThis.Request(`http://localhost/api/v1/goals/${f.goal}/messages`),
+    f.db,
+    "other-owner",
+    "test",
+    {},
+  );
+  assert.equal(wrong.status, 404);
+  const policy = checkedDialogue(
+    (
+      await (
+        await message(
+          f,
+          "可用时段：北京时间，2026-10-20 20:00-21:00，停药",
+          "schedule-policy",
+        )
+      ).json()
+    ).data,
+  );
+  assert.equal(policy.runs.at(-1).reply.source, "policy");
+  const denied = checkedDialogue(
+    (
+      await (
+        await message(f, futureWindows(30), "schedule-policy-inherited", 2)
+      ).json()
+    ).data,
+  );
+  assert.equal(denied.runs.at(-1).reply.schedule, undefined);
+  await f.db
+    .prepare("UPDATE goals SET revision=1 WHERE id=?")
+    .bind(f.goal)
+    .run();
+  assert.equal(
+    (await message(f, futureWindows(30), "schedule-old-goal", 3)).status,
+    409,
+  );
+});
 function message(f, text, key, chat = 1) {
   return dialogueResponse(
     new globalThis.Request(

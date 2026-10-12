@@ -1,7 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { checkedDialogue, dialogueError, reviewSuggestions } from '../src/goals/dialogue.ts';
+import {checkedSchedule,scheduleTime,isScheduleText} from '../src/goals/schedule.ts';
 const base={goal:{id:'00000000-0000-0000-0000-000000000001',title:'test',description:'test',timeframe_note:'',status:'draft',revision:0},chat_revision:1,runs:[{id:'fixture-run',turn_index:1,user_text:'test',status:'succeeded',error_code:null,reply:{schema_version:1,kind:'question',question:'每周几次？',reason:'了解时间',source:'deepseek'}}]};
+test('schedule trial provenance, exact duration, windows, dependencies and preview status are checked',()=>{
+ const id='00000000-0000-0000-0000-000000000001',start=Date.parse('2026-10-20T12:00:00Z');
+ const schedule={attempt_id:id,goal_revision:0,review_revision:0,timezone:'Asia/Shanghai',windows:[{start_at:start,end_at:start+3600000}],scope:'first_stage_once_v1',tasks:[{id,title:'练习',duration_minutes:20,depends_on:[]}]};
+ const reply={schema_version:1,source:'harness',kind:'notice',question:'核对时段',reason:'只做试排',requested_slot:null,stage:'schedule_proposed',schedule};
+ assert.equal(checkedDialogue({...base,runs:[{...base.runs[0],reply}]}).runs[0].reply.schedule.scope,'first_stage_once_v1');
+ assert.throws(()=>checkedDialogue({...base,runs:[{...base.runs[0],reply:{...reply,source:'deepseek'}}]}));
+ const preview={...schedule,confirmed_from_run_id:id,preview:{schema_version:1,status:'preview_only',strategy:'stable_topological_earliest_v1',timezone:'Asia/Shanghai',placements:[{task_id:id,start_at:start,end_at:start+1200000}],unplaced:[]}};
+ checkedSchedule(preview,'schedule_preview');
+ for(const patch of [{status:'scheduled'},{placements:[{task_id:id,start_at:start,end_at:start+60000}]},{placements:[{task_id:id,start_at:start-1,end_at:start+1200000-1}]},{unplaced:[{task_id:id,reason:'no_legal_window'}]}])assert.throws(()=>checkedSchedule({...preview,preview:{...preview.preview,...patch}},'schedule_preview'));
+ assert.throws(()=>checkedSchedule({...schedule,tasks:[{...schedule.tasks[0],depends_on:[id]}]},'schedule_proposed'));
+ assert.match(scheduleTime(start,'Asia/Shanghai'),/20:00/);
+ assert.equal(isScheduleText('可用时段：北京时间，2026-10-20 20:00-21:00'),true);
+});
 test('dialogue provenance and completion state cannot be forged',()=>{
   assert.equal(checkedDialogue(base).runs[0].reply.source,'deepseek');
   for(const reply of [{...base.runs[0].reply,source:'policy'},{...base.runs[0].reply,schema_version:2},null])assert.throws(()=>checkedDialogue({...base,runs:[{...base.runs[0],reply}]}));
