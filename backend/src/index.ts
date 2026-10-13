@@ -1,13 +1,8 @@
 import { planningResponse } from "./agent/planning-jobs.ts";
-import { reviewResponse } from "./agent/review-service.ts";
-import { planResponse } from "./agent/plan-service.ts";
 import { createAuth, isLocalHost, type AuthEnv } from "./auth.ts";
 import { goalsResponse } from "./goals.ts";
-import { slotsResponse } from "./slots.ts";
-import { researchResponse } from "./research/service.ts";
-import { searchResponse } from "./research/search-service.ts";
 import type { SearchEnv } from "./research/search-provider.ts";
-import { jobResponse, type WorkflowBinding } from "./research/jobs.ts";
+import type { WorkflowBinding } from "./agent/workflow-binding.ts";
 import { dialogueResponse } from "./agent/harness.ts";
 import { calendarResponse } from "./scheduling/calendar.ts";
 import type { AgentEnv } from "./agent/provider.ts";
@@ -65,7 +60,7 @@ async function authResponse(
   if (
     path === "/api/v1/calendar/fixed-events" ||
     path === "/api/v1/goals" ||
-    /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:slots|messages|evidence|research-runs|search-runs|plan-drafts|draft-reviews|planning-runs))?$/.test(
+    /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|planning-runs))?$/.test(
       path,
     )
   ) {
@@ -88,22 +83,6 @@ async function authResponse(
         id,
         env.RESEARCH_WORKFLOW,
       );
-    if (path.endsWith("/draft-reviews"))
-      return reviewResponse(request, env.DB!, session.user.id, id);
-    if (path.endsWith("/plan-drafts"))
-      return planResponse(request, env.DB!, session.user.id, id, env);
-    if (path.endsWith("/search-runs"))
-      return searchResponse(request, env.DB!, session.user.id, id, env);
-    if (path.endsWith("/research-runs"))
-      return jobResponse(
-        request,
-        env.DB!,
-        session.user.id,
-        id,
-        env.RESEARCH_WORKFLOW,
-      );
-    if (path.endsWith("/evidence"))
-      return researchResponse(request, env.DB!, session.user.id, id);
     if (path.endsWith("/messages"))
       return dialogueResponse(
         request,
@@ -114,9 +93,7 @@ async function authResponse(
         undefined,
         env.RESEARCH_WORKFLOW,
       );
-    return path.endsWith("/slots")
-      ? slotsResponse(request, env.DB!, session.user.id, id)
-      : goalsResponse(request, env.DB!, session.user.id, id);
+    return goalsResponse(request, env.DB!, session.user.id, id);
   }
   if (path === "/api/v1/me") {
     if (request.method !== "GET")
@@ -336,7 +313,7 @@ export function createApp({
       const isGoals =
         path === "/api/v1/calendar/fixed-events" ||
         path === "/api/v1/goals" ||
-        /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:slots|messages|evidence|research-runs|search-runs|plan-drafts|draft-reviews|planning-runs))?$/.test(
+        /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|planning-runs))?$/.test(
           path,
         );
       const isAuth =

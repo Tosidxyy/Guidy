@@ -13,8 +13,8 @@ import {
   type SearchEnv,
   type SearchProvider,
 } from "../research/search-provider.ts";
-import type { WorkflowBinding } from "../research/jobs.ts";
-import { boundedText } from "../research/provider.ts";
+import type { WorkflowBinding } from "./workflow-binding.ts";
+import { boundedText } from "../http/bounded-text.ts";
 
 type Env = AgentEnv & SearchEnv;
 type Job = {

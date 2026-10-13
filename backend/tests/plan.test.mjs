@@ -495,7 +495,7 @@ test("draft budget, readiness, snippet-only evidence and authentication prevent 
       BETTER_AUTH_URL: "http://127.0.0.1:8787",
     };
   for (const r of [f.get(), f.req("plan-anonymous")])
-    assert.equal((await app.fetch(r, auth)).status, 401);
+    assert.equal((await app.fetch(r, auth)).status, 404);
 });
 
 test("concurrent plan replay claims once and daily model quota blocks new attempts", async (t) => {

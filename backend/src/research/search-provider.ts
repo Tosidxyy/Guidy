@@ -1,4 +1,4 @@
-import { boundedText } from "./provider.ts";
+import { boundedText } from "../http/bounded-text.ts";
 
 export interface SearchEnv {
   DOUBAO_SEARCH_API_KEY?: string;

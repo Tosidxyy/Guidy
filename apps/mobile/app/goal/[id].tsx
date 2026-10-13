@@ -4,16 +4,14 @@ import { KeyboardAvoidingView, Platform, TextInput } from 'react-native';
 import { Action, AppText, Badge, Caption, Card, Screen } from '../../src/components/ui';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { useAccount } from '../../src/auth/AuthProvider';
-import { getConditions, GoalApiError, updateGoal, type AccountGoal } from '../../src/goals/api';
-import { type SavedSlot } from '../../src/goals/clarification';
-import type { Readiness } from '../../src/goals/readiness';
+import { getGoal, GoalApiError, updateGoal, type AccountGoal } from '../../src/goals/api';
 
 export default function GoalDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user, pending } = useAccount();
   const owner = user?.id;
   const { colors } = useTheme();
-  const [record, setRecord] = useState<{owner: string; goal: AccountGoal; slots: SavedSlot[]; readiness?:Readiness} | null>(null);
+  const [record, setRecord] = useState<{owner: string; goal: AccountGoal} | null>(null);
   const [description, setDescription] = useState('');
   const [timeframe, setTimeframe] = useState('');
   const [error, setError] = useState('');
@@ -37,10 +35,10 @@ export default function GoalDetail() {
     setNotice('');
     setLoading(!!owner);
     setRecord(null);
-    if (owner) getConditions(id, controller.signal).then(result => {
-      const value = result.goal;
+    if (owner) getGoal(id, controller.signal).then(result => {
+      const value = result;
       if (controller.signal.aborted) return;
-      setRecord({owner,goal:value,slots:result.slots,readiness:result.readiness});
+      setRecord({owner,goal:value});
       if (!preserve.current) { setDescription(value.description || value.title); setTimeframe(value.timeframe_note); }
       else setNotice('已读取最新版本，保留了你的输入。请核对后再保存。');
       preserve.current = false;
@@ -65,7 +63,7 @@ export default function GoalDetail() {
     try {
       const result = await updateGoal(goal.id,body,operation.current.key);
       if (current !== generation.current) return;
-      setRecord(previous => ({owner:owner!,goal:result,slots:previous && previous.owner === owner ? previous.slots : []})); setDescription(result.description); setTimeframe(result.timeframe_note);
+      setRecord({owner:owner!,goal:result}); setDescription(result.description); setTimeframe(result.timeframe_note);
       setNotice(status === 'paused' ? '目标已暂停。' : goal.status === 'paused' ? '目标已恢复为待澄清草稿。' : '修改已保存。');
       operation.current = null;
       setRefresh(n=>n+1);

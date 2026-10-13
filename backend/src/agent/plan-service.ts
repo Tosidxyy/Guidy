@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types";
-import { boundedText } from "../research/provider.ts";
+import { boundedText } from "../http/bounded-text.ts";
 import { slotsResponse } from "../slots.ts";
 import {
   AgentError,

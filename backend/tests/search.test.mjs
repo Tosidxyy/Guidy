@@ -380,7 +380,7 @@ test("concurrent replay makes one external call; interrupted attempt becomes unk
   assert.equal(called, 1);
 });
 
-test("search readiness gate prevents unsupported search; route requires authentication", async (t) => {
+test("internal search gate rejects missing facts; retired public route is unavailable", async (t) => {
   const f = await fixture(t);
   await f.db
     .prepare("DELETE FROM goal_slots WHERE goal_id=?")
@@ -396,7 +396,7 @@ test("search readiness gate prevents unsupported search; route requires authenti
     BETTER_AUTH_URL: "http://127.0.0.1:8787",
   };
   for (const request of [f.get(), f.request("anonymous-key")])
-    assert.equal((await app.fetch(request, authEnv)).status, 401);
+    assert.equal((await app.fetch(request, authEnv)).status, 404);
   assert.equal(
     (await f.db.prepare("SELECT count(*) n FROM search_attempts").first()).n,
     0,

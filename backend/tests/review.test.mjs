@@ -288,7 +288,7 @@ test("concurrent saves claim one next revision; review endpoint requires authent
       BETTER_AUTH_URL: "http://127.0.0.1:8787",
     };
   for (const r of [f.get(), f.request("anonymous-review")])
-    assert.equal((await app.fetch(r, auth)).status, 401);
+    assert.equal((await app.fetch(r, auth)).status, 404);
 });
 
 test("version ceiling is read-only and database rejects a review attached to another goal", async (t) => {

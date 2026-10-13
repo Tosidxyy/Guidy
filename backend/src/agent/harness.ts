@@ -6,7 +6,7 @@ import {
   clarificationLimits,
 } from "./clarification-budget.ts";
 import { planningStatements, dispatchPlanning } from "./planning-jobs.ts";
-import type { WorkflowBinding } from "../research/jobs.ts";
+import type { WorkflowBinding } from "./workflow-binding.ts";
 import type { D1Database } from "@cloudflare/workers-types";
 import { checkedSuggestions, type SlotSuggestion } from "./suggestions.ts";
 import {

@@ -131,3 +131,10 @@ clarify-v3已接首批聊天答案受控保存，见[AI harness](AI_HARNESS.md)�
 停止提问已接chat_auto_v1：持久Job→研究判断/按需通用检索→证据快照→strict草稿校验，复用ResearchWorkflow按D1 Job类型分发，客户端只轮询并在聊天显示最终草稿。付费阶段claim/配额/版本/policy受harness控制，不重跑未知调用。API GET/POST planning-runs仅本人进度与同ID派发恢复；停止同键只返回原任务，另生成要明确确认。详见[AI harness](AI_HARNESS.md)。自然语言改稿、完整领域核验、具体时间窗/批准入历仍待实现。
 
 Goal聊天已接draft-edit-v1确定性单项数字提案与明确采用，复用现有review不可变版本和JSON提议，不新增表/迁移；费用统计排除无模型edit run。服务端绑定原提议与Goal/审阅/最新来源，规划GET返回原plan及latest review；详见[PlanDraft](PLAN_DRAFT.md)。这不等于自然语言任意改步骤、领域核验或计划批准排程。
+
+
+### 2026-10-14 手动研究与表单路由退役
+
+普通产品入口仅保留目标、Guidy！卡片问答、后台 planning-runs 和日历读取。旧 slots、evidence、research-runs、search-runs、plan-drafts、draft-reviews HTTP 路由返回 404；对应五个移动端手动页面和未使用的提案组件删除。ResearchWorkflow 仅执行已持久化 planning_jobs 的研究判断、豆包搜索和草稿生成；不存在的任务结束，不再回退到旧网页逐条读取。
+
+结构化用户事实、严格草稿校验、审阅版本与调用用量模型仍被新流程使用，不能因为删除表单而删除这些内部数据约束。旧手动 plan/search/review 服务的内部测试与实现暂留在源码中，已从 Worker 路由及打包入口解除；后续继续精简。旧计划数据清理、完整阶段周期和最终批准入历尚未完成，本次路由退役不会删除用户数据。
