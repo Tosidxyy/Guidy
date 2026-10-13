@@ -133,6 +133,7 @@
 - [ ] 实现确定性 `SchedulingService`：识别硬约束、筛选合法候选、返回冲突原因与 1–3 个备选（若有）。
 - [x] 首批纯排程预览内核：明确 UTC 实例/时间窗及 IANA 时区，检查占用、依赖/环、固定时间、截止及系列休息间隔，返回拟安排/未安排原因。（9项自动测试及构建通过；有界贪心非最优，未接聊天/API/真实日历，无批准写入，完整服务项保持未完成；见 [排程预览说明](SCHEDULING_PREVIEW.md)。）
 - [x] 聊天首批时段核对/试排：明确北京时间或UTC日期窗口，确认后首阶段各项一次，冻结草稿/审阅版本、解释未安排、原文/确认/预览恢复；旧来源/条件/审阅/过期拒绝，配额耗尽仍可零模型试排。（真实D1/浏览器/隔离云API通过并部署；iPhone新版未验证。未展开完整周频次/阶段周期、通用自然日期/全时区、真实日历占用或批准入历。）
+- [x] 首阶段一周频次试排：从首个时段本地日期起连续7天，展开独立重复实例、同项每天最多一次、依赖顺序、已排/未排次数；显式一周确认，旧一次协议兼容。（28项后端/33项前端状态及浏览器/隔离云API通过并部署，iPhone新版未验证；仍非多阶段/多周完整计划，领域休息要求、真实日历占用及批准入历未完成。）
 - [ ] 跨日、时区、夏令时、重叠、依赖环、无可用窗口增加自动化测试。
 - [ ] 完成 App 内日历 Agenda 与日/周视图的最小实现。
 - [ ] 实现预览/确认事务：`expected_goal_revision + Idempotency-Key`；并发冲突返回 409，不能静默覆盖。
@@ -909,3 +910,17 @@ flowchart TD
 - 无迁移，开发云部署148eb3eb-e021-478d-a412-1a05d4858c9a；health200、匿名messages GET/POST401通过。隔离身份/真实云登录与Goal API、受控原稿+completed Job→真实时段提议→明确确认preview→同键重放仅3个run→GET恢复/客户端Schema通过，Goal revision0/active_plan NULL不变。模型/搜索/邮件0，精确清验证/测试身份/级联，无Key或真实用户正文读取。新增iPhone时段/确认/Intl显示/键盘专项未验证，不能当真机验收。
 - 排程协议3个相对链接、diff/暂存范围检查通过，无环境/凭据改动；实现Commit：70c759ff5bf9e7080c1cf638d2225ebb3d045cdb。只完成新增试排子项，完整M2/批准入历保持未完成；TODO单独提交后push origin/main核对远程SHA。
 - 下一轮推进明确的阶段周期与重复实例、真实App日历占用及版本化预览，再接一次批准原子入历；用户不需人工填写Slot，未经批准不产生生效日历事件。
+
+### 2026-10-13 — 首阶段一周重复实例 / 每日一次试排
+
+- 本轮从重复实例拆出首阶段一周：新增聊天入口/ASK_WEEK、harness时段模式与独立CONFIRM_WEEK，首个声明日期本地00:00起连续7天、结束不含，不默认周一至周日或阶段持续周期；窗口必须全部在周期内。旧ASK/CONFIRM/一次scope及历史兼容，旧一次确认不能批准新一周提议。
+- weeklyTrial按最早阶段最新审阅frequency展开1–7次/项、最多42次，原Task UUID作为series_id、UUID_ordinal独立试排身份、ordinal/repeat_count保留；原稿不覆盖。前置项本周全部试排实例先拟安排，再排后续项，同项ordinal串联；这是明确展示的保守时间试排顺序，不冒充任务实际完成/阶段完成，缺前置/窗口不足保留未安排。
+- 内核max_per_day=1限UTC/Asia/Shanghai，按已确认本地日界切窗口并阻断同系列已占用日期，不能把周三次挤在同一晚；不跨本地午夜，不把每日一次当领域最短休息间隔。busy仍为空、真实日历/领域完整约束/跨阶段多周/DST全时区/批准入历未完成，界面/协议明确。Goal/Slot/PlanVersion/日历/提醒不写，新实例仅存在私有run产物；owner/Goal/Review/最新源/时段过期/并发/policy/幂等和免费40轮规则沿用。
+- 周期/总次数/序号/已排与未排卡片结合03-plan-detail/02-agent-chat/设计系统黑白视觉，应用React与前端调试技能/多TSX检查，不改导航/品牌，不新增人工字段表单。客户端校验周期7天及首窗口本地日界、原模板series/独立身份/完整重复数、依赖/原时长/每日一次/preview_only，模型不能伪装模式或执行状态。
+- backend typecheck/lint/format:check、build:cloud通过；node --experimental-strip-types --test tests/weekly-preview.test.mjs tests/scheduling-preview.test.mjs tests/draft-edit.test.mjs共28项通过，覆盖七次分七日/已有占用、明确周边界、依赖全实例及序号、同UTC日期不同本地日期、跨本地午夜拒绝、旧内核/一次协议、真实D1周确认前无预览/重放/原稿、一天只排一次/未安排、范围外窗口指导/模式不匹配，以及原改稿/版本/policy/owner保护。未重复无关全量回归。
+- mobile typecheck/lint、test:ui-state共33项、export:ios通过；最终补充周期首日精确校验后重跑dialogue专项10项及typecheck/lint/ios导出均通过。初次PowerShell替换脚本引号解析失败未执行，改用patch/正确字面量；一次测试导入patch因格式不匹配未修改，修正后通过，不虚报初次结果。
+- Browser plugin not available，Playwright/Edge真实本地OTP/Goal/条件，受控原稿、但messages/周试排及D1真实：询问→三窗口→确认前preview0→确认3次/3日→重进恢复→单日窗口仅1排/2未排，原稿任务仍1项、active_plan NULL、未发送输入保留、模型0；393×852/320×480无横溢/输入发送可见，0意外error/warn，截图已检查。仅启动8090/8787 QA服务，无手机8089改动；脚本截图仓库外，精确清QA账号。
+- 云首次部署前secret-name检查fetch失败，诊断api.guidy/GitHub直连可用，api.cloudflare Node超时、系统PowerShell404；系统已配置本地代理，Wrangler进程临时沿用后部署成功，未改系统代理/证书/秘密值或环境文件。首次隔离云QA原生fetch直连失败并精确清理；确认Node支持--use-env-proxy，测试进程沿用同代理后通过，不把失败当通过。
+- 无迁移，最终开发云部署089d6459-280f-405b-8e6b-f751c832869a；health200、匿名messages GET/POST401通过。隔离身份/真实云认证与Goal API、受控原稿+completed Job→真实一周请求/窗口提议→明确确认3实例/3不同日期→同键重放仍4个run→GET恢复与客户端Schema通过，Goal revision0/active_plan NULL不变；模型/搜索/邮件0，精确清验证/测试身份/级联，无Key或真实用户正文读取。新iPhone一周显示/恢复/键盘仍未验证。
+- 排程协议3个相对链接、diff/暂存范围检查通过，无环境/凭据改动；实现Commit：d8f7b768adc53f5ce199f0220e24c5a4c6f6039f。只完成一周重复试排子项，完整M2/实际日历/确认事务保持未完成；TODO单独提交后push origin/main核对远程SHA。
+- 下一轮优先真实App日历占用与不可变预览/版本快照，再接一次批准原子入历；阶段周期和领域休息要求通过聊天补问，不将周试排当完整可执行方案。
