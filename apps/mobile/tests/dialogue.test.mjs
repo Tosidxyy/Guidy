@@ -2,6 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { checkedDialogue, dialogueError, reviewSuggestions } from '../src/goals/dialogue.ts';
 import {checkedBusy,checkedCalendar} from '../src/goals/calendar.ts';
+import {chatPresentation} from '../src/goals/chat-presentation.ts';
+import {requestTimeout,PLANNING_READ_INTERRUPTED} from '../src/goals/request-policy.ts';
+test('legacy scheduling protocols present short chat without rewriting stored messages; read timeout does not imply regeneration',()=>{
+ const run={user_text:'请帮我按每周频次预览首阶段一周。',reply:{source:'harness',stage:'schedule_guidance',question:'请提供首个日期起连续7天内的可用时段。例如：可用时段：北京时间，2026-10-15 20:00-21:00。'}};
+ const shown=chatPresentation(run);assert.equal(shown.userText,'看看接下来一周怎么安排');assert.ok(shown.question.length<55);assert.match(shown.example,/2026-10-15/);assert.match(run.reply.question,/连续7天/);
+ assert.equal(requestTimeout('/g/planning-runs'),30000);assert.equal(requestTimeout('/g/plan-drafts'),40000);assert.equal(requestTimeout('/g/messages'),30000);assert.equal(requestTimeout(''),10000);assert.match(PLANNING_READ_INTERRUPTED,/不要重复生成/);
+});
 test('confirmed account occupancy requires user provenance, valid ranges and an explicit receipt',()=>{
  const id='00000000-0000-0000-0000-000000000001',e={id,title:'已确认占用',start_at:1,end_at:60001,timezone:'UTC',fixed:1,source:'user'},b={calendar_revision:0,timezone:'UTC',events:[e]};
  checkedBusy(b,'busy_proposed');assert.throws(()=>checkedBusy(b,'busy_saved'));checkedBusy({...b,calendar_revision:1,confirmed_from_run_id:id},'busy_saved');

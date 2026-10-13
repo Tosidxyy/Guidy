@@ -1,3 +1,4 @@
+import {requestTimeout,PLANNING_READ_INTERRUPTED} from './request-policy';
 import {checkedCalendar,type CalendarSnapshot} from './calendar';
 import {checkedPlanning,type PlanningSnapshot} from './planning';
 import { checkedPlans,planError,checkedReviews,reviewError,type ReviewSnapshot,type ReviewChange,type PlanSnapshot } from './plans';
@@ -23,7 +24,7 @@ async function request(method: 'GET' | 'POST' | 'PATCH', body?: Record<string, u
   const cancel = () => controller.abort();
   signal?.addEventListener('abort', cancel, { once: true });
   if (signal?.aborted) controller.abort();
-  const timer = setTimeout(cancel, path.endsWith('/plan-drafts') ? 40_000 : path.endsWith('/messages')||path.endsWith('/evidence')||path.endsWith('/research-runs')||path.endsWith('/search-runs') ? 30_000 : 10_000);
+  const timer = setTimeout(cancel, requestTimeout(path));
   try {
     const response = await fetch(path.startsWith('/api/v1/calendar/')?`${apiOrigin}${path}`:`${apiOrigin}/api/v1/goals${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: Platform.OS === 'web' ? 'include' : 'omit', signal: controller.signal });
     const payload = await response.json();
@@ -42,6 +43,7 @@ async function request(method: 'GET' | 'POST' | 'PATCH', body?: Record<string, u
     if (payload.error !== null || !payload.data) throw new Error('服务响应格式不正确。');
     return payload.data;
   } catch (error) {
+    if(path.endsWith('/planning-runs')&&(controller.signal.aborted||!(error instanceof Error)||error.name==='TypeError'))throw new Error(PLANNING_READ_INTERRUPTED);
     if(path.endsWith('/plan-drafts')&&(controller.signal.aborted||!(error instanceof Error)||error.name==='TypeError'))throw new Error('草稿连接中断，结果可能已保存。请先读取状态或恢复同一请求，不会自动重新生成。');
     if(path.endsWith('/search-runs')&&(controller.signal.aborted||!(error instanceof Error)||error.name==='TypeError'))throw new Error('搜索连接中断，结果可能已保存。请先读取状态或恢复同一请求，不会自动重新搜索。');
     if (controller.signal.aborted) throw new Error('连接超时或已取消，输入未清空，请重试。');

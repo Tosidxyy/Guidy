@@ -150,7 +150,7 @@ export async function scheduleChat(
     last = rows[2].results[0],
     now = Date.now();
   const exampleDate = new Date(now + 2 * 86400000).toISOString().slice(0, 10);
-  const exampleDate2 = new Date(now + 4 * 86400000).toISOString().slice(0, 10);
+
   const lastReply = last?.reply_json
     ? JSON.parse(String(last.reply_json))
     : null;
@@ -163,7 +163,7 @@ export async function scheduleChat(
         lastReply?.schedule?.scope === "first_stage_week_v1"));
   let stage = "schedule_guidance",
     schedule: ScheduleData | undefined;
-  let question = `哪几个具体日期和时段有空？首批支持北京时间或UTC，例如：可用时段：北京时间，${exampleDate} 20:00-21:00；${exampleDate2} 20:00-21:00。请填写未来31天内的日期，最多7个时段；这次只试排首阶段各项一次。`;
+  let question = "你具体哪几天、什么时段有空？请同时说明时区。";
   const policy =
     !!rows[1].results.length ||
     /处方|停药|减药|增药|药物剂量|诊断|自杀|自残|伤病|怀孕|糖尿病|心脏病/.test(
@@ -283,7 +283,8 @@ export async function scheduleChat(
               : "请核对以下可用时段。确认后仅试排首阶段各项一次，暂不展开每周频次，也不批准入历。";
         }
       } else
-        question = `时段尚不能确定。请注明北京时间或UTC，以及完整日期和起止时间，例如：可用时段：北京时间，${exampleDate} 20:00-21:00。只支持未来31天内最多7个不重叠的同日时段，不猜测“明天”“你来安排”或其他时区。`;
+        question =
+          "日期、时区或时间还没确定，可以说明具体日期、几点到几点，以及北京时间或UTC吗？";
     }
   }
   if (
@@ -292,7 +293,7 @@ export async function scheduleChat(
     source?.draft_json &&
     source.goal_revision === goalRevision
   )
-    question = `请提供首个日期起连续7天内的可用时段，例如：可用时段：北京时间，${exampleDate} 20:00-21:00；${exampleDate2} 20:00-21:00。按首阶段每周频次试排，同项每天最多一次；不足会标记未安排，后续阶段周期仍待确认。`;
+    question = "接下来一周，你具体哪几天、什么时段有空？请同时说明时区。";
   if (weekly && stage === "schedule_preview")
     question =
       "已按确认的一周频次及每日一次规则试排首阶段。尚未检查真实日历占用或完整领域约束，没有写入日历。";
@@ -323,13 +324,21 @@ export async function scheduleChat(
     kind: policy ? "referral" : "notice",
     source: policy ? "policy" : "harness",
     question,
-    reason:
-      "仅核对用户声明的可用窗，不读取外部日历；试排不代表完整周期或生效计划。",
+    reason: "我会先核对时间，再展示安排；确认方案前不会写入目标任务。",
     ...(policy
       ? {}
       : {
           requested_slot: null,
           stage,
+          ...(stage === "schedule_guidance" &&
+          source?.draft_json &&
+          source.goal_revision === goalRevision
+            ? {
+                schedule_help: {
+                  example_text: `北京时间，${exampleDate} 20:00-21:00`,
+                },
+              }
+            : {}),
           ...(weekly ? { schedule_mode: "first_stage_week_v1" } : {}),
           ...(schedule ? { schedule } : {}),
         }),

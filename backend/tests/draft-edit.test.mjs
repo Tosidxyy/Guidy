@@ -462,6 +462,27 @@ test("calendar reader bounds and authenticated router are registered without log
 test("weekly chat freezes reviewed frequency, expands distinct instances and requires weekly confirmation", async (t) => {
   const f = await ready(t);
   assert.equal((await message(f, ASK_WEEK, "week-ask")).status, 200);
+  const read = checkedDialogue(
+    (
+      await (
+        await dialogueResponse(
+          new globalThis.Request(
+            `http://localhost/api/v1/goals/${f.goal}/messages`,
+          ),
+          f.db,
+          f.owner,
+          "test",
+          {},
+        )
+      ).json()
+    ).data,
+  );
+  assert.ok(read.runs.at(-1).reply.question.length < 55);
+  assert.match(
+    read.runs.at(-1).reply.schedule_help.example_text,
+    /^北京时间，\d{4}-\d{2}-\d{2}/,
+  );
+  assert.ok(!read.runs.at(-1).reply.question.includes("可用时段："));
   const proposal = checkedDialogue(
     (await (await message(f, weekWindows(), "week-propose", 2)).json()).data,
   ).runs.at(-1).reply.schedule;

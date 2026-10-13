@@ -1,3 +1,5 @@
+import {chatPresentation} from '../../../src/goals/chat-presentation';
+import {ScheduleHelp} from '../../../src/components/ScheduleHelp';
 import {BusyProposal} from '../../../src/components/BusyProposal';
 import {ASK_BUSY,isBusyText} from '../../../src/goals/calendar';
 import {ScheduleTrial} from '../../../src/components/ScheduleTrial';
@@ -75,8 +77,8 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
         {data.runs.at(-1)?.reply?.stage!=='draft_requested'&&<Action label="停止提问，先出草稿" secondary={!quotaBlocked} disabled={sending||active||!enabled||(data.asked_topics?.length??0)<3} onPress={()=>send('先到这里，请根据现有信息准备方案草稿。')}/>}
         {(data.asked_topics?.length??0)<3&&<Caption>先了解三个核心信息，再停止提问；每项都可以暂不确定。</Caption>}
         {data.runs.map(run=><View key={run.id} style={{gap:12}}>
-          <Card style={{backgroundColor:colors.action}}><AppText style={{color:colors.onAction}}>{run.user_text}</AppText></Card>
-          {run.status==='running'?<Caption>正在生成建议，你的消息已保存。</Caption>:run.status==='failed'?<Card><AppText>这次生成未完成</AppText><Caption>{dialogueError(run.error_code??'')}</Caption><Action label="把这条消息填回输入框" secondary disabled={sending||active} onPress={()=>setText(run.user_text)}/></Card>:run.reply&&<Card><Badge>{run.reply.source==='policy'?'系统安全提示':'Agent'}</Badge><AppText style={{fontSize:21,fontWeight:'600'}}>{run.reply.question}</AppText><Caption>{run.reply.reason}</Caption></Card>}
+          <Card style={{backgroundColor:colors.action}}><AppText style={{color:colors.onAction}}>{chatPresentation(run).userText}</AppText></Card>
+          {run.status==='running'?<Caption>正在生成建议，你的消息已保存。</Caption>:run.status==='failed'?<Card><AppText>这次生成未完成</AppText><Caption>{dialogueError(run.error_code??'')}</Caption><Action label="把这条消息填回输入框" secondary disabled={sending||active} onPress={()=>setText(run.user_text)}/></Card>:run.reply&&<Card><Badge>{run.reply.source==='policy'?'系统安全提示':'Agent'}</Badge><AppText style={{fontSize:17,fontWeight:'400'}}>{chatPresentation(run).question}</AppText>{run.reply.stage==='schedule_guidance'&&chatPresentation(run).example?<ScheduleHelp example={chatPresentation(run).example!}/>:<Caption>{run.reply.reason}</Caption>}</Card>}
           {run.reply?.busy&&<BusyProposal proposal={run.reply.busy} saved={run.reply.stage==='busy_saved'} stale={run.busy_proposal_stale??false} confirmable={!!enabled&&!sending&&!active&&run.turn_index===data.chat_revision&&run.goal_revision===data.goal.revision} onConfirm={value=>{void send(value);}}/>}
           {run.reply?.schedule&&<ScheduleTrial schedule={run.reply.schedule} stale={run.schedule_stale??false} confirmable={!!enabled&&!sending&&!active&&run.turn_index===data.chat_revision&&data.goal.revision===run.reply.schedule.goal_revision} onConfirm={value=>{void send(value);}}/>}
           {run.reply?.edit_proposal&&<DraftEditProposal key={run.id} id={id} runId={run.id} proposal={run.reply.edit_proposal} receipt={run.edit_receipt_revision} stale={run.edit_proposal_stale} editable={!!enabled&&!sending&&!active&&data.goal.revision===run.reply.edit_proposal.goal_revision} onSaved={()=>setRefresh(n=>n+1)}/> }
@@ -86,7 +88,7 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
 
 
         {data.runs.at(-1)?.reply?.stage==='draft_requested'&&<Action label="继续完善" secondary disabled={sending||active||!enabled} onPress={()=>send('请继续澄清仍未明确的条件。')}/>}
-        <AutomaticPlanning key={owner+':'+id} id={id} owner={owner} chatRevision={data.chat_revision} stopped={data.runs.at(-1)?.reply?.stage==='draft_requested'} stopRunId={data.runs.filter(r=>r.reply?.stage==='draft_requested').at(-1)?.id} canSchedule={!!enabled&&!sending&&!active} onSchedule={()=>{void send(ASK_WEEK);}} onScheduleOnce={()=>{void send(ASK_SCHEDULE);}} onAnother={()=>{void send('先到这里，请根据现有信息准备方案草稿。');}}/>
+        <AutomaticPlanning key={owner+':'+id} id={id} owner={owner} chatRevision={data.chat_revision} stopped={data.runs.at(-1)?.reply?.stage==='draft_requested'} stopRunId={data.runs.filter(r=>r.reply?.stage==='draft_requested').at(-1)?.id} canSchedule={!!enabled&&!sending&&!active} onSchedule={()=>{void send(ASK_WEEK);}} schedulePending={(data.runs.at(-1)?.reply?.stage==='schedule_guidance'&&data.runs.at(-1)?.reply?.schedule_mode==='first_stage_week_v1')||(data.runs.at(-1)?.reply?.stage==='schedule_proposed'&&data.runs.at(-1)?.reply?.schedule?.scope==='first_stage_week_v1')} onAnother={()=>{void send('先到这里，请根据现有信息准备方案草稿。');}}/>
         {!enabled&&<Caption>当前目标只读，暂停草稿请先在详情页继续。</Caption>}
         <Caption>对话会保存在这个目标内。你可以继续补充；自动生成的草稿会显示在这里；已记录条件的更正将在后续接通。</Caption>
       </>}
