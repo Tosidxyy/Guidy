@@ -1,3 +1,4 @@
+import { weeklyTrial } from "./weekly.ts";
 import type { D1Database } from "@cloudflare/workers-types";
 import { isDraftEditText } from "../agent/draft-edit.ts";
 import {
@@ -7,10 +8,15 @@ import {
   type PreviewResult,
 } from "./preview.ts";
 
+export const ASK_WEEK = "请帮我按每周频次预览首阶段一周。";
+export const CONFIRM_WEEK =
+  "确认这些时段，按频次试排首阶段一周，同项每天最多一次。";
 export const ASK_SCHEDULE = "请帮我预览首阶段各项一次的具体时间。";
 export const CONFIRM_SCHEDULE = "确认这些时段，预览首阶段各项一次。";
 export function isScheduleText(text: string) {
   return (
+    text === ASK_WEEK ||
+    text === CONFIRM_WEEK ||
     text === ASK_SCHEDULE ||
     text === CONFIRM_SCHEDULE ||
     /^可用时段[：:]/.test(text) ||
@@ -69,14 +75,19 @@ export function parseWindows(
     return null;
   return { timezone, windows };
 }
-type TrialTask = PreviewTask & { title: string };
+type TrialTask = PreviewTask & {
+  title: string;
+  ordinal?: number;
+  repeat_count?: number;
+};
 export type ScheduleData = {
   attempt_id: string;
   goal_revision: number;
   review_revision: number;
   timezone: "Asia/Shanghai" | "UTC";
   windows: Interval[];
-  scope: "first_stage_once_v1";
+  scope: "first_stage_once_v1" | "first_stage_week_v1";
+  period?: Interval;
   tasks: TrialTask[];
   confirmed_from_run_id?: string;
   preview?: PreviewResult;
@@ -138,6 +149,15 @@ export async function scheduleChat(
     now = Date.now();
   const exampleDate = new Date(now + 2 * 86400000).toISOString().slice(0, 10);
   const exampleDate2 = new Date(now + 4 * 86400000).toISOString().slice(0, 10);
+  const lastReply = last?.reply_json
+    ? JSON.parse(String(last.reply_json))
+    : null;
+  const weekly =
+    text === ASK_WEEK ||
+    text === CONFIRM_WEEK ||
+    (text !== ASK_SCHEDULE &&
+      (lastReply?.schedule_mode === "first_stage_week_v1" ||
+        lastReply?.schedule?.scope === "first_stage_week_v1"));
   let stage = "schedule_guidance",
     schedule: ScheduleData | undefined;
   let question = `哪几个具体日期和时段有空？首批支持北京时间或UTC，例如：可用时段：北京时间，${exampleDate} 20:00-21:00；${exampleDate2} 20:00-21:00。请填写未来31天内的日期，最多7个时段；这次只试排首阶段各项一次。`;
@@ -159,7 +179,7 @@ export async function scheduleChat(
       .first();
     const draft = JSON.parse(String(review?.draft_json ?? source.draft_json));
     const revision = Number(review?.revision ?? 0);
-    if (text === CONFIRM_SCHEDULE) {
+    if (text === CONFIRM_SCHEDULE || text === CONFIRM_WEEK) {
       const previous = last?.reply_json
         ? JSON.parse(String(last.reply_json))
         : null;
@@ -167,6 +187,9 @@ export async function scheduleChat(
         previous?.stage === "schedule_proposed" ? previous.schedule : undefined;
       if (
         !candidate ||
+        (text === CONFIRM_WEEK
+          ? candidate.scope !== "first_stage_week_v1"
+          : candidate.scope !== "first_stage_once_v1") ||
         last.turn_index !== chatRevision ||
         candidate.attempt_id !== source.id ||
         candidate.goal_revision !== goalRevision ||
@@ -182,7 +205,7 @@ export async function scheduleChat(
           preview: previewSchedule({
             schema_version: 1,
             timezone: candidate.timezone,
-            horizon: {
+            horizon: candidate.period ?? {
               start_at: candidate.windows[0].start_at,
               end_at: candidate.windows.at(-1)!.end_at,
             },
@@ -196,7 +219,7 @@ export async function scheduleChat(
         question =
           "已根据你确认的时段试排首阶段各项一次。尚未检查真实日历占用或完整领域约束，没有写入日历。";
       }
-    } else if (text !== ASK_SCHEDULE) {
+    } else if (text !== ASK_SCHEDULE && text !== ASK_WEEK) {
       const parsed = parseWindows(text, now);
       if (parsed) {
         const firstStage = Math.min(
@@ -228,14 +251,47 @@ export async function scheduleChat(
             scope: "first_stage_once_v1",
             tasks,
           };
-          stage = "schedule_proposed";
-          question =
-            "请核对以下可用时段。确认后仅试排首阶段各项一次，暂不展开每周频次，也不批准入历。";
+          if (weekly) {
+            const selected = draft.tasks.filter(
+              (task: { stage: number }) => task.stage === firstStage,
+            );
+            const expanded = weeklyTrial(
+              selected,
+              parsed.windows,
+              parsed.timezone,
+            );
+            if (!expanded) {
+              schedule = undefined;
+              question =
+                "一周试排的时段须全部落在首个日期起的连续7天内，请重新提供；不猜测其他阶段或范围外依赖。";
+            } else {
+              schedule = {
+                ...schedule,
+                ...expanded,
+                scope: "first_stage_week_v1",
+              };
+            }
+          }
+          stage = schedule ? "schedule_proposed" : "schedule_guidance";
+          if (schedule)
+            question = weekly
+              ? "请核对首阶段一周的时段与频次：同项每天最多一次，前置项本周试排实例全部排完后再排后续项；不足会标记未安排，不批准入历。"
+              : "请核对以下可用时段。确认后仅试排首阶段各项一次，暂不展开每周频次，也不批准入历。";
         }
       } else
         question = `时段尚不能确定。请注明北京时间或UTC，以及完整日期和起止时间，例如：可用时段：北京时间，${exampleDate} 20:00-21:00。只支持未来31天内最多7个不重叠的同日时段，不猜测“明天”“你来安排”或其他时区。`;
     }
   }
+  if (
+    weekly &&
+    text === ASK_WEEK &&
+    source?.draft_json &&
+    source.goal_revision === goalRevision
+  )
+    question = `请提供首个日期起连续7天内的可用时段，例如：可用时段：北京时间，${exampleDate} 20:00-21:00；${exampleDate2} 20:00-21:00。按首阶段每周频次试排，同项每天最多一次；不足会标记未安排，后续阶段周期仍待确认。`;
+  if (weekly && stage === "schedule_preview")
+    question =
+      "已按确认的一周频次及每日一次规则试排首阶段。尚未检查真实日历占用或完整领域约束，没有写入日历。";
   if (policy) {
     schedule = undefined;
     question =
@@ -250,7 +306,12 @@ export async function scheduleChat(
       "仅核对用户声明的可用窗，不读取外部日历；试排不代表完整周期或生效计划。",
     ...(policy
       ? {}
-      : { requested_slot: null, stage, ...(schedule ? { schedule } : {}) }),
+      : {
+          requested_slot: null,
+          stage,
+          ...(weekly ? { schedule_mode: "first_stage_week_v1" } : {}),
+          ...(schedule ? { schedule } : {}),
+        }),
   };
   const id = crypto.randomUUID();
   const claim = await db.batch([

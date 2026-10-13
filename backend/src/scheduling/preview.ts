@@ -9,6 +9,8 @@ export type PreviewTask = {
   fixed_start_at?: number;
   series_id?: string;
   minimum_gap_minutes?: number;
+  /** First release: resolved local days in UTC or Asia/Shanghai only. */
+  max_per_day?: 1;
 };
 export type PreviewInput = {
   schema_version: 1;
@@ -117,6 +119,13 @@ function validate(input: PreviewInput): void {
     }
     if (task.series_id !== undefined && !id(task.series_id)) invalid();
     if (
+      task.max_per_day !== undefined &&
+      (task.max_per_day !== 1 ||
+        !task.series_id ||
+        !["UTC", "Asia/Shanghai"].includes(input.timezone))
+    )
+      invalid();
+    if (
       task.minimum_gap_minutes !== undefined &&
       (!task.series_id ||
         !Number.isInteger(task.minimum_gap_minutes) ||
@@ -180,7 +189,17 @@ export function previewSchedule(input: PreviewInput): PreviewResult {
   const ends = new Map(
     input.completed_dependencies.map((entry) => [entry.id, entry.completed_at]),
   );
-  const series: { id: string; interval: Interval; gap: number }[] = [];
+  const series: {
+    id: string;
+    interval: Interval;
+    gap: number;
+    daily: boolean;
+  }[] = [];
+  const day = (at: number) => {
+    const offset = input.timezone === "Asia/Shanghai" ? 8 * 3600000 : 0;
+    const start_at = Math.floor((at + offset) / 86400000) * 86400000 - offset;
+    return { start_at: Math.max(0, start_at), end_at: start_at + 86400000 };
+  };
   let remaining = [...input.tasks].sort((a, b) =>
     a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
   );
@@ -216,9 +235,29 @@ export function previewSchedule(input: PreviewInput): PreviewResult {
           ),
           end_at: entry.interval.end_at + Math.max(gap, entry.gap),
         })),
+      ...series
+        .filter(
+          (entry) =>
+            entry.id === task.series_id &&
+            (task.max_per_day === 1 || entry.daily),
+        )
+        .map((entry) => day(entry.interval.start_at)),
     ]);
     let placement: Placement | undefined;
-    for (const window of windows) {
+    const taskWindows =
+      task.max_per_day === 1
+        ? windows.flatMap((window) => {
+            const pieces: Interval[] = [];
+            let start = window.start_at;
+            while (start < window.end_at) {
+              const end = Math.min(window.end_at, day(start).end_at);
+              pieces.push({ start_at: start, end_at: end });
+              start = end;
+            }
+            return pieces;
+          })
+        : windows;
+    for (const window of taskWindows) {
       let start = task.fixed_start_at ?? Math.max(earliest, window.start_at);
       for (const block of blocked) {
         if (block.end_at <= start) continue;
@@ -247,7 +286,12 @@ export function previewSchedule(input: PreviewInput): PreviewResult {
     placements.push(placement);
     ends.set(task.id, placement.end_at);
     if (task.series_id)
-      series.push({ id: task.series_id, interval: placement, gap });
+      series.push({
+        id: task.series_id,
+        interval: placement,
+        gap,
+        daily: task.max_per_day === 1,
+      });
   }
   return {
     schema_version: 1,

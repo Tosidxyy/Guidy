@@ -14,6 +14,8 @@ import {
   parseWindows,
   ASK_SCHEDULE,
   CONFIRM_SCHEDULE,
+  ASK_WEEK,
+  CONFIRM_WEEK,
 } from "../src/scheduling/chat.ts";
 import { checkedDialogue } from "../../apps/mobile/src/goals/dialogue.ts";
 import { dialogueResponse } from "../src/agent/harness.ts";
@@ -197,6 +199,100 @@ async function ready(t) {
   await generatePlanning(f.db, f.id, {}, f.model);
   return f;
 }
+function weekWindows(offsets = [2, 3, 4]) {
+  return (
+    "可用时段：北京时间，" +
+    offsets
+      .map(
+        (offset) =>
+          `${new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10)} 20:00-21:00`,
+      )
+      .join("；")
+  );
+}
+test("weekly chat freezes reviewed frequency, expands distinct instances and requires weekly confirmation", async (t) => {
+  const f = await ready(t);
+  assert.equal((await message(f, ASK_WEEK, "week-ask")).status, 200);
+  const proposal = checkedDialogue(
+    (await (await message(f, weekWindows(), "week-propose", 2)).json()).data,
+  ).runs.at(-1).reply.schedule;
+  assert.equal(proposal.scope, "first_stage_week_v1");
+  assert.equal(proposal.tasks.length, 3);
+  assert.equal(new Set(proposal.tasks.map((task) => task.id)).size, 3);
+  assert.equal(proposal.preview, undefined);
+  const result = checkedDialogue(
+    (await (await message(f, CONFIRM_WEEK, "week-confirm", 3)).json()).data,
+  );
+  const schedule = result.runs.at(-1).reply.schedule;
+  assert.equal(schedule.preview.placements.length, 3);
+  assert.equal(
+    new Set(
+      schedule.preview.placements.map((p) =>
+        new Date(p.start_at + 8 * 3600000).toISOString().slice(0, 10),
+      ),
+    ).size,
+    3,
+  );
+  assert.equal(result.clarification_budget.used, 0);
+  assert.equal(
+    (await (await message(f, CONFIRM_WEEK, "week-confirm", 3)).json()).data.runs
+      .length,
+    4,
+  );
+  const original = await f.db
+    .prepare("SELECT draft_json FROM plan_draft_attempts WHERE id=?")
+    .bind(f.id)
+    .first();
+  assert.equal(JSON.parse(original.draft_json).tasks.length, 1);
+  assert.equal(
+    (
+      await f.db
+        .prepare("SELECT active_plan_version_id FROM goals WHERE id=?")
+        .bind(f.goal)
+        .first()
+    ).active_plan_version_id,
+    null,
+  );
+});
+test("weekly shortages are not packed into one day; out-of-week declarations remain guidance", async (t) => {
+  const f = await ready(t);
+  await message(f, ASK_WEEK, "week-short-ask");
+  await message(f, weekWindows([2]), "week-short-window", 2);
+  const schedule = checkedDialogue(
+    (await (await message(f, CONFIRM_WEEK, "week-short-confirm", 3)).json())
+      .data,
+  ).runs.at(-1).reply.schedule;
+  assert.equal(schedule.preview.placements.length, 1);
+  assert.equal(schedule.preview.unplaced.length, 2);
+  const invalid = checkedDialogue(
+    (await (await message(f, weekWindows([2, 9]), "week-outside", 4)).json())
+      .data,
+  ).runs.at(-1).reply;
+  assert.equal(invalid.stage, "schedule_guidance");
+  assert.equal(invalid.schedule, undefined);
+  assert.match(invalid.question, /连续7天/);
+});
+test("once-only confirmation cannot approve weekly scope; original once path remains readable", async (t) => {
+  const f = await ready(t);
+  await message(f, ASK_WEEK, "week-mismatch-ask");
+  await message(f, weekWindows(), "week-mismatch-windows", 2);
+  const invalid = checkedDialogue(
+    (
+      await (
+        await message(f, CONFIRM_SCHEDULE, "week-mismatch-confirm", 3)
+      ).json()
+    ).data,
+  ).runs.at(-1).reply;
+  assert.equal(invalid.stage, "schedule_guidance");
+  assert.equal(invalid.schedule, undefined);
+  await message(f, ASK_SCHEDULE, "week-switch-once", 4);
+  const once = checkedDialogue(
+    (await (await message(f, weekWindows(), "week-once-windows", 5)).json())
+      .data,
+  ).runs.at(-1).reply.schedule;
+  assert.equal(once.scope, "first_stage_once_v1");
+  assert.equal(once.tasks.length, 1);
+});
 function futureWindows(minutes = 60) {
   const date = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
   return `可用时段：北京时间，${date} 20:00-20:${String(minutes).padStart(2, "0")}`;
