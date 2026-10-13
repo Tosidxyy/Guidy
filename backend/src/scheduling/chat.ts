@@ -9,6 +9,52 @@ import {
   type PreviewResult,
 } from "./preview.ts";
 
+export const ASK_AUTO = "请根据现有信息直接拟定一周安排。";
+export async function ensureAutomaticSchedule(
+  db: D1Database,
+  job: { id: string; goal_id: string; owner_id: string; goal_revision: number },
+) {
+  const rows = await db.batch<Record<string, unknown>>([
+    db
+      .prepare(
+        "SELECT coalesce(max(turn_index),0) revision FROM agent_runs WHERE goal_id=? AND owner_id=?",
+      )
+      .bind(job.goal_id, job.owner_id),
+    db
+      .prepare(
+        "SELECT coalesce(max(revision),0) revision FROM plan_draft_reviews WHERE attempt_id=? AND owner_id=?",
+      )
+      .bind(job.id, job.owner_id),
+    db
+      .prepare("SELECT revision FROM calendar_states WHERE owner_id=?")
+      .bind(job.owner_id),
+  ]);
+  const chatRevision = Number(rows[0].results[0].revision),
+    revision = Number(rows[1].results[0].revision),
+    cal = Number(rows[2].results[0]?.revision ?? 0),
+    key = `auto_schedule_${job.id}_${revision}_${cal}`;
+  if (
+    await db
+      .prepare("SELECT id FROM agent_runs WHERE owner_id=? AND request_key=?")
+      .bind(job.owner_id, key)
+      .first()
+  )
+    return;
+  await scheduleChat(
+    db,
+    job.owner_id,
+    job.goal_id,
+    ASK_AUTO,
+    key,
+    JSON.stringify({
+      text: ASK_AUTO,
+      chatRevision,
+      goalRevision: job.goal_revision,
+    }),
+    chatRevision,
+    job.goal_revision,
+  );
+}
 export const ASK_WEEK = "请帮我按每周频次预览首阶段一周。";
 export const CONFIRM_WEEK =
   "确认这些时段，按频次试排首阶段一周，同项每天最多一次。";
@@ -16,6 +62,7 @@ export const ASK_SCHEDULE = "请帮我预览首阶段各项一次的具体时间
 export const CONFIRM_SCHEDULE = "确认这些时段，预览首阶段各项一次。";
 export function isScheduleText(text: string) {
   return (
+    text === ASK_AUTO ||
     text === ASK_WEEK ||
     text === CONFIRM_WEEK ||
     text === ASK_SCHEDULE ||
@@ -89,6 +136,8 @@ export type ScheduleData = {
   windows: Interval[];
   scope: "first_stage_once_v1" | "first_stage_week_v1";
   period?: Interval;
+  window_basis?: "assumed_default_v1";
+  unavailable_from_notes?: Interval[];
   calendar_snapshot?: { revision: number; busy: (Interval & { id: string })[] };
   tasks: TrialTask[];
   confirmed_from_run_id?: string;
@@ -129,7 +178,7 @@ export async function scheduleChat(
   const rows = await db.batch<Record<string, unknown>>([
     db
       .prepare(
-        "SELECT j.id,p.draft_json,p.goal_revision FROM planning_jobs j LEFT JOIN plan_draft_attempts p ON p.id=j.id AND p.owner_id=j.owner_id AND p.status='succeeded' WHERE j.goal_id=? AND j.owner_id=? ORDER BY j.created_at DESC,j.id DESC LIMIT 1",
+        "SELECT j.id,p.draft_json,p.goal_revision,p.context_json FROM planning_jobs j LEFT JOIN plan_draft_attempts p ON p.id=j.id AND p.owner_id=j.owner_id AND p.status='succeeded' WHERE j.goal_id=? AND j.owner_id=? ORDER BY j.created_at DESC,j.id DESC LIMIT 1",
       )
       .bind(goalId, owner),
     db
@@ -156,6 +205,7 @@ export async function scheduleChat(
     : null;
   const calendar = await calendarSnapshot(db, owner);
   const weekly =
+    text === ASK_AUTO ||
     text === ASK_WEEK ||
     text === CONFIRM_WEEK ||
     (text !== ASK_SCHEDULE &&
@@ -182,7 +232,86 @@ export async function scheduleChat(
       .first();
     const draft = JSON.parse(String(review?.draft_json ?? source.draft_json));
     const revision = Number(review?.revision ?? 0);
-    if (text === CONFIRM_SCHEDULE || text === CONFIRM_WEEK) {
+    if (text === ASK_AUTO) {
+      const zone = "Asia/Shanghai",
+        offset = 8 * 3600000,
+        day = Math.floor((now + offset) / 86400000) * 86400000 - offset;
+      const windows = Array.from({ length: 7 }, (_, i) => ({
+        start_at: day + (i + 1) * 86400000 + 20 * 3600000,
+        end_at: day + (i + 1) * 86400000 + 21 * 3600000,
+      }));
+      const selected = draft.tasks.filter(
+        (t: { stage: number }) =>
+          t.stage ===
+          Math.min(...draft.tasks.map((t: { stage: number }) => t.stage)),
+      );
+      const expanded = weeklyTrial(selected, windows, zone);
+      if (key !== `auto_schedule_${source.id}_${revision}_${calendar.revision}`)
+        return { status: 409, code: "CONTEXT_CHANGED" };
+      if (expanded) {
+        const context = JSON.parse(String(source.context_json ?? "{}"));
+        const notes = [
+          ...(context.dialogue_notes ?? []),
+          ...(context.conditions ?? [])
+            .filter(
+              (s: { source: string; value: { state: string } }) =>
+                s.source === "user" && s.value.state === "confirmed",
+            )
+            .map((s: { value: { text: string } }) => s.value.text),
+        ];
+        const unavailableDays = new Set<number>();
+        for (const note of notes) {
+          if (
+            typeof note !== "string" ||
+            /不是|并非|假如|如果|可能|不确定|未必|举例|比如|没说|没有说|不觉得|不认为|但|除|不过|取消|不要|改为|改成/.test(
+              note,
+            )
+          )
+            continue;
+          for (const match of note.matchAll(
+            /(?:周|星期)([一二三四五六日天])(?:没空|没有时间|不方便)/g,
+          )) {
+            unavailableDays.add(
+              "日一二三四五六".indexOf(match[1] === "天" ? "日" : match[1]),
+            );
+          }
+        }
+        const unavailable = windows.filter((w) =>
+          unavailableDays.has(new Date(w.start_at + offset).getUTCDay()),
+        );
+        const busy = calendar.events
+          .filter(
+            (e) =>
+              e.start_at < expanded.period.end_at &&
+              e.end_at > expanded.period.start_at,
+          )
+          .map((e) => ({ id: e.id, start_at: e.start_at, end_at: e.end_at }));
+        schedule = {
+          attempt_id: String(source.id),
+          goal_revision: goalRevision,
+          review_revision: revision,
+          timezone: zone,
+          windows,
+          scope: "first_stage_week_v1",
+          ...expanded,
+          window_basis: "assumed_default_v1",
+          unavailable_from_notes: unavailable,
+          calendar_snapshot: { revision: calendar.revision, busy },
+          preview: previewSchedule({
+            schema_version: 1,
+            timezone: zone,
+            horizon: expanded.period,
+            windows,
+            busy: [...busy, ...unavailable],
+            tasks: expanded.tasks,
+            completed_dependencies: [],
+          }),
+        };
+        stage = "schedule_preview";
+        question =
+          "我先给出一周建议日程。暂按北京时间、每天20点至21点作为候选时间；你可以继续补充没空的日期或希望调整的时间。";
+      } else question = "现有依赖还不能安全展开日程，方案草稿已保留。";
+    } else if (text === CONFIRM_SCHEDULE || text === CONFIRM_WEEK) {
       const previous = last?.reply_json
         ? JSON.parse(String(last.reply_json))
         : null;
@@ -311,7 +440,7 @@ export async function scheduleChat(
         .map((e) => ({ id: e.id, start_at: e.start_at, end_at: e.end_at })),
     };
   }
-  if (stage === "schedule_preview")
+  if (stage === "schedule_preview" && text !== ASK_AUTO)
     question =
       "已避开账号日历中已确认的占用生成时间预览。未核实其他日程或完整领域约束，没有批准或写入目标任务。";
   if (policy) {

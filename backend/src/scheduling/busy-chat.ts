@@ -2,6 +2,7 @@ import type { D1Database } from "@cloudflare/workers-types";
 import { parseWindows } from "./chat.ts";
 import { calendarSnapshot, type BusyEvent } from "./calendar.ts";
 import {
+  ASK_AUTO,
   ASK_SCHEDULE,
   CONFIRM_SCHEDULE,
   ASK_WEEK,
@@ -40,7 +41,13 @@ export async function busyChat(
   if (!isBusyText(text)) {
     const r = last?.reply_json ? JSON.parse(String(last.reply_json)) : null;
     if (
-      [ASK_SCHEDULE, CONFIRM_SCHEDULE, ASK_WEEK, CONFIRM_WEEK].includes(text) ||
+      [
+        ASK_AUTO,
+        ASK_SCHEDULE,
+        CONFIRM_SCHEDULE,
+        ASK_WEEK,
+        CONFIRM_WEEK,
+      ].includes(text) ||
       /^可用时段[：:]/.test(text) ||
       isDraftEditText(text) ||
       text === "先到这里，请根据现有信息准备方案草稿。" ||

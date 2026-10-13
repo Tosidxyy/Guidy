@@ -5,7 +5,7 @@ import { Action, AppText, Badge, Caption, Card, Screen } from '../../src/compone
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { useAccount } from '../../src/auth/AuthProvider';
 import { getConditions, GoalApiError, updateGoal, type AccountGoal } from '../../src/goals/api';
-import { questions, type SavedSlot } from '../../src/goals/clarification';
+import { type SavedSlot } from '../../src/goals/clarification';
 import type { Readiness } from '../../src/goals/readiness';
 
 export default function GoalDetail() {
@@ -90,13 +90,6 @@ export default function GoalDetail() {
       {owner && !loading && (conflict || !goal) && <Action label={conflict ? '读取最新版本（保留输入）' : '重新读取目标'} secondary disabled={saving} onPress={() => { preserve.current = conflict; setRefresh(n => n+1); }} />}
       {goal && <>
         <Badge>{goal.status === 'paused' ? '已暂停' : goal.status === 'draft' ? '草稿 · 待澄清' : '当前状态暂不可编辑'}</Badge>
-        {record?.readiness&&<Card>
-          <AppText>澄清进度 · {record.readiness.confirmed_keys.length} / 3 项已确认</AppText>
-          <Badge>{({needs_confirmation:'还需确认基础条件',needs_review:'安全提示待核对',research_preparation:'基础资料已齐 · 研究准备',paused:'目标已暂停',read_only:'当前阶段只读'})[record.readiness.phase]}</Badge>
-          {questions.map(q=><Caption key={q.key}>{q.label}：{record.readiness!.confirmed_keys.includes(q.key)?'已确认':record.readiness!.missing_required.includes(q.key)?'待确认 · 研究所需':'暂不确定 · 可继续补充'}</Caption>)}
-          <Caption>{record.readiness.phase==='needs_review'?'目标或对话中存在需要专业判断的提示，请先核对；当前不自动推进。':record.readiness.phase==='research_preparation'?'基础研究资料已确认。后续仍需查证来源、适用条件和安全限制；研究功能将在下一阶段接入。':'你可以继续对话，也可在条件页直接补充并确认。'}</Caption>
-          <Caption>这只表示基础资料进度，不代表研究完成、计划可执行或已经安排日历。</Caption>
-        </Card>}
         <Card>
           <AppText>我的目标</AppText>
           <TextInput accessibilityLabel="账号目标内容" multiline maxLength={300} value={description} onChangeText={setDescription} editable={editable && !saving && !loading} style={[inputStyle,{minHeight:160,textAlignVertical:'top'}]} />
@@ -104,14 +97,8 @@ export default function GoalDetail() {
           <AppText>期望时间（可不填）</AppText>
           <TextInput accessibilityLabel="账号期望时间" maxLength={80} value={timeframe} onChangeText={setTimeframe} editable={editable && !saving && !loading} style={inputStyle} />
         </Card>
-        {!!record?.slots.length && <Card>
-          <AppText>已保存的条件 · 来自你</AppText>
-          {questions.map(item => { const saved = record.slots.find(s => s.key === item.key); return <AppText key={item.key}>{item.label}：{saved?.value.state === 'confirmed' ? saved.value.text : '暂不确定'}</AppText>; })}
-        </Card>}
-        <Action label="研究资料与来源" secondary disabled={saving||loading||conflict||dirty} onPress={()=>router.push({pathname:'/goal/[id]/research',params:{id}})}/>
         {editable && <>
-          <Action label="与 AI 澄清目标" secondary disabled={saving || loading || conflict || dirty} onPress={() => router.push({ pathname: '/goal/[id]/chat', params: { id } })} />
-          <Action label="澄清目标与条件" secondary disabled={saving || loading || conflict || dirty} onPress={() => router.push({ pathname: '/goal/[id]/clarify', params: { id } })} />
+          <Action label="Guidy！" disabled={saving || loading || conflict || dirty} onPress={() => router.push({ pathname: '/goal/[id]/chat', params: { id } })} />
           <Action label={saving ? '正在保存…' : '保存修改'} disabled={saving || loading || conflict} onPress={() => save(goal.status as 'draft' | 'paused')} />
           <Action label={goal.status === 'paused' ? '继续目标' : '暂停目标'} secondary disabled={saving || loading || conflict || dirty} onPress={() => save(goal.status === 'paused' ? 'draft' : 'paused')} />
           {dirty && <Caption>内容有修改，请先保存，再暂停或继续。</Caption>}

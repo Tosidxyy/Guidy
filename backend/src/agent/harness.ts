@@ -1,5 +1,5 @@
 import { proposeChatEdit } from "./draft-edit.ts";
-import { scheduleChat } from "../scheduling/chat.ts";
+import { ASK_AUTO, scheduleChat } from "../scheduling/chat.ts";
 import { busyChat } from "../scheduling/busy-chat.ts";
 import {
   clarificationBudget,
@@ -161,9 +161,18 @@ export async function dialogueResponse(
         .prepare("SELECT revision FROM calendar_states WHERE owner_id=?")
         .bind(owner),
     ]);
+    const autoRow = await db
+      .prepare(
+        "SELECT reply_json FROM agent_runs WHERE goal_id=? AND owner_id=? AND user_text=? AND status='succeeded' ORDER BY turn_index DESC LIMIT 1",
+      )
+      .bind(goalId, owner, ASK_AUTO)
+      .first();
     const liveGoal = rows[0].results[0];
     return {
       goal: liveGoal,
+      auto_schedule: autoRow?.reply_json
+        ? (JSON.parse(String(autoRow.reply_json)).schedule ?? null)
+        : null,
       calendar_revision: Number(rows[2].results[0]?.revision ?? 0),
       asked_topics: await askedTopics(),
       clarification_budget: await clarificationBudget(db, owner, env),
@@ -259,7 +268,10 @@ export async function dialogueResponse(
   } catch {
     return fail(422, "INVALID_BODY");
   }
-  const stop = text === "先到这里，请根据现有信息准备方案草稿。";
+  const answerStopPrefix = "根据当前回答开始制订：";
+  const stop =
+    text === "先到这里，请根据现有信息准备方案草稿。" ||
+    text.startsWith(answerStopPrefix);
   const payload = JSON.stringify({ text, chatRevision, goalRevision });
   const previous = await db
     .prepare(
@@ -275,44 +287,50 @@ export async function dialogueResponse(
   }
   if (goal.status !== "draft" || goal.revision !== goalRevision)
     return fail(409, "CONTEXT_CHANGED");
-  const busyResult = await busyChat(
-    db,
-    owner,
-    goalId,
-    text,
-    key,
-    payload,
-    chatRevision,
-    goalRevision,
-  );
+  const busyResult = stop
+    ? null
+    : await busyChat(
+        db,
+        owner,
+        goalId,
+        text,
+        key,
+        payload,
+        chatRevision,
+        goalRevision,
+      );
   if (busyResult)
     return busyResult.status === 200
       ? ok(await snapshot())
       : fail(busyResult.status, busyResult.code!);
-  const schedule = await scheduleChat(
-    db,
-    owner,
-    goalId,
-    text,
-    key,
-    payload,
-    chatRevision,
-    goalRevision,
-  );
+  const schedule = stop
+    ? null
+    : await scheduleChat(
+        db,
+        owner,
+        goalId,
+        text,
+        key,
+        payload,
+        chatRevision,
+        goalRevision,
+      );
   if (schedule)
     return schedule.status === 200
       ? ok(await snapshot())
       : fail(schedule.status, schedule.code!);
-  const edit = await proposeChatEdit(
-    db,
-    owner,
-    goalId,
-    text,
-    key,
-    payload,
-    chatRevision,
-    goalRevision,
-  );
+  const edit = stop
+    ? null
+    : await proposeChatEdit(
+        db,
+        owner,
+        goalId,
+        text,
+        key,
+        payload,
+        chatRevision,
+        goalRevision,
+      );
   if (edit)
     return edit.status === 200
       ? ok(await snapshot())
@@ -518,7 +536,18 @@ export async function dialogueResponse(
         timeout,
       ]);
       reply = validateReply(completion.content, text);
-      if (
+      const extra =
+        text === "请继续问我一个有助于完善方案的问题。" ||
+        ((lastReply?.stage === "clarifying" ||
+          (lastReply?.stage === "research_ready" &&
+            text !== "请继续澄清仍未明确的条件。")) &&
+          preceding?.requested_slot === null &&
+          preceding.source === "deepseek");
+      if (extra) {
+        reply.requested_slot = null;
+        reply.stage = "clarifying";
+        reply.suggestions = undefined;
+      } else if (
         reply.requested_slot !== undefined ||
         preceding?.time_proposal === "weekly_60_v1" ||
         (preceding?.requested_slot === "available_time" && delegatesTime(text))
@@ -622,6 +651,30 @@ export async function dialogueResponse(
         throw new AgentError("AI_REPEATED_QUESTION");
     }
     if (controller.signal.aborted) throw new AgentError("AI_TIMEOUT");
+    const planningNotes = stop
+      ? (
+          await db
+            .prepare(
+              "SELECT user_text FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' AND json_extract(reply_json,'$.source')='deepseek' ORDER BY turn_index DESC LIMIT 8",
+            )
+            .bind(goalId, owner)
+            .all()
+        ).results
+          .map((r) => String(r.user_text))
+          .filter(
+            (t) =>
+              ![
+                "请根据我的目标和已确认条件，提出一个必要的澄清问题。",
+                "请继续问我一个有助于完善方案的问题。",
+                "请继续澄清仍未明确的条件。",
+              ].includes(t),
+          )
+          .reverse()
+          .map((t) => t.slice(0, 200))
+      : [];
+    if (text.startsWith(answerStopPrefix))
+      planningNotes.push(text.slice(answerStopPrefix.length).slice(0, 200));
+    while (planningNotes.length > 8) planningNotes.shift();
     const completed = Date.now();
     await db.batch([
       db
@@ -657,6 +710,7 @@ export async function dialogueResponse(
                 ),
                 timeframe_note: String(contextGoal.timeframe_note),
               },
+              dialogue_notes: planningNotes,
               conditions: ["outcome", "available_time", "constraints"].map(
                 (key) => {
                   const saved = slots.results.find((s) => s.key === key);

@@ -1,4 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types";
+import { ensureAutomaticSchedule } from "../scheduling/chat.ts";
 import {
   AgentError,
   deepseekProvider,
@@ -370,6 +371,14 @@ export async function generatePlanning(
     ]);
     if ((await load(db, id))?.status !== "completed")
       throw new AgentError("CONTEXT_CHANGED");
+    const completedJob = await load(db, id);
+    if (completedJob) {
+      try {
+        await ensureAutomaticSchedule(db, completedJob);
+      } catch {
+        /* Saved draft remains; default timeline recovery never repeats paid generation. */
+      }
+    }
   } catch (e) {
     const code = errorCode(e);
     await end(

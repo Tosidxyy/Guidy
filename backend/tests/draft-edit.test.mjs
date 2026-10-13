@@ -15,6 +15,7 @@ import {
   ASK_SCHEDULE,
   CONFIRM_SCHEDULE,
   ASK_WEEK,
+  ASK_AUTO,
   CONFIRM_WEEK,
 } from "../src/scheduling/chat.ts";
 import { checkedDialogue } from "../../apps/mobile/src/goals/dialogue.ts";
@@ -23,6 +24,219 @@ import { reviewResponse } from "../src/agent/review-service.ts";
 import { ASK_BUSY, CONFIRM_BUSY } from "../src/scheduling/busy-chat.ts";
 import { calendarResponse } from "../src/scheduling/calendar.ts";
 import { createApp } from "../src/index.ts";
+test("begin from a filled third card includes that answer without paying for another question", async (t) => {
+  const f = await ready(t);
+  for (const [i, slot] of [
+    "outcome",
+    "available_time",
+    "constraints",
+  ].entries()) {
+    const id = globalThis.crypto.randomUUID();
+    await f.db
+      .prepare(
+        "INSERT INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,reply_json,created_at,updated_at,lease_until) VALUES(?,?,?,?, '{}',?,0,'fixture','succeeded','qa',?,1,1,1)",
+      )
+      .bind(
+        id,
+        f.goal,
+        f.owner,
+        id,
+        i + 2,
+        JSON.stringify({
+          schema_version: 1,
+          kind: "question",
+          source: "deepseek",
+          question: "核心问题？",
+          reason: "了解",
+          requested_slot: slot,
+          stage: "clarifying",
+        }),
+      )
+      .run();
+  }
+  const r = await message(
+    f,
+    "根据当前回答开始制订：周三没空",
+    "card-answer-start",
+    4,
+  );
+  assert.equal(r.status, 200);
+  const job = await f.db
+    .prepare(
+      "SELECT context_json FROM planning_jobs WHERE goal_id=? ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(f.goal)
+    .first();
+  assert.ok(JSON.parse(job.context_json).dialogue_notes.includes("周三没空"));
+  assert.equal((await r.json()).data.clarification_budget.used, 0);
+});
+test("direct suggestions avoid clear unavailable weekdays but never turn conditional examples into facts", async (t) => {
+  for (const [note, expected] of [
+    ["周三没空", 1],
+    ["如果周三没空再说", 0],
+    ["不是周三没空", 0],
+  ]) {
+    const f = await ready(t),
+      row = await f.db
+        .prepare("SELECT context_json FROM plan_draft_attempts WHERE id=?")
+        .bind(f.id)
+        .first(),
+      context = JSON.parse(row.context_json);
+    context.dialogue_notes = [note];
+    await f.db
+      .prepare("UPDATE plan_draft_attempts SET context_json=? WHERE id=?")
+      .bind(JSON.stringify(context), f.id)
+      .run();
+    const response = checkedDialogue(
+      (await (await message(f, ASK_AUTO, `auto_schedule_${f.id}_0_0`)).json())
+        .data,
+    );
+    assert.equal(
+      response.auto_schedule.unavailable_from_notes.length,
+      expected,
+    );
+    if (expected)
+      assert.ok(
+        response.auto_schedule.preview.placements.every(
+          (p) => new Date(p.start_at + 8 * 3600000).getUTCDay() !== 3,
+        ),
+      );
+    assert.equal(
+      (await f.db.prepare("SELECT count(*) n FROM calendar_events").first()).n,
+      0,
+    );
+  }
+});
+test("continued card questions preserve model questions and freeze user notes for the next plan", async (t) => {
+  const f = await ready(t);
+  for (const [i, slot] of [
+    "outcome",
+    "available_time",
+    "constraints",
+  ].entries()) {
+    const id = globalThis.crypto.randomUUID();
+    await f.db
+      .prepare(
+        "INSERT INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,reply_json,created_at,updated_at,lease_until) VALUES(?,?,?,?, '{}',?,0,'fixture','succeeded','qa',?,1,1,1)",
+      )
+      .bind(
+        id,
+        f.goal,
+        f.owner,
+        id,
+        i + 2,
+        JSON.stringify({
+          schema_version: 1,
+          kind: "question",
+          source: "deepseek",
+          question: "核心问题？",
+          reason: "了解",
+          requested_slot: slot,
+          stage: "clarifying",
+        }),
+      )
+      .run();
+  }
+  let calls = 0;
+  const provider = {
+    complete: async () => {
+      calls++;
+      return {
+        content: JSON.stringify({
+          question:
+            calls === 1 ? "你目前有什么基础？" : "你希望独自练习还是结伴练习？",
+          reason: "完善方案",
+          requested_slot: null,
+        }),
+        inputTokens: 1,
+        outputTokens: 1,
+      };
+    },
+  };
+  const ask = (text, chat, key) =>
+    dialogueResponse(
+      new globalThis.Request(
+        `http://localhost/api/v1/goals/${f.goal}/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": key,
+          },
+          body: JSON.stringify({
+            text,
+            expected_chat_revision: chat,
+            expected_goal_revision: 0,
+          }),
+        },
+      ),
+      f.db,
+      f.owner,
+      "test",
+      {},
+      provider,
+    );
+  const more = checkedDialogue(
+    (
+      await (
+        await ask("请继续问我一个有助于完善方案的问题。", 4, "more-card")
+      ).json()
+    ).data,
+  );
+  assert.equal(more.runs.at(-1).reply.question, "你目前有什么基础？");
+  assert.equal(more.runs.at(-1).reply.stage, "clarifying");
+  const answer = checkedDialogue(
+    (await (await ask("我有一点基础", 5, "more-answer")).json()).data,
+  );
+  assert.equal(
+    answer.runs.at(-1).reply.question,
+    "你希望独自练习还是结伴练习？",
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM goal_slots").first()).n,
+    0,
+  );
+  await ask("先到这里，请根据现有信息准备方案草稿。", 6, "more-plan");
+  const job = await f.db
+    .prepare(
+      "SELECT context_json FROM planning_jobs WHERE goal_id=? ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(f.goal)
+    .first();
+  assert.ok(
+    JSON.parse(job.context_json).dialogue_notes.includes("我有一点基础"),
+  );
+  assert.equal(calls, 2);
+});
+test("automatic timeline discloses assumptions without asking for windows or confirming user facts", async (t) => {
+  const f = await ready(t),
+    key = `auto_schedule_${f.id}_0_0`;
+  const result = checkedDialogue(
+    (await (await message(f, ASK_AUTO, key)).json()).data,
+  );
+  assert.equal(result.auto_schedule.window_basis, "assumed_default_v1");
+  assert.equal(result.auto_schedule.preview.placements.length, 3);
+  assert.equal(result.auto_schedule.confirmed_from_run_id, undefined);
+  assert.equal(result.runs.at(-1).reply.stage, "schedule_preview");
+  assert.equal(result.runs.at(-1).reply.schedule_help, undefined);
+  assert.equal(result.clarification_budget.used, 0);
+  assert.equal(
+    (await (await message(f, ASK_AUTO, key)).json()).data.runs.length,
+    2,
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM calendar_events").first()).n,
+    0,
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM goal_slots").first()).n,
+    0,
+  );
+  assert.equal(
+    (await message(f, ASK_AUTO, `auto_schedule_${f.id}_1_0`, 2)).status,
+    409,
+  );
+});
 test("account occupancy changed in another Goal rejects the pending schedule; busy-context dates are not mistaken for availability", async (t) => {
   const f = await ready(t);
   await message(f, ASK_WEEK, "cross-week-ask");
@@ -240,6 +454,11 @@ async function ready(t) {
   const f = await setup(t);
   await decidePlanning(f.db, f.id, {}, f.intent(false));
   await generatePlanning(f.db, f.id, {}, f.model);
+  // Isolate manual/chat tests from the automatic timeline now emitted by Workflow completion.
+  await f.db
+    .prepare("DELETE FROM agent_runs WHERE goal_id=? AND user_text=?")
+    .bind(f.goal, ASK_AUTO)
+    .run();
   return f;
 }
 function weekWindows(offsets = [2, 3, 4]) {

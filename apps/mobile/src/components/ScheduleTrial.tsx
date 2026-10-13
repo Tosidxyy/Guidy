@@ -5,6 +5,7 @@ export function ScheduleTrial({schedule,stale,confirmable,onConfirm}:{schedule:S
  const title=(id:string)=>{const t=schedule.tasks.find(t=>t.id===id);return t?.title+(weekly?` · 第${t?.ordinal}/${t?.repeat_count}次`:'');};
  return <Card>
   <Badge>{preview?weekly?'首阶段一周 · 拟安排':'首阶段各项一次 · 拟安排':'可用时段 · 待核对'}</Badge>
+  {schedule.window_basis==='assumed_default_v1'&&<Caption>建议时间：暂按北京时间、每天20:00–21:00作为候选，尚未确认你是否有空。可继续告诉我没空的日期或希望调整的时间；这不是已确认的可用时段，也未写入日历。</Caption>}
   {weekly&&<Caption>首阶段一周 · 按草稿频次共{schedule.tasks.length}次 · 同项每天最多一次。{preview?`已排${preview.placements.length}次，未排${preview.unplaced.length}次。`:''}前置项本周试排实例全部排完后再排后续项。</Caption>}
   {schedule.period&&<Caption>周期：{scheduleTime(schedule.period.start_at,schedule.timezone)} 至 {scheduleTime(schedule.period.end_at,schedule.timezone)}（结束不含）</Caption>}
   <Caption>时区：{schedule.timezone==='Asia/Shanghai'?'北京时间（Asia/Shanghai）':'UTC'}</Caption>
