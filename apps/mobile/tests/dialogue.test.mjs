@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { checkedDialogue, dialogueError, reviewSuggestions } from '../src/goals/dialogue.ts';
+import {checkedBusy,checkedCalendar} from '../src/goals/calendar.ts';
+test('confirmed account occupancy requires user provenance, valid ranges and an explicit receipt',()=>{
+ const id='00000000-0000-0000-0000-000000000001',e={id,title:'已确认占用',start_at:1,end_at:60001,timezone:'UTC',fixed:1,source:'user'},b={calendar_revision:0,timezone:'UTC',events:[e]};
+ checkedBusy(b,'busy_proposed');assert.throws(()=>checkedBusy(b,'busy_saved'));checkedBusy({...b,calendar_revision:1,confirmed_from_run_id:id},'busy_saved');
+ assert.throws(()=>checkedBusy({...b,events:[{...e,source:'ai'}]},'busy_proposed'));assert.throws(()=>checkedBusy({...b,events:[{...e,end_at:1}]},'busy_proposed'));
+ checkedCalendar({schema_version:1,from:0,to:100000,revision:1,events:[e]},0,100000);assert.throws(()=>checkedCalendar({schema_version:1,from:0,to:100000,revision:1,events:[e,e]},0,100000));
+});
 import {checkedSchedule,scheduleTime,isScheduleText,ASK_WEEK,CONFIRM_WEEK} from '../src/goals/schedule.ts';
 test('weekly occurrence identities, counts and one-per-local-day cannot be forged',()=>{
  const id='00000000-0000-0000-0000-000000000001',start=Date.parse('2026-10-20T12:00:00Z');

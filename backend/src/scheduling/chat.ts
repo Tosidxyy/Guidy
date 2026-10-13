@@ -1,4 +1,5 @@
 import { weeklyTrial } from "./weekly.ts";
+import { calendarSnapshot } from "./calendar.ts";
 import type { D1Database } from "@cloudflare/workers-types";
 import { isDraftEditText } from "../agent/draft-edit.ts";
 import {
@@ -88,6 +89,7 @@ export type ScheduleData = {
   windows: Interval[];
   scope: "first_stage_once_v1" | "first_stage_week_v1";
   period?: Interval;
+  calendar_snapshot?: { revision: number; busy: (Interval & { id: string })[] };
   tasks: TrialTask[];
   confirmed_from_run_id?: string;
   preview?: PreviewResult;
@@ -152,6 +154,7 @@ export async function scheduleChat(
   const lastReply = last?.reply_json
     ? JSON.parse(String(last.reply_json))
     : null;
+  const calendar = await calendarSnapshot(db, owner);
   const weekly =
     text === ASK_WEEK ||
     text === CONFIRM_WEEK ||
@@ -194,6 +197,7 @@ export async function scheduleChat(
         candidate.attempt_id !== source.id ||
         candidate.goal_revision !== goalRevision ||
         candidate.review_revision !== revision ||
+        candidate.calendar_snapshot?.revision !== calendar.revision ||
         candidate.windows.some((entry) => entry.start_at <= now)
       ) {
         question =
@@ -210,7 +214,7 @@ export async function scheduleChat(
               end_at: candidate.windows.at(-1)!.end_at,
             },
             windows: candidate.windows,
-            busy: [],
+            busy: candidate.calendar_snapshot!.busy,
             tasks: candidate.tasks,
             completed_dependencies: [],
           }),
@@ -292,6 +296,23 @@ export async function scheduleChat(
   if (weekly && stage === "schedule_preview")
     question =
       "已按确认的一周频次及每日一次规则试排首阶段。尚未检查真实日历占用或完整领域约束，没有写入日历。";
+  if (schedule && stage === "schedule_proposed") {
+    const horizon = schedule.period ?? {
+      start_at: schedule.windows[0].start_at,
+      end_at: schedule.windows.at(-1)!.end_at,
+    };
+    schedule.calendar_snapshot = {
+      revision: calendar.revision,
+      busy: calendar.events
+        .filter(
+          (e) => e.start_at < horizon.end_at && e.end_at > horizon.start_at,
+        )
+        .map((e) => ({ id: e.id, start_at: e.start_at, end_at: e.end_at })),
+    };
+  }
+  if (stage === "schedule_preview")
+    question =
+      "已避开账号日历中已确认的占用生成时间预览。未核实其他日程或完整领域约束，没有批准或写入目标任务。";
   if (policy) {
     schedule = undefined;
     question =
@@ -317,7 +338,7 @@ export async function scheduleChat(
   const claim = await db.batch([
     db
       .prepare(
-        "INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,reply_json,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'succeeded','schedule-chat-v1',?,?,?,? FROM goals WHERE id=? AND owner_id=? AND revision=? AND status='draft' AND active_plan_version_id IS NULL AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=goals.id)=? AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=goals.id AND status='running') AND (SELECT count(*) FROM agent_runs WHERE goal_id=goals.id AND harness_version='schedule-chat-v1')<40 AND (? IS NULL OR ((SELECT id FROM planning_jobs WHERE goal_id=goals.id AND owner_id=goals.owner_id ORDER BY created_at DESC,id DESC LIMIT 1)=? AND (SELECT coalesce(max(revision),0) FROM plan_draft_reviews WHERE attempt_id=? AND owner_id=goals.owner_id)=?))",
+        "INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,reply_json,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'succeeded','schedule-chat-v1',?,?,?,? FROM goals WHERE id=? AND owner_id=? AND revision=? AND status='draft' AND active_plan_version_id IS NULL AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=goals.id)=? AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=goals.id AND status='running') AND (SELECT count(*) FROM agent_runs WHERE goal_id=goals.id AND harness_version='schedule-chat-v1')<40 AND (? IS NULL OR ((SELECT id FROM planning_jobs WHERE goal_id=goals.id AND owner_id=goals.owner_id ORDER BY created_at DESC,id DESC LIMIT 1)=? AND (SELECT coalesce(max(revision),0) FROM plan_draft_reviews WHERE attempt_id=? AND owner_id=goals.owner_id)=?)) AND (? IS NULL OR coalesce((SELECT revision FROM calendar_states WHERE owner_id=goals.owner_id),0)=?)",
       )
       .bind(
         id,
@@ -337,6 +358,8 @@ export async function scheduleChat(
         schedule?.attempt_id ?? null,
         schedule?.attempt_id ?? null,
         schedule?.review_revision ?? 0,
+        schedule?.calendar_snapshot?.revision ?? null,
+        schedule?.calendar_snapshot?.revision ?? 0,
       ),
     db
       .prepare(

@@ -238,3 +238,9 @@ chat_condition_captures以run_id唯一记录当前回答和question_run_id、Goa
 ### 0016 持久自动方案任务
 
 planning_jobs用source_run_id唯一对应停止请求，source/Goal/owner复合FK，冻结上下文/Goal版本、研究决定/固定查询、来源、派发/状态/lease与错误码；活跃Goal部分唯一索引防并发。与停止成功及plan_draft_usage预留同batch；结果保存到原私有plan_draft_attempts（ID=jobID，auto_plan_请求键），不是PlanVersion，结果和completed同事务。Goal/账号删除级联私人Job/草稿，生成与搜索usage独立保留到账号删除，Goal删除不重置配额。新迁移不改原表或已应用迁移。
+
+### 0017：账号固定占用与日历版本
+
+calendar_states按owner保存revision/提交run标记；calendar_events首批只保存source=user/fixed=1、UTC起止及UTC/Asia/Shanghai时区，owner+起止唯一。会话归属、提议/明确确认、原子batch、幂等与账号版本保护；源Goal/run删除只置空依据链接，已确认占用继续属于账号，账号删除级联。没有目标任务/通知写入、编辑/取消或重复规则。详细合同见[CALENDAR_OCCUPANCY](CALENDAR_OCCUPANCY.md)。
+
+排程提议冻结本账号版本与交叠占用快照，确认条件INSERT再次检查版本，内核避开已保存占用，历史旧快照失效而不覆写；不等于其他未记录日程或完整领域约束已核实。日历新增本人GET范围读取及首批真实占用列表；完整计划表、独立schedule_proposals/批准事务仍未完成。

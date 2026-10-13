@@ -20,6 +20,49 @@ import {
 import { checkedDialogue } from "../../apps/mobile/src/goals/dialogue.ts";
 import { dialogueResponse } from "../src/agent/harness.ts";
 import { reviewResponse } from "../src/agent/review-service.ts";
+import { ASK_BUSY, CONFIRM_BUSY } from "../src/scheduling/busy-chat.ts";
+import { calendarResponse } from "../src/scheduling/calendar.ts";
+import { createApp } from "../src/index.ts";
+test("account occupancy changed in another Goal rejects the pending schedule; busy-context dates are not mistaken for availability", async (t) => {
+  const f = await ready(t);
+  await message(f, ASK_WEEK, "cross-week-ask");
+  const before = checkedDialogue(
+    (await (await message(f, weekWindows(), "cross-week-pending", 2)).json())
+      .data,
+  ).runs.at(-1);
+  const other = globalThis.crypto.randomUUID();
+  await f.db
+    .prepare(
+      "INSERT INTO goals(id,owner_id,title,created_at,updated_at) VALUES(?,?,?,1,1)",
+    )
+    .bind(other, f.owner, "other goal")
+    .run();
+  const g = { ...f, goal: other };
+  await message(g, ASK_BUSY, "cross-busy-ask", 0);
+  const busy = checkedDialogue(
+    (
+      await (
+        await message(
+          g,
+          busyWindow().replace(/^已有占用：/, ""),
+          "cross-busy-dates",
+          1,
+        )
+      ).json()
+    ).data,
+  ).runs.at(-1);
+  assert.equal(busy.reply.stage, "busy_proposed");
+  await message(g, CONFIRM_BUSY, "cross-busy-save", 2);
+  const result = checkedDialogue(
+    (await (await message(f, CONFIRM_WEEK, "cross-week-confirm", 3)).json())
+      .data,
+  );
+  assert.equal(result.runs.at(-1).reply.stage, "schedule_guidance");
+  assert.equal(
+    result.runs.find((r) => r.id === before.id).schedule_stale,
+    true,
+  );
+});
 async function setup(t) {
   const mf = new Miniflare(
     convertV4MiniflareOptions({
@@ -210,6 +253,212 @@ function weekWindows(offsets = [2, 3, 4]) {
       .join("；")
   );
 }
+function busyWindow() {
+  const date = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+  return `已有占用：北京时间，${date} 20:00-20:30`;
+}
+test("busy declaration is only a proposal until confirmed, replay/duplicates preserve one account event, Goal deletion retains it", async (t) => {
+  const f = await ready(t);
+  const proposed = checkedDialogue(
+    (await (await message(f, busyWindow(), "busy-propose")).json()).data,
+  );
+  assert.equal(proposed.runs.at(-1).reply.stage, "busy_proposed");
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM calendar_events").first()).n,
+    0,
+  );
+  const saved = checkedDialogue(
+    (await (await message(f, CONFIRM_BUSY, "busy-confirm", 2)).json()).data,
+  );
+  assert.equal(saved.runs.at(-1).reply.stage, "busy_saved");
+  assert.equal(saved.calendar_revision, 1);
+  assert.equal(saved.clarification_budget.used, 0);
+  assert.equal(
+    (await (await message(f, CONFIRM_BUSY, "busy-confirm", 2)).json()).data.runs
+      .length,
+    3,
+  );
+  const duplicate = checkedDialogue(
+    (await (await message(f, busyWindow(), "busy-duplicate", 3)).json()).data,
+  );
+  assert.equal(duplicate.runs.at(-1).reply.busy, undefined);
+  assert.equal(duplicate.calendar_revision, 1);
+  const from = Date.now(),
+    to = from + 31 * 86400000;
+  const request = new globalThis.Request(
+    `http://localhost/api/v1/calendar/fixed-events?from=${from}&to=${to}`,
+  );
+  const mine = await calendarResponse(request, f.db, f.owner, "test");
+  assert.equal((await mine.json()).data.events.length, 1);
+  assert.equal(
+    (
+      await (
+        await calendarResponse(request, f.db, "other-owner", "test")
+      ).json()
+    ).data.events.length,
+    0,
+  );
+  await f.db.prepare("DELETE FROM goals WHERE id=?").bind(f.goal).run();
+  const event = await f.db
+    .prepare("SELECT source_goal_id,source_run_id FROM calendar_events")
+    .first();
+  assert.deepEqual(event, { source_goal_id: null, source_run_id: null });
+  await f.db.prepare('DELETE FROM "user" WHERE id=?').bind(f.owner).run();
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM calendar_events").first()).n,
+    0,
+  );
+});
+test("weekly scheduling uses confirmed account occupancy and marks old previews stale after calendar changes", async (t) => {
+  const f = await ready(t);
+  await message(f, ASK_WEEK, "busy-week-ask");
+  await message(f, weekWindows(), "busy-week-before", 2);
+  const old = checkedDialogue(
+    (
+      await (
+        await message(f, CONFIRM_WEEK, "busy-week-before-confirm", 3)
+      ).json()
+    ).data,
+  ).runs.at(-1);
+  await message(f, busyWindow(), "busy-week-propose", 4);
+  const saved = checkedDialogue(
+    (await (await message(f, CONFIRM_BUSY, "busy-week-save", 5)).json()).data,
+  );
+  assert.equal(
+    saved.runs.find((run) => run.id === old.id).schedule_stale,
+    true,
+  );
+  await message(f, ASK_WEEK, "busy-week-again", 6);
+  await message(f, weekWindows(), "busy-week-after", 7);
+  const result = checkedDialogue(
+    (
+      await (
+        await message(f, CONFIRM_WEEK, "busy-week-after-confirm", 8)
+      ).json()
+    ).data,
+  ).runs.at(-1).reply.schedule;
+  assert.equal(result.calendar_snapshot.revision, 1);
+  assert.equal(result.calendar_snapshot.busy.length, 1);
+  assert.equal(result.preview.placements.length, 3);
+  assert.ok(
+    result.preview.placements[0].start_at >=
+      result.calendar_snapshot.busy[0].end_at,
+  );
+});
+test("competing account calendar versions reject old busy confirmation; atomic event failure rolls back run, version and messages", async (t) => {
+  const f = await ready(t);
+  await message(f, busyWindow(), "busy-race-propose");
+  await f.db
+    .prepare("INSERT INTO calendar_states(owner_id,revision) VALUES(?,1)")
+    .bind(f.owner)
+    .run();
+  const rejected = checkedDialogue(
+    (await (await message(f, CONFIRM_BUSY, "busy-race-confirm", 2)).json())
+      .data,
+  );
+  assert.equal(rejected.runs.at(-1).reply.stage, "busy_guidance");
+  assert.equal(
+    rejected.runs.find((r) => r.turn_index === 2).busy_proposal_stale,
+    true,
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM calendar_events").first()).n,
+    0,
+  );
+  await message(f, busyWindow(), "busy-atomic-propose", 3);
+  const before = (
+    await f.db.prepare("SELECT count(*) n FROM agent_messages").first()
+  ).n;
+  await f.db
+    .prepare(
+      "CREATE TRIGGER reject_calendar BEFORE INSERT ON calendar_events BEGIN SELECT RAISE(ABORT,'test-only'); END",
+    )
+    .run();
+  await assert.rejects(() =>
+    message(f, CONFIRM_BUSY, "busy-atomic-confirm", 4),
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT revision FROM calendar_states").first())
+      .revision,
+    1,
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM agent_messages").first()).n,
+    before,
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT max(turn_index) n FROM agent_runs").first()).n,
+    4,
+  );
+  await f.db.prepare("DROP TRIGGER reject_calendar").run();
+  assert.equal(
+    (await message(f, CONFIRM_BUSY, "busy-atomic-confirm", 4)).status,
+    200,
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT revision FROM calendar_states").first())
+      .revision,
+    2,
+  );
+});
+test("calendar reader bounds and authenticated router are registered without logging private queries", async (t) => {
+  const f = await ready(t),
+    logs = [],
+    app = createApp({ logger: (r) => logs.push(r) }),
+    env = {
+      DB: f.db,
+      GUIDY_AUTH_MODE: "local-inbox",
+      BETTER_AUTH_SECRET: "test-only-local-secret-at-least-32-characters",
+      BETTER_AUTH_URL: "http://localhost",
+    };
+  for (const method of ["GET", "POST"]) {
+    const r = await app.fetch(
+      new globalThis.Request(
+        "http://localhost/api/v1/calendar/fixed-events?from=1&to=2",
+        { method },
+      ),
+      env,
+    );
+    assert.equal(r.status, 401);
+  }
+  assert.ok(logs.every((l) => l.route === "/api/v1/calendar/fixed-events"));
+  assert.equal(
+    (
+      await calendarResponse(
+        new globalThis.Request(
+          "http://localhost/api/v1/calendar/fixed-events?from=1&to=2&owner=other",
+        ),
+        f.db,
+        f.owner,
+        "test",
+      )
+    ).status,
+    422,
+  );
+  assert.equal(
+    (
+      await calendarResponse(
+        new globalThis.Request(
+          "http://localhost/api/v1/calendar/fixed-events?from=0&to=99999999999999",
+        ),
+        f.db,
+        f.owner,
+        "test",
+      )
+    ).status,
+    422,
+  );
+  const ask = checkedDialogue(
+    (await (await message(f, ASK_BUSY, "busy-vague-ask")).json()).data,
+  );
+  assert.equal(ask.runs.at(-1).reply.stage, "busy_guidance");
+  const vague = checkedDialogue(
+    (await (await message(f, "工作日9点到18点", "busy-vague-answer", 2)).json())
+      .data,
+  );
+  assert.equal(vague.runs.at(-1).reply.busy, undefined);
+  assert.equal(vague.clarification_budget.used, 0);
+});
 test("weekly chat freezes reviewed frequency, expands distinct instances and requires weekly confirmation", async (t) => {
   const f = await ready(t);
   assert.equal((await message(f, ASK_WEEK, "week-ask")).status, 200);

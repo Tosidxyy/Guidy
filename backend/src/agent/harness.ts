@@ -1,5 +1,6 @@
 import { proposeChatEdit } from "./draft-edit.ts";
 import { scheduleChat } from "../scheduling/chat.ts";
+import { busyChat } from "../scheduling/busy-chat.ts";
 import {
   clarificationBudget,
   clarificationLimits,
@@ -156,20 +157,36 @@ export async function dialogueResponse(
           `SELECT ${columns} FROM agent_runs WHERE goal_id=? AND owner_id=? ORDER BY turn_index DESC LIMIT 30`,
         )
         .bind(goalId, owner),
+      db
+        .prepare("SELECT revision FROM calendar_states WHERE owner_id=?")
+        .bind(owner),
     ]);
     const liveGoal = rows[0].results[0];
     return {
       goal: liveGoal,
+      calendar_revision: Number(rows[2].results[0]?.revision ?? 0),
       asked_topics: await askedTopics(),
       clarification_budget: await clarificationBudget(db, owner, env),
       chat_revision: rows[1].results[0]?.turn_index ?? 0,
       runs: rows[1].results.reverse().map((r) => ({
         ...r,
         edit_proposal_stale: r.edit_proposal_stale === 1,
+        busy_proposal_stale: !!(
+          JSON.parse(String(r.reply_json ?? "null"))?.stage ===
+            "busy_proposed" &&
+          (r.goal_revision !== liveGoal.revision ||
+            JSON.parse(String(r.reply_json)).busy.calendar_revision !==
+              Number(rows[2].results[0]?.revision ?? 0) ||
+            JSON.parse(String(r.reply_json)).busy.events.some(
+              (e: { start_at: number }) => e.start_at <= now,
+            ))
+        ),
         schedule_stale:
           r.schedule_stale === 1 ||
           (!!JSON.parse(String(r.reply_json ?? "null"))?.schedule &&
-            (r.goal_revision !== liveGoal.revision ||
+            (JSON.parse(String(r.reply_json)).schedule.calendar_snapshot
+              ?.revision !== Number(rows[2].results[0]?.revision ?? 0) ||
+              r.goal_revision !== liveGoal.revision ||
               JSON.parse(String(r.reply_json)).schedule.windows[0].start_at <=
                 now)),
         reply_json: undefined,
@@ -258,6 +275,20 @@ export async function dialogueResponse(
   }
   if (goal.status !== "draft" || goal.revision !== goalRevision)
     return fail(409, "CONTEXT_CHANGED");
+  const busyResult = await busyChat(
+    db,
+    owner,
+    goalId,
+    text,
+    key,
+    payload,
+    chatRevision,
+    goalRevision,
+  );
+  if (busyResult)
+    return busyResult.status === 200
+      ? ok(await snapshot())
+      : fail(busyResult.status, busyResult.code!);
   const schedule = await scheduleChat(
     db,
     owner,
@@ -299,7 +330,7 @@ export async function dialogueResponse(
   const claimed = await db.batch([
     db
       .prepare(
-        `INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running',?,?,?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=?)=? AND ((?=1 AND (SELECT count(*) FROM agent_runs WHERE goal_id=goals.id AND harness_version='clarify-stop-v1')<10) OR (?=0 AND (SELECT count(*) FROM agent_runs WHERE owner_id=? AND created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1'))<? AND (SELECT count(*) FROM agent_runs WHERE created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1'))<?))`,
+        `INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running',?,?,?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=?)=? AND ((?=1 AND (SELECT count(*) FROM agent_runs WHERE goal_id=goals.id AND harness_version='clarify-stop-v1')<10) OR (?=0 AND (SELECT count(*) FROM agent_runs WHERE owner_id=? AND created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1','busy-chat-v1'))<? AND (SELECT count(*) FROM agent_runs WHERE created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1','busy-chat-v1'))<?))`,
       )
       .bind(
         id,
@@ -344,7 +375,7 @@ export async function dialogueResponse(
     }
     const counts = await db
       .prepare(
-        "SELECT count(*) AS total,sum(CASE WHEN owner_id=? THEN 1 ELSE 0 END) AS personal FROM agent_runs WHERE created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1')",
+        "SELECT count(*) AS total,sum(CASE WHEN owner_id=? THEN 1 ELSE 0 END) AS personal FROM agent_runs WHERE created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1','busy-chat-v1')",
       )
       .bind(owner, day)
       .first();

@@ -1,3 +1,4 @@
+import {checkedCalendar,type CalendarSnapshot} from './calendar';
 import {checkedPlanning,type PlanningSnapshot} from './planning';
 import { checkedPlans,planError,checkedReviews,reviewError,type ReviewSnapshot,type ReviewChange,type PlanSnapshot } from './plans';
 import { checkedSearchSnapshot, searchError, type SearchSnapshot } from './search';
@@ -24,9 +25,10 @@ async function request(method: 'GET' | 'POST' | 'PATCH', body?: Record<string, u
   if (signal?.aborted) controller.abort();
   const timer = setTimeout(cancel, path.endsWith('/plan-drafts') ? 40_000 : path.endsWith('/messages')||path.endsWith('/evidence')||path.endsWith('/research-runs')||path.endsWith('/search-runs') ? 30_000 : 10_000);
   try {
-    const response = await fetch(`${apiOrigin}/api/v1/goals${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: Platform.OS === 'web' ? 'include' : 'omit', signal: controller.signal });
+    const response = await fetch(path.startsWith('/api/v1/calendar/')?`${apiOrigin}${path}`:`${apiOrigin}/api/v1/goals${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: Platform.OS === 'web' ? 'include' : 'omit', signal: controller.signal });
     const payload = await response.json();
     if (!response.ok) {
+      if(path.startsWith('/api/v1/calendar/')&&response.status!==401)throw new Error('日历占用未能读取，请稍后重试。');
       if(path.includes('/draft-reviews?')&&response.status!==401&&response.status!==404)throw new GoalApiError(reviewError(payload.error?.code??''),payload.error?.code??'REVIEW_UNAVAILABLE');
       if(path.endsWith('/plan-drafts')&&response.status!==401&&response.status!==404)throw new GoalApiError(planError(payload.error?.code??''),payload.error?.code??'PLAN_RESULT_UNKNOWN');
       if(path.endsWith('/search-runs')&&response.status!==401&&response.status!==404)throw new GoalApiError(searchError(payload.error?.code??''),payload.error?.code??'SEARCH_RESULT_UNKNOWN');
@@ -125,3 +127,5 @@ export async function saveReview(id:string,attemptId:string,body:{expected_goal_
 
 export async function getPlanning(id:string,signal?:AbortSignal):Promise<PlanningSnapshot>{return checkedPlanning(await request('GET',undefined,undefined,signal,`/${id}/planning-runs`),id);}
 export async function resumePlanning(id:string,jobId:string):Promise<PlanningSnapshot>{return checkedPlanning(await request('POST',{job_id:jobId},undefined,undefined,`/${id}/planning-runs`),id);}
+
+export async function getCalendar(from:number,to:number,signal:AbortSignal):Promise<CalendarSnapshot>{return checkedCalendar(await request('GET',undefined,undefined,signal,'/api/v1/calendar/fixed-events?from='+from+'&to='+to),from,to);}
