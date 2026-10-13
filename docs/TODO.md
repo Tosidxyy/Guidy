@@ -971,3 +971,16 @@ flowchart TD
 - 无迁移；云e272ce1d版本验证真实登录/Goal/控制三题历史→真实Workflow→DeepSeek研究判断→豆包3份资料→DeepSeek严格草稿→后台自动日程（无手机ASK_AUTO POST）→同键Job仍1/GET与客户端Schema通过、Goal revision0/active_plan NULL不变。至多2模型+1搜索、邮件0，验证身份/级联精确清理，不输出Key/OTP/Cookie/真实用户正文或模型原文。后续仅补第三卡answer-stop/继续输入语义，最终部署dd165964-ae32-4084-99f3-b240a8f23d15，health200/匿名messages GET/POST401通过；最终相关D1回归通过，未为小改重复付费链路。新UI完整iPhone/键盘仍未验证。
 - 4份产品/交互/排程文档25个相对链接、diff/暂存范围通过，无环境/凭据/品牌/导航变化；实现Commit：ca50cbc2510f985c63ffb0dfc249ef673b7d63e4。TODO单独提交后push origin/main并核对远程SHA，只勾选主路径首批子项，完整M2/最终确认/通知及任意自然时间修改保持未完成。
 - 下一轮：优先真实iPhone新卡片的输入/滑动/布局反馈，随后完整阶段周期与更广结构化偏好提取、独立版本化预览及一次批准入历；不恢复普通来源/Slot/手工后台步骤按钮，不将建议时间冒充用户已确认事实。
+
+
+### 2026-10-14 旧手动入口与网页读取流程退役
+
+- [x] 删除五个手动页面（条件、来源、搜索、生成、数字审阅）、四个闲置提案组件和客户端手动 API；目标详情改读目标接口。
+- [x] 旧 slots/evidence/research-runs/search-runs/plan-drafts/draft-reviews HTTP 入口退役；移除网页读取 Provider、服务和旧 Workflow 分支，保留豆包与自动 planning_jobs。
+- [ ] 清理旧生成计划及其内含计划控制记录（本轮无数据库迁移或删除）；保留账号、目标、真实问答、固定占用和用量账本。
+- [ ] 继续精简旧内部 plan/search/review 实现；严格输出及审阅模型仍被新流程使用，不能盲删。
+- [ ] 完整周期、多阶段日历、自然语言追加约束、最终确认入历及前端美化整体验收仍未完成。
+
+开发轮次记录：实现 Commit 226a9342b15170ed4de816496adc16f013b9e9bc。backend/mobile typecheck 与 lint、mobile test:ui-state 35/35、export:ios、backend build:cloud 与最终 format:check 通过；相关 retired-routes/worker/planning-jobs/search/plan/review/draft-edit 测试 67/67 通过，新增旧路径 GET/POST/PATCH 均 404 和有界读取取消测试。移除的旧网页读取测试与功能一起删除，自动搜索/计划回归保留。新测试首次 lint 的 Web 全局名失败，改 globalThis 后通过；首次格式检查失败，格式化后通过。不把早期失败记为通过。
+
+云开发部署 d218c3b4-4ea2-4003-a154-de1afd644b25 已完成；云 health 200、旧 evidence/slots 404、保留 messages/planning-runs 匿名 401 通过；无迁移、无真实用户内容读取/数据删除、无邮件或付费模型调用。真实 iPhone 新包、页面交互和视觉本轮未验证，不能以编译冒称真机。架构文档说明退役与剩余边界；TODO 单独提交后推送 origin/main 并核对远程 SHA。下一步是有截止点且可验证的旧计划清理，再补完整周期与最终确认入历。
