@@ -1,3 +1,4 @@
+import { planCycle } from "./cycle.ts";
 import { weeklyTrial } from "./weekly.ts";
 import { calendarSnapshot } from "./calendar.ts";
 import type { D1Database } from "@cloudflare/workers-types";
@@ -134,7 +135,9 @@ export type ScheduleData = {
   review_revision: number;
   timezone: "Asia/Shanghai" | "UTC";
   windows: Interval[];
-  scope: "first_stage_once_v1" | "first_stage_week_v1";
+  scope: "first_stage_once_v1" | "first_stage_week_v1" | "full_plan_cycle_v1";
+  stages?: { stage: number; weeks: number; start_at: number; end_at: number }[];
+  period_basis?: "agent_draft_v1" | "assumed_one_week_per_stage_v1";
   period?: Interval;
   window_basis?: "assumed_default_v1";
   unavailable_from_notes?: Interval[];
@@ -236,16 +239,26 @@ export async function scheduleChat(
       const zone = "Asia/Shanghai",
         offset = 8 * 3600000,
         day = Math.floor((now + offset) / 86400000) * 86400000 - offset;
-      const windows = Array.from({ length: 7 }, (_, i) => ({
-        start_at: day + (i + 1) * 86400000 + 20 * 3600000,
-        end_at: day + (i + 1) * 86400000 + 21 * 3600000,
-      }));
-      const selected = draft.tasks.filter(
-        (t: { stage: number }) =>
-          t.stage ===
-          Math.min(...draft.tasks.map((t: { stage: number }) => t.stage)),
+      const windows = Array.from(
+        {
+          length:
+            (draft.stage_weeks?.reduce(
+              (n: number, s: { weeks: number }) => n + s.weeks,
+              0,
+            ) ??
+              new Set(draft.tasks.map((t: { stage: number }) => t.stage))
+                .size) * 7,
+        },
+        (_, i) => ({
+          start_at: day + (i + 1) * 86400000 + 20 * 3600000,
+          end_at: day + (i + 1) * 86400000 + 21 * 3600000,
+        }),
       );
-      const expanded = weeklyTrial(selected, windows, zone);
+      const expanded = planCycle(
+        draft.tasks,
+        draft.stage_weeks,
+        day + 86400000,
+      );
       if (key !== `auto_schedule_${source.id}_${revision}_${calendar.revision}`)
         return { status: 409, code: "CONTEXT_CHANGED" };
       if (expanded) {
@@ -292,13 +305,14 @@ export async function scheduleChat(
           review_revision: revision,
           timezone: zone,
           windows,
-          scope: "first_stage_week_v1",
+          scope: "full_plan_cycle_v1",
           ...expanded,
           window_basis: "assumed_default_v1",
           unavailable_from_notes: unavailable,
           calendar_snapshot: { revision: calendar.revision, busy },
           preview: previewSchedule({
             schema_version: 1,
+            period_mode: "full_plan_cycle_v1",
             timezone: zone,
             horizon: expanded.period,
             windows,
@@ -309,7 +323,7 @@ export async function scheduleChat(
         };
         stage = "schedule_preview";
         question =
-          "我先给出一周建议日程。暂按北京时间、每天20点至21点作为候选时间；你可以继续补充没空的日期或希望调整的时间。";
+          "我先给出所有阶段的建议日程。暂按北京时间、每天20点至21点作为候选时间；你可以继续补充没空的日期或希望调整的时间。";
       } else question = "现有依赖还不能安全展开日程，方案草稿已保留。";
     } else if (text === CONFIRM_SCHEDULE || text === CONFIRM_WEEK) {
       const previous = last?.reply_json
@@ -468,7 +482,9 @@ export async function scheduleChat(
                 },
               }
             : {}),
-          ...(weekly ? { schedule_mode: "first_stage_week_v1" } : {}),
+          ...(weekly && text !== ASK_AUTO
+            ? { schedule_mode: "first_stage_week_v1" }
+            : {}),
           ...(schedule ? { schedule } : {}),
         }),
   };

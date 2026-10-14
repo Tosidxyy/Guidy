@@ -44,6 +44,13 @@ export function planOutputTool(context: string) {
         summary: string(300),
         assumptions: array(string(160), "最多5条未知/待确认假设，可为空"),
         risks: array(string(160), "最多5条风险/限制，可为空"),
+        stage_weeks: array(
+          object({
+            stage: { type: "integer", enum: [1, 2, 3] },
+            weeks: { type: "integer", minimum: 1, maximum: 12 },
+          }),
+          "按阶段升序列出每个实际任务阶段的周数，总计最多12周；结合用户目标和期望周期，不确定时在假设里说明",
+        ),
         tasks: array(
           object({
             key: { type: "string", enum: ["t1", "t2", "t3", "t4", "t5", "t6"] },

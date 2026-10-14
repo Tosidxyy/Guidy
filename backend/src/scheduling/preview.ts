@@ -14,6 +14,7 @@ export type PreviewTask = {
 };
 export type PreviewInput = {
   schema_version: 1;
+  period_mode?: "full_plan_cycle_v1";
   timezone: string;
   horizon: Interval;
   windows: Interval[];
@@ -60,13 +61,16 @@ function invalid(): never {
   throw new Error("INVALID_SCHEDULE_INPUT");
 }
 function validate(input: PreviewInput): void {
+  const cycle = input?.period_mode === "full_plan_cycle_v1";
+  if (input?.period_mode !== undefined && !cycle) invalid();
   if (
     !input ||
     input.schema_version !== 1 ||
     typeof input.timezone !== "string" ||
     !/^(UTC|[A-Za-z_]+\/[A-Za-z_]+(?:\/[A-Za-z_]+)?)$/.test(input.timezone) ||
     !interval(input.horizon) ||
-    input.horizon.end_at - input.horizon.start_at > 31 * 24 * 60 * MINUTE
+    input.horizon.end_at - input.horizon.start_at >
+      (cycle ? 84 : 31) * 24 * 60 * MINUTE
   )
     invalid();
   try {
@@ -80,7 +84,7 @@ function validate(input: PreviewInput): void {
     input.tasks,
     input.completed_dependencies,
   ]) {
-    if (!Array.isArray(list) || list.length > LIMIT) invalid();
+    if (!Array.isArray(list) || list.length > (cycle ? 600 : LIMIT)) invalid();
   }
   if (!input.windows.every(interval) || !input.busy.every(interval)) invalid();
   const known = new Set<string>();

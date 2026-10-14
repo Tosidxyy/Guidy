@@ -1,3 +1,4 @@
+import {View} from 'react-native';
 import {PlanCalendar} from './PlanCalendar';
 import type {ScheduleData} from '../goals/schedule';
 import {useCallback,useRef,useState,useEffect} from 'react';
@@ -22,7 +23,7 @@ export function AutomaticPlanning({id,owner,calendarRevision,automaticSchedule,o
  return <>
   {!!error&&<Card><AppText accessibilityRole="alert">{job?.plan?"更新状态暂未成功，已读取的草稿仍保留。":"方案状态暂未读取成功。"}</AppText><Caption>{error}</Caption><Action label="重新读取方案状态" secondary disabled={loading||busy} onPress={()=>{if(focusSignal.current)void read(focusSignal.current,scope.current);}}/></Card>}
   {stopped&&(!job||(stopRunId&&!data?.jobs.some(j=>j.source_run_id===stopRunId)))&&<Card><AppText>方案请求已保存，但尚未启动</AppText><Caption>可能已有生成任务或已达生成上限。读取状态不会重新调用AI，额度恢复后可重新提交。</Caption><Action label="读取方案进度" secondary onPress={()=>{setError('');void read(new AbortController().signal,scope.current);}}/><Action label="重新提交草稿请求" secondary disabled={busy||loading||!!error||!!data?.jobs.some(planningActive)} onPress={()=>setConfirm(true)}/>{confirm&&<><Caption>新的请求可能再次调用AI与搜索，原请求保留。</Caption><Action label="确认重新提交" disabled={busy||loading||!!error} onPress={()=>{setConfirm(false);onAnother();}}/><Action label="保留当前请求" secondary onPress={()=>setConfirm(false)}/></>}</Card>}
-  {job&&<Card>{!job.plan&&<Badge>{planningLabel(job)}</Badge>}
+  {job&&<View style={{gap:20}}>{!job.plan&&<Badge>{planningLabel(job)}</Badge>}
    {job.goal_revision!==data!.goal.revision&&<Caption>这是旧目标版本的请求，结果仅供参考。</Caption>}
    {job.error_code&&<Caption>{job.error_code==='WORKFLOW_START_FAILED'?'后台任务尚未成功启动，可恢复同一请求。':planError(job.error_code)}</Caption>}
    {job.status==='queued'&&job.dispatched===0&&<Action label={busy?'正在恢复…':'恢复本次后台任务'} secondary disabled={busy} onPress={()=>{void resume();}}/>}
@@ -34,6 +35,6 @@ export function AutomaticPlanning({id,owner,calendarRevision,automaticSchedule,o
     {draft!.assumptions.map((assumption,i)=><Caption key={`assumption-${i}`}>待核对：{assumption}</Caption>)}    {!matching&&<><Caption>建议日程尚未读取完成；默认时间只是草稿假设，你可以继续补充限制。</Caption><Action label="重新准备建议日程" secondary disabled={!canSchedule||loading||!autoKey} onPress={()=>{if(autoKey)onAutoSchedule(autoKey);}}/></>}
 
    </>}
-  </Card>}
+  </View>}
  </>;
 }

@@ -12,6 +12,7 @@ type DraftTask = {
   evidence_ids: string[];
 };
 type ModelDraft = {
+  stage_weeks?: { stage: number; weeks: number }[];
   title: string;
   summary: string;
   assumptions: string[];
@@ -40,7 +41,15 @@ export function checkedPlan(
     fail("PLAN_SCHEMA_OBJECT");
   if (
     Object.keys(v).some(
-      (k) => !["title", "summary", "assumptions", "risks", "tasks"].includes(k),
+      (k) =>
+        ![
+          "title",
+          "summary",
+          "assumptions",
+          "risks",
+          "tasks",
+          "stage_weeks",
+        ].includes(k),
     )
   )
     fail("PLAN_SCHEMA_FIELDS");
@@ -116,6 +125,25 @@ export function checkedPlan(
     done.add(key);
   }
   for (const t of v.tasks) visit(t.key);
+  const stages = [...new Set(v.tasks.map((t) => t.stage))].sort(
+    (a, b) => a - b,
+  );
+  if (
+    v.stage_weeks !== undefined &&
+    (!Array.isArray(v.stage_weeks) ||
+      v.stage_weeks.length !== stages.length ||
+      v.stage_weeks.some(
+        (s, i) =>
+          !s ||
+          Object.keys(s).some((k) => !["stage", "weeks"].includes(k)) ||
+          s.stage !== stages[i] ||
+          !Number.isInteger(s.weeks) ||
+          s.weeks < 1 ||
+          s.weeks > 12,
+      ) ||
+      v.stage_weeks.reduce((n, s) => n + s.weeks, 0) > 12)
+  )
+    fail("PLAN_SCHEMA_FIELDS");
   const rendered = JSON.stringify(v).replace(
     /(?:不能|无法|并不|并非|不代表|不可|不)(?:保证成功|保证治愈)/g,
     "未作效果承诺",

@@ -138,3 +138,8 @@ Goal聊天已接draft-edit-v1确定性单项数字提案与明确采用，复用
 普通产品入口仅保留目标、Guidy！卡片问答、后台 planning-runs 和日历读取。旧 slots、evidence、research-runs、search-runs、plan-drafts、draft-reviews HTTP 路由返回 404；对应五个移动端手动页面和未使用的提案组件删除。ResearchWorkflow 仅执行已持久化 planning_jobs 的研究判断、豆包搜索和草稿生成；不存在的任务结束，不再回退到旧网页逐条读取。
 
 结构化用户事实、严格草稿校验、审阅版本与调用用量模型仍被新流程使用，不能因为删除表单而删除这些内部数据约束。旧手动 plan/search/review 服务的内部测试与实现暂留在源码中，已从 Worker 路由及打包入口解除；后续继续精简。旧计划数据清理、完整阶段周期和最终批准入历尚未完成，本次路由退役不会删除用户数据。
+
+
+### 自动全阶段排程
+
+planCycle按PlanDraft的stage_weeks展开完整周期；SchedulingService的previewSchedule只在full_plan_cycle_v1模式允许84天/600条有界输入，旧模式保留31天/100条保护。最多500条已确认占用加84个不可用日窗口仍在边界内，不截断占用。Agent只生成阶段建议；时间、依赖、每天上限、冲突由确定性逻辑核对，未安排项不能被忽略或迁到下一周。最终批准与内部生效日历持久化仍未实现，本轮全阶段建议不能冒称批准入历。
