@@ -2,7 +2,7 @@ import { planCycle } from "./cycle.ts";
 import { weeklyTrial } from "./weekly.ts";
 import { calendarSnapshot, planningCalendarSnapshot } from "./calendar.ts";
 import type { D1Database } from "@cloudflare/workers-types";
-import { isDraftEditText } from "../agent/draft-edit.ts";
+import { isDraftEditText } from "../agent/input-intent.ts";
 import {
   previewSchedule,
   type Interval,

@@ -38,7 +38,7 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
   function scheduleInput(value:string){return isScheduleText(value)||(['schedule_guidance','schedule_proposed'].includes(data?.runs.at(-1)?.reply?.stage??'')&&!isDraftEditText(value)&&value!=='请继续澄清仍未明确的条件。'&&value!=='先到这里，请根据现有信息准备方案草稿。');}
   async function send(override?:string, fixedKey?:string){
     if(!data||!owner||busy.current||!['draft','active'].includes(data.goal.status)||data.runs.some(r=>r.status==='running'))return;
-    const value=(override??text).trim();if(data.clarification_budget?.allowed===false&&value!=='先到这里，请根据现有信息准备方案草稿。'&&!value.startsWith('根据当前回答开始制订：')&&!isDraftEditText(value)&&!scheduleInput(value)&&!busyInput(value)){setError(dialogueError(data.clarification_budget.global_limited?'AI_GLOBAL_LIMIT':'AI_DAILY_LIMIT'));return;}if(!value){setError('请先输入要补充的内容。');return;}
+    const value=(override??text).trim();if(data.clarification_budget?.allowed===false&&value!=='先到这里，请根据现有信息准备方案草稿。'&&!value.startsWith('根据当前回答开始制订：')&&!scheduleInput(value)&&!busyInput(value)){setError(dialogueError(data.clarification_budget.global_limited?'AI_GLOBAL_LIMIT':'AI_DAILY_LIMIT'));return;}if(!value){setError('请先输入要补充的内容。');return;}
     const body={text:value,expected_chat_revision:data.chat_revision,expected_goal_revision:data.goal.revision};const payload=JSON.stringify(body);
     if(operation.current?.payload!==payload)operation.current={payload,key:fixedKey??`chat_${Date.now()}_${Math.random().toString(36).slice(2,12)}`};
     const scope=generation.current;busy.current=true;setSending(true);setError('');

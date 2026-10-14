@@ -9,7 +9,6 @@ import {
   generatePlanning,
   planningResponse,
 } from "../src/agent/planning-jobs.ts";
-import { parseDraftEdit } from "../src/agent/draft-edit.ts";
 import {
   parseWindows,
   ASK_SCHEDULE,
@@ -20,7 +19,6 @@ import {
 } from "../src/scheduling/chat.ts";
 import { checkedDialogue } from "../../apps/mobile/src/goals/dialogue.ts";
 import { dialogueResponse } from "../src/agent/harness.ts";
-import { reviewResponse } from "../src/agent/review-service.ts";
 import { ASK_BUSY, CONFIRM_BUSY } from "../src/scheduling/busy-chat.ts";
 import { calendarResponse } from "../src/scheduling/calendar.ts";
 import { createApp } from "../src/index.ts";
@@ -961,54 +959,6 @@ test("insufficient windows explain unscheduled trial without pretending success"
   assert.equal(preview.placements.length, 0);
   assert.equal(preview.unplaced[0].reason, "no_legal_window");
 });
-test("peer draft review invalidates owned window proposal and old confirmation; fresh proposal uses review", async (t) => {
-  const f = await ready(t);
-  const p = (
-    await (await message(f, futureWindows(30), "schedule-peer")).json()
-  ).data.runs.at(-1);
-  const taskId = p.reply.schedule.tasks[0].id;
-  const response = await reviewResponse(
-    new globalThis.Request(
-      `http://localhost/api/v1/goals/${f.goal}/draft-reviews?attempt_id=${f.id}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": "schedule-peer-review",
-        },
-        body: JSON.stringify({
-          expected_goal_revision: 0,
-          expected_review_revision: 0,
-          changes: [
-            { task_id: taskId, duration_minutes: 25, frequency_per_week: 3 },
-          ],
-        }),
-      },
-    ),
-    f.db,
-    f.owner,
-    "test",
-  );
-  assert.equal(response.status, 200);
-  const result = checkedDialogue(
-    (
-      await (
-        await message(f, CONFIRM_SCHEDULE, "schedule-old-confirm", 2)
-      ).json()
-    ).data,
-  );
-  assert.equal(result.runs.at(-1).reply.stage, "schedule_guidance");
-  assert.equal(result.runs.find((r) => r.id === p.id).schedule_stale, true);
-  const fresh = checkedDialogue(
-    (
-      await (
-        await message(f, futureWindows(30), "schedule-new-windows", 3)
-      ).json()
-    ).data,
-  ).runs.at(-1).reply.schedule;
-  assert.equal(fresh.review_revision, 1);
-  assert.equal(fresh.tasks[0].duration_minutes, 25);
-});
 test("schedule cannot bypass ownership, chat revision, Goal changes or policy", async (t) => {
   const f = await ready(t);
   assert.equal(
@@ -1072,232 +1022,59 @@ function message(f, text, key, chat = 1) {
     {},
   );
 }
-async function confirm(f, run, override = {}, key = "chat_edit_" + run.id) {
-  const p = run.reply.edit_proposal;
-  return reviewResponse(
-    new globalThis.Request(
-      "http://localhost/api/v1/goals/" +
-        f.goal +
-        "/draft-reviews?attempt_id=" +
-        p.attempt_id,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": key },
-        body: JSON.stringify({
-          expected_goal_revision: p.goal_revision,
-          expected_review_revision: p.review_revision,
-          proposal_run_id: run.id,
-          changes: [{ task_id: p.task_id, ...p.after }],
-          ...override,
-        }),
+
+test("numeric plan preferences follow Agent questions without creating unusable edit proposals", async (t) => {
+  const f = await ready(t);
+  let calls = 0;
+  const request = () =>
+    new globalThis.Request(`http://localhost/api/v1/goals/${f.goal}/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "card-effort-preference",
       },
-    ),
+      body: JSON.stringify({
+        text: "第一项改为每次15分钟",
+        expected_chat_revision: 1,
+        expected_goal_revision: 0,
+      }),
+    });
+  const provider = {
+    complete: async (context) => {
+      calls++;
+      assert.equal(JSON.parse(context).user_message, "第一项改为每次15分钟");
+      return {
+        content: JSON.stringify({
+          question: "你希望最终达到什么成果？",
+          reason: "将新偏好用于后续方案",
+          requested_slot: "outcome",
+        }),
+        inputTokens: 1,
+        outputTokens: 1,
+      };
+    },
+  };
+  const response = await dialogueResponse(
+    request(),
     f.db,
     f.owner,
     "test",
-  );
-}
-test("numeric natural-language edits are grounded to one task and reject ambiguous or unsafe changes", () => {
-  const task = {
-    id: "test",
-    title: "基础练习",
-    duration_minutes: 20,
-    frequency_per_week: 3,
-  };
-  for (const input of [
-    "把第一项改成每次15分钟，每周4次",
-    "把第１项改为每次十五分钟，每周四次",
-    "把第 1 项改为每次15分钟，每周4次",
-    "基础练习调整为每次15分钟和每周4次",
-  ])
-    assert.deepEqual(parseDraftEdit(input, [task]).after, {
-      duration_minutes: 15,
-      frequency_per_week: 4,
-    });
-  assert.equal(
-    parseDraftEdit("第一项改为每次30分钟", [task]).after.frequency_per_week,
-    3,
-  );
-  for (const input of [
-    "第一项改为每次0分钟",
-    "第一项改为每次121分钟",
-    "第一项改为每周八次",
-    "第一项从每次20分钟改为10分钟",
-    "第一项改短一点",
-    "第一项和第二项改为每次15分钟",
-    "不是第一项改为每次15分钟",
-    "第一项改为每次15分钟并安排日历",
-  ])
-    assert.equal(parseDraftEdit(input, [task]), null);
-});
-test("chat proposes a diff without models or writes, then explicit confirmation appends an immutable version and replay receipt", async (t) => {
-  const f = await ready(t);
-  const before = f.counts();
-  const response = await message(
-    f,
-    "把第一项改成每次15分钟，每周4次",
-    "chat-edit-one",
+    {},
+    provider,
   );
   assert.equal(response.status, 200);
-  const data = (await response.json()).data,
-    run = data.runs.at(-1);
-  assert.equal(run.reply.stage, "edit_proposed");
-  assert.equal(data.clarification_budget.used, 0);
-  assert.deepEqual(f.counts(), before);
+  const data = checkedDialogue((await response.json()).data);
+  assert.equal(data.runs.at(-1).reply.kind, "question");
+  assert.equal(data.runs.at(-1).reply.edit_proposal, undefined);
+  assert.equal(data.runs.at(-1).user_text, "第一项改为每次15分钟");
   assert.equal(
     (await f.db.prepare("SELECT count(*) n FROM plan_draft_reviews").first()).n,
     0,
   );
   assert.equal(
-    (await message(f, "把第一项改成每次15分钟，每周4次", "chat-edit-one"))
+    (await dialogueResponse(request(), f.db, f.owner, "test", {}, provider))
       .status,
     200,
   );
-  assert.equal(
-    (await f.db.prepare("SELECT count(*) n FROM agent_runs").first()).n,
-    2,
-  );
-  const result = await confirm(f, run);
-  assert.equal(result.status, 200);
-  const review = (await result.json()).data;
-  assert.equal(review.receipt_revision, 1);
-  assert.equal(review.reviews[0].draft.tasks[0].duration_minutes, 15);
-  assert.equal(review.source.draft.tasks[0].duration_minutes, 20);
-  assert.equal(
-    review.reviews[0].draft.tasks[0].id,
-    review.source.draft.tasks[0].id,
-  );
-  assert.equal((await confirm(f, run)).status, 200);
-  assert.equal(
-    (await f.db.prepare("SELECT count(*) n FROM plan_draft_reviews").first()).n,
-    1,
-  );
-  const get = await dialogueResponse(
-    new globalThis.Request(
-      "http://localhost/api/v1/goals/" + f.goal + "/messages",
-    ),
-    f.db,
-    f.owner,
-    "test",
-    {},
-  );
-  assert.equal((await get.json()).data.runs.at(-1).edit_receipt_revision, 1);
-  const jobs = (await (await f.get()).json()).data;
-  assert.equal(jobs.jobs[0].review.revision, 1);
-  assert.equal(jobs.jobs[0].review.draft.tasks[0].duration_minutes, 15);
-  const goal = await f.db
-    .prepare("SELECT revision,active_plan_version_id FROM goals")
-    .first();
-  assert.equal(goal.revision, 0);
-  assert.equal(goal.active_plan_version_id, null);
-});
-test("tampering and competing proposals cannot silently change fields or overwrite another review", async (t) => {
-  const f = await ready(t);
-  const a = (
-    await (await message(f, "第一项改为每次15分钟", "chat-edit-a")).json()
-  ).data.runs.at(-1);
-  const b = (
-    await (await message(f, "第一项改为每次25分钟", "chat-edit-b", 2)).json()
-  ).data.runs.at(-1);
-  assert.equal(
-    (
-      await confirm(f, a, {
-        changes: [
-          {
-            task_id: a.reply.edit_proposal.task_id,
-            duration_minutes: 80,
-            frequency_per_week: 3,
-          },
-        ],
-      })
-    ).status,
-    422,
-  );
-  assert.equal((await confirm(f, a, {}, "forged-key")).status, 422);
-  assert.equal((await confirm(f, a)).status, 200);
-  assert.equal((await confirm(f, b)).status, 409);
-  assert.equal(
-    (await f.db.prepare("SELECT count(*) n FROM plan_draft_reviews").first()).n,
-    1,
-  );
-});
-test("unsupported language remains guidance, policy blocks confirmation and another account cannot propose", async (t) => {
-  const f = await ready(t);
-  const a = (
-    await (await message(f, "第一项改为每次15分钟", "safe-edit")).json()
-  ).data.runs.at(-1);
-  const guidance = await message(f, "第一项改短一点", "vague-edit", 2);
-  assert.equal(guidance.status, 200);
-  assert.equal(
-    (await guidance.json()).data.runs.at(-1).reply.stage,
-    "edit_guidance",
-  );
-  const risk = await message(
-    f,
-    "因为我有伤病，把第一项改为每次15分钟",
-    "risk-edit",
-    3,
-  );
-  assert.equal(risk.status, 200);
-  assert.equal((await risk.json()).data.runs.at(-1).reply.source, "policy");
-  assert.equal((await confirm(f, a)).status, 409);
-  assert.equal(
-    (await f.db.prepare("SELECT count(*) n FROM plan_draft_reviews").first()).n,
-    0,
-  );
-  const foreign = await dialogueResponse(
-    new globalThis.Request(
-      "http://localhost/api/v1/goals/" + f.goal + "/messages",
-    ),
-    f.db,
-    "other",
-    "test",
-    {},
-  );
-  assert.equal(foreign.status, 404);
-});
-
-test("a newer generated source invalidates old proposals without touching their original draft", async (t) => {
-  const f = await ready(t),
-    a = (
-      await (
-        await message(f, "第一项改为每次15分钟", "old-source-proposal")
-      ).json()
-    ).data.runs.at(-1),
-    run = globalThis.crypto.randomUUID(),
-    job = globalThis.crypto.randomUUID();
-  await f.db
-    .prepare(
-      "INSERT INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,reply_json,created_at,updated_at,lease_until) VALUES(?,?,?,?, '{}',3,0,'stop','succeeded','clarify-stop-v1',?,1,1,1)",
-    )
-    .bind(
-      run,
-      f.goal,
-      f.owner,
-      run,
-      JSON.stringify({ source: "harness", stage: "draft_requested" }),
-    )
-    .run();
-  await f.db
-    .prepare(
-      "INSERT INTO planning_jobs(id,source_run_id,goal_id,owner_id,goal_revision,status,context_json,created_at,updated_at,lease_until) VALUES(?,?,?,?,0,'queued',?, ?,?,?)",
-    )
-    .bind(
-      job,
-      run,
-      f.goal,
-      f.owner,
-      JSON.stringify(f.context),
-      Date.now() + 1000,
-      Date.now(),
-      Date.now() + 600000,
-    )
-    .run();
-  const result = await confirm(f, a);
-  assert.equal(result.status, 409);
-  assert.equal((await result.json()).error.code, "REVIEW_SOURCE_CHANGED");
-  assert.equal(
-    (await f.db.prepare("SELECT count(*) n FROM plan_draft_reviews").first()).n,
-    0,
-  );
+  assert.equal(calls, 1);
 });

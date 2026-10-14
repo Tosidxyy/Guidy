@@ -1,5 +1,4 @@
 import { activeReplan } from "./active-replan.ts";
-import { proposeChatEdit } from "./draft-edit.ts";
 import { ASK_AUTO, scheduleChat } from "../scheduling/chat.ts";
 import { busyChat } from "../scheduling/busy-chat.ts";
 import {
@@ -341,22 +340,6 @@ export async function dialogueResponse(
     return schedule.status === 200
       ? ok(await snapshot())
       : fail(schedule.status, schedule.code!);
-  const edit = stop
-    ? null
-    : await proposeChatEdit(
-        db,
-        owner,
-        goalId,
-        text,
-        key,
-        payload,
-        chatRevision,
-        goalRevision,
-      );
-  if (edit)
-    return edit.status === 200
-      ? ok(await snapshot())
-      : fail(edit.status, edit.code!);
   if (stop && (await askedTopics()).length < 3)
     return fail(422, "CLARIFICATION_MINIMUM_NOT_MET");
   let model: AgentProvider | undefined;

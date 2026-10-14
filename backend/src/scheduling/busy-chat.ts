@@ -8,7 +8,7 @@ import {
   ASK_WEEK,
   CONFIRM_WEEK,
 } from "./chat.ts";
-import { isDraftEditText } from "../agent/draft-edit.ts";
+import { isDraftEditText } from "../agent/input-intent.ts";
 export const ASK_BUSY = "请帮我记录已有占用。";
 export const CONFIRM_BUSY = "确认保存这些已有占用。";
 export function isBusyText(text: string) {
