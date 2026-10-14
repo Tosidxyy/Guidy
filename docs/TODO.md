@@ -1046,3 +1046,16 @@ Browser plugin not available，Playwright/Edge实测已确认五周方案→继�
 开发云ebd6aef8-f757-4dbd-910a-f07493feb348。隔离云身份/原稿及初次确认后，真实DeepSeek解释“周二没空，改到早上7点到8点”→候选全部晨间且避开周二→草稿核心仍V1→二次确认V2→旧实例保留，客户端Schema通过；模型1/搜索0/邮件0，精确清verification/QA用户与级联，不输出Key/OTP/Cookie/模型原文或真实用户正文。无迁移/真实旧数据额外删除。真实iPhone、VoiceOver/键盘本轮未验证。
 
 单独TODO提交后push origin/main核对远程SHA。下一轮删掉尚存的手动plan/search/review内部入口并改初始目标界面，继续朝完整卡片问答/日历体验推进；不将单次时间调整当整体目标完成。
+
+### 2026-10-14 单句目标直达 Guidy 卡片与退役源码清理
+
+- [x] 创建页只输入想法，Guidy！提交成功直接进入自动首问卡片；去掉期望时间字段及账号保存中间步骤，已存时间备注保留。失败/重进同键重试，清理本机草稿在后台确认保存之后。
+- [x] 首页移除 M0 演示目标、假完成率和“AI 尚未接入”文案，展示真实账号目标；主动作直达问答/方案，问答返回首页。二级管理保留暂停/恢复，三 Tab 与批准品牌不变。
+- [x] 删除无人调用的 plan-service/search-service/slots 手动处理器及其旧接口测试；保留 provider/结构/引用边界，以及自动工作流预算/幂等/版本/失败与批准测试。review fixture 不再依赖退役搜索接口。
+- [ ] 旧 review-service 内部兼容处理器、历史排程协议继续收敛；完整历史分页、任意内容/频次调整、执行反馈/通知仍未完成。新入口键盘、VoiceOver 与真实 iPhone 本轮未验证。
+
+实现 Commit 101e3249984d2a7efd2ce586c5606937e0cdd0f7。mobile typecheck/lint 最终通过、test:ui-state 36/36、最终 export:ios 通过；backend typecheck/lint/format:check/build:cloud 通过，search/plan/review/retired-routes/planning-jobs/approval 23/23 通过。3 文档 30 个本地链接及 git diff --check 通过。未改依赖、数据库和 Worker 在线行为，本轮无需迁移/云部署，未额外删除真实数据或调用付费模型/搜索/发信。
+
+Browser plugin not available，Playwright/Edge 使用隔离本地身份实测：首页真实空态→单输入→模拟提交失败保留输入→Reload恢复→同键再提交仅1目标→直达受控首问卡→已有目标回问答不重复首问→返回首页→320×480无横向溢出；393×852首页/新想法截图与01-goals黑白tokens核对，截图 guidy-entry-home/new/question/small.png 已检查。问答供应商响应为受控UI fixture，目标写入/认证/读取用真实本地后端，不冒称完整真实AI生成。精确清理该测试邮箱和测试账号级联。
+
+首次脚本在草稿异步恢复前读取输入导致失败，改为等待实际恢复值后两次通过；创建页写入首次 apply_patch 同路径删除/新增未执行，改用明确整文件写入成功。首次重复启动8090提示已占用，核对原Guidy PID16472与HTTP200后复用，不误停手机服务。此轮已有入口检查通过但不称整体改造完成。按约定单独提交 TODO，再 push origin/main 并核对远程 SHA；下一轮继续移除审阅/历史手动协议，补完整卡片历史体验。
