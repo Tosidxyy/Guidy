@@ -995,3 +995,20 @@ flowchart TD
 - 首次测试夹具缺少现行 Slot schema/state 导致失败；更正后通过。一次工作目录重复导致编辑未执行，修正；重置提示最初不符合客户端阶段约束，增加明确 plans_cleared 阶段。相关 D1 清单遗漏既有 calendar 表导致回归失败，核对0017后补全并重跑26项通过。审计初次复合查询超D1限制、PS长参数解析失败，均为只读且未删除，改固定目标 Node argv 分批查询后通过。新增 Node URL 的 lint 错误修正后最终通过，不计初次失败为成功。
 - npm run db:migrate / db:migrate:test / db:migrate:cloud 均成功应用0018。云旧 planning_jobs 1→0、plans 5→0、reviews 1→0、search results 1→0、source jobs 2→0、sources 1→0。保留 users2/sessions1/profiles2/goals3/user_facts8/chat_captures4/user_messages29/fixed_events0/search_usage1/plan_usage5，各项前后不变；本地dev1账号1会话与test空库前后不变。审计仅匿名计数，无真实邮箱/回答/Key输出，无邮件或付费调用。本轮无 Worker代码变更，不重复部署。
 - TODO 仅勾选实际清理子项；完整多阶段周期、自然语言约束、最终确认入历、前端美化保持未完成。TODO单独提交后push origin/main核对远程SHA；下一轮直接推进日历结果与确认闭环，不恢复手动研究入口。iPhone需要Reload加载支持新清理状态的前端。
+
+
+### 2026-10-14 全阶段周期与行动月历
+
+- [x] Agent严格输出阶段周数；后台展开全部阶段与周次（当前单份阶段方案上限12周/84天，最多504次）。长期目标说明本轮阶段范围，不冒称整年目标已排完；旧稿周期缺失披露每阶段一周假设。
+- [x] 结果按月/日期呈现建议任务、阶段和具体做法；跨月切换、空白日期、未安排次数、候选时间说明；沿用04-calendar黑白排版，移除整份结果外套卡片。
+- [ ] 最终具体方案确认后写入内部生效日历、版本化预览刷新和自然语言约束修改仍未完成；不把本轮预览当作已确认日历。
+
+实现 Commit 49fc7b14e358a69293b25f60a6eaaf8733b8f9be。backend typecheck/lint/format:check/build:cloud 通过；最终 cycle/weekly-preview/scheduling-preview/draft-edit/planning-jobs/plan 回归59/59，含35天两阶段12次、84天504次、阶段覆盖与周数边界、周内截止不挤到后周、跨阶段依赖、旧31天/100条限额不放宽；客户端Schema拒绝伪造周期/周次。mobile typecheck/lint/test:ui-state36/36和布局修正后的最终export:ios通过。3文档32相对链接与diff检查通过。
+
+Browser plugin not available，按前端调试/React检查与04-calendar原型走Playwright/Edge。真实本地OTP/Goal/读取/自动排程/D1，受控多阶段原稿：5周12次→实际月历→跨月后续阶段做法→Reload仅1排程run→393宽七列同时可见/44pt日期按钮→320×480页面无横溢，0意外error/warn；精确清测试用户，模型/搜索0，未写生效日历。截图仓库外guidy-cycle-calendar.png / -small.png，view_image发现最初月历只见一列，明确测量宽度修正后新增七列坐标检查并重新通过；最初“仅点击通过”不算视觉通过。
+
+旧8090服务实际HTTP15秒超时，核对Guidy expo web PID9716后只重启测试服务，8787保留；没有手机8089监听，不宣称手机服务已启动。第一次cycle测试夹具缺instructions失败，补正后最终59项通过；新测试structuredClone lint更正globalThis。一次apply_patch同文件删除/新增被拒绝未执行，分开写入；没有把失败记为通过。
+
+开发云部署b1bafaa6-f7c6-41bc-a0c6-56ccddf78181；隔离真实登录/Goal、受控三题历史→真实Workflow→DeepSeek研究判断/豆包3来源/DeepSeek严格草稿→服务端自动日历，实际3阶段5周、全阶段覆盖与客户端Schema通过，同键Job1/Goal revision0/active_plan NULL不变。至多2模型+1搜索、邮件0；最终精确清验证身份和测试用户，不输出密钥/OTP/Cookie/真实用户或模型原文。无迁移/额外旧数据删除；真实iPhone新月历、键盘和VoiceOver仍未验证。
+
+TODO仅勾选当前子项，整体目标未完成。单独进度提交后push origin/main核对远程SHA；下一轮推进最终确认入历与日期调整，保留用户追加约束的聊天体验，继续清理旧内部协议。
