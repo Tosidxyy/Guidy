@@ -977,10 +977,21 @@ flowchart TD
 
 - [x] 删除五个手动页面（条件、来源、搜索、生成、数字审阅）、四个闲置提案组件和客户端手动 API；目标详情改读目标接口。
 - [x] 旧 slots/evidence/research-runs/search-runs/plan-drafts/draft-reviews HTTP 入口退役；移除网页读取 Provider、服务和旧 Workflow 分支，保留豆包与自动 planning_jobs。
-- [ ] 清理旧生成计划及其内含计划控制记录（本轮无数据库迁移或删除）；保留账号、目标、真实问答、固定占用和用量账本。
+- [x] 清理截止点前旧生成计划及内含计划控制记录；0018 已应用本地 dev/test 与 guidy-development，保留账号、目标、真实问答、固定占用和用量账本。
 - [ ] 继续精简旧内部 plan/search/review 实现；严格输出及审阅模型仍被新流程使用，不能盲删。
 - [ ] 完整周期、多阶段日历、自然语言追加约束、最终确认入历及前端美化整体验收仍未完成。
 
 开发轮次记录：实现 Commit 226a9342b15170ed4de816496adc16f013b9e9bc。backend/mobile typecheck 与 lint、mobile test:ui-state 35/35、export:ios、backend build:cloud 与最终 format:check 通过；相关 retired-routes/worker/planning-jobs/search/plan/review/draft-edit 测试 67/67 通过，新增旧路径 GET/POST/PATCH 均 404 和有界读取取消测试。移除的旧网页读取测试与功能一起删除，自动搜索/计划回归保留。新测试首次 lint 的 Web 全局名失败，改 globalThis 后通过；首次格式检查失败，格式化后通过。不把早期失败记为通过。
 
 云开发部署 d218c3b4-4ea2-4003-a154-de1afd644b25 已完成；云 health 200、旧 evidence/slots 404、保留 messages/planning-runs 匿名 401 通过；无迁移、无真实用户内容读取/数据删除、无邮件或付费模型调用。真实 iPhone 新包、页面交互和视觉本轮未验证，不能以编译冒称真机。架构文档说明退役与剩余边界；TODO 单独提交后推送 origin/main 并核对远程 SHA。下一步是有截止点且可验证的旧计划清理，再补完整周期与最终确认入历。
+
+
+### 2026-10-14 旧计划数据清理与问答恢复
+
+实现 Commit：313b59c174a86f98b1e5684427bc5f3cd793f018。0018 固定截止点北京时间 2026-10-14 19:47:50；删除旧任务、草稿（级联审阅）、搜索结果、旧来源及其任务，清除停止/改稿/日程控制记录中生成副本，保留完整用户回答和顺序。清理提示 plans_cleared 通过客户端 Schema；旧排程命令不再把卡片带到已删除结果，新增恢复/安全策略回归。
+
+- backend typecheck/lint/format:check 通过；node --experimental-strip-types --test tests/plan-reset.test.mjs tests/d1.test.mjs tests/planning-jobs.test.mjs tests/chat-capture.test.mjs 最终 26/26 通过，含失败批次回滚、截止点后新数据保留、幂等再次清理、晚到 Provider 无调用、真实 API/客户端校验、三主题仍保留。
+- mobile typecheck/lint/test:ui-state 最终 36/36 与最终 export:ios 通过。未冒称真机/浏览器视觉验收；本轮不涉及视觉美化。docs/DATABASE.md 14 相对链接及 diff 检查通过。
+- 首次测试夹具缺少现行 Slot schema/state 导致失败；更正后通过。一次工作目录重复导致编辑未执行，修正；重置提示最初不符合客户端阶段约束，增加明确 plans_cleared 阶段。相关 D1 清单遗漏既有 calendar 表导致回归失败，核对0017后补全并重跑26项通过。审计初次复合查询超D1限制、PS长参数解析失败，均为只读且未删除，改固定目标 Node argv 分批查询后通过。新增 Node URL 的 lint 错误修正后最终通过，不计初次失败为成功。
+- npm run db:migrate / db:migrate:test / db:migrate:cloud 均成功应用0018。云旧 planning_jobs 1→0、plans 5→0、reviews 1→0、search results 1→0、source jobs 2→0、sources 1→0。保留 users2/sessions1/profiles2/goals3/user_facts8/chat_captures4/user_messages29/fixed_events0/search_usage1/plan_usage5，各项前后不变；本地dev1账号1会话与test空库前后不变。审计仅匿名计数，无真实邮箱/回答/Key输出，无邮件或付费调用。本轮无 Worker代码变更，不重复部署。
+- TODO 仅勾选实际清理子项；完整多阶段周期、自然语言约束、最终确认入历、前端美化保持未完成。TODO单独提交后push origin/main核对远程SHA；下一轮直接推进日历结果与确认闭环，不恢复手动研究入口。iPhone需要Reload加载支持新清理状态的前端。
