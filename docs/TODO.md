@@ -1029,3 +1029,20 @@ TODO仅勾选当前子项，整体目标未完成。单独进度提交后push or
 - QA旧8090HTTP超时，核对PID23088只重启本项目测试服务；首次尚未就绪连接拒绝不计通过，Ready后再跑。旧本地8787在迁移/热更新后健康请求未响应，核对Guidy进程36832/34204/34316后重新加载本地测试环境，数据不重置、不影响云端；新Ready后实际API/浏览器验证通过。
 - dev/test/cloud均应用0019（仅建表/索引，无删除旧数据）；开发云部署4a0e08c3-4562-4af5-b9d2-34329ae2f064。隔离云身份真实登录/Goal、受控原稿→真实建议API→确认→同键重放版本1→GET恢复与calendar/events→客户端Schema通过，Goal active/revision1，预览核心写0，确认后实例1。邮件/模型/搜索0，精确清verification/QA用户及级联记录，无Key/OTP/Cookie/真实内容输出。
 - TODO单独提交后push origin/main核对远程SHA。下一轮让用户在已确认方案中直接追加没空时段，生成新版本预览/再次确认，旧执行实例与计划历史不删除，再继续移除旧内部手动服务。当前这类调整入口未伪装成可用按钮。
+
+
+### 2026-10-14 已确认方案的聊天改期
+
+- [x] 活跃目标继续问题卡片；星期/具体日期排除及同日时段补充由一次DeepSeek JSON解释，后台生成原周期内未来调整草稿，不要求slot表单。
+- [x] 再次确认后新版本生效，只将旧父版本尚未开始实例标为superseded；旧版本、过去及已完成/跳过记录保留，日历按实际状态显示。委托/未知不循环追问；刷新既有偏好无需再调用模型。
+- [ ] 初始入口仍有旧描述/期望时间编辑表单与按钮，需要继续收敛和美化；旧内部手动服务仍需移除。长期新阶段、任意内容/频次修改、完整历史分页、通知和执行反馈尚未完成，不缩小整体目标。
+
+实现 Commit 35d14088e52c2f23d08ccd73bbdef2b7b5da7f3f。backend typecheck/lint/format:check/build:cloud通过；最终replan/approval/draft-edit/planning-jobs/cycle46/46通过，含只预览不写、确认V2、原稿不变、旧实例superseded不删除、过去已完成状态原样保留、同键模型一次、免费刷新、原文/日期/时段校验、委托不循环；此前37项旧路径也通过。模型提示与格式参考官方DeepSeek JSON文档，未引入新SDK/依赖，不传客户端Key。mobile typecheck/lint最终通过，ui-state36/36、最终export:ios通过；3文档32链接及diff检查通过。
+
+首次新增fixture缺assert依赖失败，补正后通过；remaining表达式括号误改导致typecheck失败，修正。React effect同步setState被lint拦截，改按最新runID/用户浏览意图派生结果，未绕过规则或虚报初次通过。新增reply初始化unused lint修正。完成依赖缺项不猜作完成，保留未安排阻止确认。
+
+Browser plugin not available，Playwright/Edge实测已确认五周方案→继续问答卡→输入周二没空改晨间→自动调整月历→未确认仍版本1→确认版本2/旧12实例保留superseded→Reload恢复；模型输出受控、域服务/排程及实际读回/确认使用本地D1，模型/搜索/邮件0；截图guidy-replan-preview.png/-approved.png已view_image核对原型。最初CLI测试shim未提供逐语句changes，导致409/路由断言异常未完成，按真实记录规范化shim回执后通过；精准定位并按ID+固定测试邮箱清理终止测试身份，未碰真实用户。旧8090HTTP15秒超时，核对PID23660后只重载测试前端；8787仍200，未重置数据库。首次失败不算完成。
+
+开发云ebd6aef8-f757-4dbd-910a-f07493feb348。隔离云身份/原稿及初次确认后，真实DeepSeek解释“周二没空，改到早上7点到8点”→候选全部晨间且避开周二→草稿核心仍V1→二次确认V2→旧实例保留，客户端Schema通过；模型1/搜索0/邮件0，精确清verification/QA用户与级联，不输出Key/OTP/Cookie/模型原文或真实用户正文。无迁移/真实旧数据额外删除。真实iPhone、VoiceOver/键盘本轮未验证。
+
+单独TODO提交后push origin/main核对远程SHA。下一轮删掉尚存的手动plan/search/review内部入口并改初始目标界面，继续朝完整卡片问答/日历体验推进；不将单次时间调整当整体目标完成。
