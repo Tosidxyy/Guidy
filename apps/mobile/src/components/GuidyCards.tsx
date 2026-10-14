@@ -5,6 +5,7 @@ import {Action,AppText,Caption,Card} from './ui';
 import {useTheme} from '../theme/ThemeProvider';
 import type {Dialogue} from '../goals/dialogue';
 import {ASK_AUTO} from '../goals/schedule';
+import {shouldShowPlan} from '../goals/plan-presentation';
 export const MORE_QUESTIONS='请继续问我一个有助于完善方案的问题。';
 export function GuidyCards({data,text,onText,onSend,onBack,error,busy,reload,result}:{data:Dialogue;text:string;onText:(s:string)=>void;onSend:(s?:string)=>Promise<void>;onBack:()=>void;error:string;busy:boolean;reload:()=>void;result:React.ReactNode}){
  const [discard,setDiscard]=useState(false);
@@ -18,7 +19,7 @@ export function GuidyCards({data,text,onText,onSend,onBack,error,busy,reload,res
  const index=selection.count===questions.length?selection.index:Math.max(0,questions.length-1);
  const last=data.runs.at(-1),ready=(data.asked_topics?.length??0)>=3,enabled=data.goal.status==='draft';
  const blocked=data.runs.some(r=>r.reply?.source==='policy');
- const plan=!blocked&&(showPlan||(!forceQuestions&&(last?.reply?.stage==='draft_requested'||last?.user_text===ASK_AUTO||(!!data.auto_schedule||data.runs.some(r=>r.reply?.stage==='draft_requested'))&&last?.reply?.kind!=='question')));
+ const plan=shouldShowPlan(data,showPlan,forceQuestions);
  async function begin(){setShowPlan(true);setForceQuestions(false);await onSend(text.trim()?'根据当前回答开始制订：'+text.trim():'先到这里，请根据现有信息准备方案草稿。');}
  async function more(){setShowPlan(false);setForceQuestions(true);await onSend(text.trim()&&last?.reply?.kind==='question'?undefined:MORE_QUESTIONS);}
  return <KeyboardAvoidingView style={{flex:1,backgroundColor:colors.background}} behavior={Platform.OS==='ios'?'padding':undefined}><SafeAreaView style={{flex:1}} edges={['top','bottom','left','right']}>

@@ -244,3 +244,12 @@ planning_jobs用source_run_id唯一对应停止请求，source/Goal/owner复合F
 calendar_states按owner保存revision/提交run标记；calendar_events首批只保存source=user/fixed=1、UTC起止及UTC/Asia/Shanghai时区，owner+起止唯一。会话归属、提议/明确确认、原子batch、幂等与账号版本保护；源Goal/run删除只置空依据链接，已确认占用继续属于账号，账号删除级联。没有目标任务/通知写入、编辑/取消或重复规则。详细合同见[CALENDAR_OCCUPANCY](CALENDAR_OCCUPANCY.md)。
 
 排程提议冻结本账号版本与交叠占用快照，确认条件INSERT再次检查版本，内核避开已保存占用，历史旧快照失效而不覆写；不等于其他未记录日程或完整领域约束已核实。日历新增本人GET范围读取及首批真实占用列表；完整计划表、独立schedule_proposals/批准事务仍未完成。
+
+
+### 2026-10-14 开发计划数据重置
+
+用户授权清理旧计划。迁移 0018 的固定截止点为 2026-10-14 19:47:50（北京时间）：删除此前 planning_jobs、plan_draft_attempts（级联审阅）、手动搜索结果、旧来源任务及来源。生成流程只从持久任务条件性保存，已删除任务不能由晚到的模型结果重新写回。截止点后的新计划保留，此迁移不是每次启动清空数据。
+
+旧停止/数字改稿/日程控制记录保留 user_text、顺序与时间，将生成上下文及回复替换为 plans_cleared 提示；同步其 assistant 消息，取消遗留 running 控制记录。真正问题及回答、chat_condition_captures、goal_slots、账号/会话/目标、用户固定占用、search_usage 和 plan_draft_usage 不删除，预算不退款。迁移保留原表结构，不用删除字段的方式绕过一致性约束。
+
+审计工具 backend/scripts/plan-reset-audit.mjs 只接受 dev、test、cloud，cloud 校验固定账户及 guidy-development 的数据库 ID；输出匿名聚合数量，不输出邮箱、回答、密钥或方案正文。清理前后比较保留数量及旧数据残留；测试额外证明完整 user_text 不变、截止点保护、客户端 DTO 可读取、同批失败回滚和重复执行无新增损失。D1 迁移应用失败会回滚本次迁移，见[官方说明](https://developers.cloudflare.com/workers/wrangler/commands/d1/)。

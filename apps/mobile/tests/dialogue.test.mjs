@@ -76,3 +76,16 @@ test('three-topic progress is distinct internal metadata, never a repeated-turn 
 test('clarification budget validates remaining counts and never confuses three topics with daily quota',()=>{const clarification_budget={daily_limit:24,used:8,remaining:16,reset_at:123,global_limited:false,allowed:true};assert.equal(checkedDialogue({...base,clarification_budget}).clarification_budget.remaining,16);for(const patch of [{remaining:99},{allowed:false},{used:-1},{daily_limit:999}])assert.throws(()=>checkedDialogue({...base,clarification_budget:{...clarification_budget,...patch}}));assert.throws(()=>checkedDialogue({...base,clarification_budget:null}));assert.equal(checkedDialogue({...base,clarification_budget:{...clarification_budget,global_limited:true,allowed:false}}).clarification_budget.allowed,false);assert.match(dialogueError('AI_DAILY_LIMIT'),/停止提问/);});
 
 test('chat edit differences reject fabricated totals, fields and receipt versions',()=>{const proposal={attempt_id:'00000000-0000-0000-0000-000000000001',task_id:'00000000-0000-0000-0000-000000000002',task_title:'练习',goal_revision:0,review_revision:0,before:{duration_minutes:20,frequency_per_week:3},after:{duration_minutes:15,frequency_per_week:4},weekly_before:60,weekly_after:60};const reply={schema_version:1,kind:'notice',source:'harness',question:'请核对差异',reason:'不自动保存',requested_slot:null,stage:'edit_proposed',edit_proposal:proposal};assert.equal(checkedDialogue({...base,runs:[{...base.runs[0],reply,edit_receipt_revision:1}]}).runs[0].edit_receipt_revision,1);for(const patch of [{weekly_after:999},{after:{duration_minutes:999,frequency_per_week:4}},{task_id:'forged'}])assert.throws(()=>checkedDialogue({...base,runs:[{...base.runs[0],reply:{...reply,edit_proposal:{...proposal,...patch}}}]}));assert.throws(()=>checkedDialogue({...base,runs:[{...base.runs[0],reply,edit_receipt_revision:21}]}));assert.throws(()=>checkedDialogue({...base,runs:[{...base.runs[0],reply:{...reply,source:'deepseek'}}]}));});
+
+
+test('cleared historical scheduling commands reopen question cards instead of a deleted plan', async () => {
+  const {shouldShowPlan}=await import('../src/goals/plan-presentation.ts');
+  const data={runs:[{user_text:'请根据现有信息直接拟定一周安排。',reply:{source:'harness',kind:'notice',stage:'plans_cleared'}}]};
+  assert.equal(shouldShowPlan(data),false);
+  assert.equal(shouldShowPlan(data,true),true);
+  data.runs[0].reply.stage='schedule_preview';
+  assert.equal(shouldShowPlan(data),true);
+  assert.equal(shouldShowPlan(data,false,true),false);
+  data.runs.push({reply:{source:'policy',kind:'referral'}});
+  assert.equal(shouldShowPlan(data,true),false);
+});
