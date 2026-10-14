@@ -50,7 +50,7 @@ export async function listGoals(signal: AbortSignal): Promise<{ goals: AccountGo
 export async function createGoal(body: { description: string; timeframe: string }, key: string): Promise<AccountGoal> {
   const result = await request('POST', body, key);
   if (typeof result.id !== 'string' || result.status !== 'draft' || result.description !== body.description || result.timeframe_note !== body.timeframe || !Number.isInteger(result.revision)) throw new Error('目标保存结果未确认。本机草稿仍保留，请重试。');
-  return result;
+  return checkedGoal(result);
 }
 
 function checkedGoal(result: AccountGoal): AccountGoal {

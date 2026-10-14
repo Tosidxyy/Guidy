@@ -150,3 +150,7 @@ planCycle按PlanDraft的stage_weeks展开完整周期；SchedulingService的prev
 POST goals/:id/plan-approval由已登录用户明确确认具体预览；模型不能调用该写入路径。GET同接口读已接受快照；GET calendar/events读本人固定事项与当前生效计划实例。模块scheduling/approval负责原子准入和持久化；calendar的planningCalendarSnapshot在调度时包含已确认目标实例，并有界读取全部占用，不静默截断。日志只记录路由模板。
 
 本轮支持首次确认、幂等恢复和日历读回；活跃目标问答调整、局部重规划/替代实例、通知意图与本地提醒尚未接通。普通结果页不再显示旧手动研究步骤；最终确认是一项明确用户操作。生效关联的兼容迁移说明见[数据库](DATABASE.md)。
+
+### 2026-10-14 退役手动服务源码清理
+
+退役且路由已 404 的 plan/search/slots 处理器已实际删除。自动工作流直接使用 search-provider、plan-schema、provider 与 planning-jobs，不依赖手动 HTTP 服务。plan/search 测试保留供应商和结构校验，原手动端点测试随服务退役；review fixture 直接建立所需测试数据，不再调用已退役搜索处理器。review-service 仍有内部兼容测试引用，后续继续收敛，不影响自动工作流或公开旧路径 404。无数据库迁移和额外数据删除。

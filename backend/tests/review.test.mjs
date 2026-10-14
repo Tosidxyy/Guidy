@@ -3,10 +3,8 @@ import { test } from "node:test";
 import { readFile, readdir } from "node:fs/promises";
 import { URL } from "node:url";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
-import { searchResponse } from "../src/research/search-service.ts";
 import { reviewResponse } from "../src/agent/review-service.ts";
 import { createApp } from "../src/index.ts";
-const env = {};
 async function fixture(t) {
   const mf = new Miniflare(
     convertV4MiniflareOptions({
@@ -71,39 +69,7 @@ async function fixture(t) {
         }),
       )
       .run();
-  const request = (key, query = "英语学习方法", revision = 0) =>
-    new globalThis.Request(
-      `http://127.0.0.1/api/v1/goals/${goal}/search-runs`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": key },
-        body: JSON.stringify({ query, expected_revision: revision }),
-      },
-    );
-  const get = () =>
-    new globalThis.Request(`http://127.0.0.1/api/v1/goals/${goal}/search-runs`);
-  let calls = 0;
-  const provider = {
-    search: async () => {
-      calls++;
-      return {
-        provider: "doubao-custom",
-        provider_request_id: "synthetic",
-        searched_at: Date.now(),
-        sources: [],
-      };
-    },
-  };
-  const post = (key, query, revision) =>
-    searchResponse(
-      request(key, query, revision),
-      db,
-      owner,
-      "test",
-      env,
-      provider,
-    );
-  return { db, owner, goal, request, get, provider, post, calls: () => calls };
+  return { db, owner, goal };
 }
 
 async function setup(t) {
