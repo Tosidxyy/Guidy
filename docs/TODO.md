@@ -1012,3 +1012,20 @@ Browser plugin not available，按前端调试/React检查与04-calendar原型�
 开发云部署b1bafaa6-f7c6-41bc-a0c6-56ccddf78181；隔离真实登录/Goal、受控三题历史→真实Workflow→DeepSeek研究判断/豆包3来源/DeepSeek严格草稿→服务端自动日历，实际3阶段5周、全阶段覆盖与客户端Schema通过，同键Job1/Goal revision0/active_plan NULL不变。至多2模型+1搜索、邮件0；最终精确清验证身份和测试用户，不输出密钥/OTP/Cookie/真实用户或模型原文。无迁移/额外旧数据删除；真实iPhone新月历、键盘和VoiceOver仍未验证。
 
 TODO仅勾选当前子项，整体目标未完成。单独进度提交后push origin/main核对远程SHA；下一轮推进最终确认入历与日期调整，保留用户追加约束的聊天体验，继续清理旧内部协议。
+
+
+### 2026-10-14 首次确认方案并持久入历
+
+- [x] 用户明确确认完整候选日程后，原子保存不可变plan_versions、版本内tasks、scheduled_occurrences、生效关联、日历版本与Goal active/revision+1；未确认不写核心记录。
+- [x] 同键确认/断线GET恢复只返回原回执；新版/日历/聊天变化、过去时间、未安排项及policy阻止旧确认，插入失败整体回滚。已接受实例参与其他目标排程冲突检查。
+- [x] 结果页确认状态与月历、底部日历日期详情、查看已确认方案、原回答卡片回看与返回；共享黑白月历/44pt日期控件，旧手动研究路由日志分支清理。
+- [ ] 已确认后的自然语言改期/局部重规划、过期预览的版本化刷新、通知及执行反馈尚未完成；本轮不冒称完整目标已交付。
+
+实现 Commit d1afb5b44f77a51e38f6c5c7bf165e77768ba97c。新增0019用关联表goal_active_plans作为生效指针唯一事实源，保持早期goals.active_plan_version_id仅NULL兼容约束；无需危险重建Goal/子表，DATABASE与ARCHITECTURE明确迁移边界。
+
+- backend typecheck/lint/format:check/build:cloud通过；最终 approval/d1/draft-edit/planning-jobs/cycle/worker 回归58/58，含同键并发、另一Goal竞争占用、晚到用户补充、准入前新增实际冲突、policy阻止、插入失败回滚、账号隔离/删除级联及真实API→客户端Schema。首次task_id重复展开被TS识别并修正，未按失败提交；更正测试上下文fixture后客户端也真实通过。
+- mobile typecheck/lint最终无警告、test:ui-state36/36、最终UI恢复修正后的export:ios通过。一次onRefresh只替换首处导致类型失败，replaceAll修正后通过；calendarRevision依赖警告以明确刷新依赖引用消除。3文档42个相对链接及diff检查通过。真实iPhone/VoiceOver/键盘未验证，不把编译当真机；通知、外部Apple Calendar读取未接入。
+- Browser plugin not available，Playwright/Edge实际本地OTP/Goal/受控五周原稿、真实日历写入12实例：确认→成功→Reload无重复→底部日历任务做法→方案链接→已确认后回看三题卡/返回→320×480无页面横溢。另模拟确认前新增固定占用/日历版本：首次409不写核心→免费重新建议→再次明确确认成功，无自动再次批准，12实例不变；0意外error/warn（只允许故意错误OTP400/冲突409），模型/搜索/邮件0。截图guidy-approved-calendar.png / -small.png已view_image核对04-calendar黑白原型，QA精确清账号，未读取真实用户正文。
+- QA旧8090HTTP超时，核对PID23088只重启本项目测试服务；首次尚未就绪连接拒绝不计通过，Ready后再跑。旧本地8787在迁移/热更新后健康请求未响应，核对Guidy进程36832/34204/34316后重新加载本地测试环境，数据不重置、不影响云端；新Ready后实际API/浏览器验证通过。
+- dev/test/cloud均应用0019（仅建表/索引，无删除旧数据）；开发云部署4a0e08c3-4562-4af5-b9d2-34329ae2f064。隔离云身份真实登录/Goal、受控原稿→真实建议API→确认→同键重放版本1→GET恢复与calendar/events→客户端Schema通过，Goal active/revision1，预览核心写0，确认后实例1。邮件/模型/搜索0，精确清verification/QA用户及级联记录，无Key/OTP/Cookie/真实内容输出。
+- TODO单独提交后push origin/main核对远程SHA。下一轮让用户在已确认方案中直接追加没空时段，生成新版本预览/再次确认，旧执行实例与计划历史不删除，再继续移除旧内部手动服务。当前这类调整入口未伪装成可用按钮。
