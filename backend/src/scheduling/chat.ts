@@ -135,7 +135,15 @@ export type ScheduleData = {
   review_revision: number;
   timezone: "Asia/Shanghai" | "UTC";
   windows: Interval[];
-  scope: "first_stage_once_v1" | "first_stage_week_v1" | "full_plan_cycle_v1";
+  scope:
+    | "first_stage_once_v1"
+    | "first_stage_week_v1"
+    | "full_plan_cycle_v1"
+    | "remaining_plan_v1";
+  replaces_plan_id?: string;
+  parent_instance_ids?: string[];
+  completed_source_ids?: string[];
+  preferences?: import("../agent/schedule-preferences.ts").Preferences;
   stages?: { stage: number; weeks: number; start_at: number; end_at: number }[];
   period_basis?: "agent_draft_v1" | "assumed_one_week_per_stage_v1";
   period?: Interval;

@@ -103,3 +103,10 @@ GET/POST messages的clarification_budget返回本人daily_limit/used/remaining/r
 已生成最新自动草稿时，含任务序号/时长/频次调整的消息进入受控解析，先验证owner/Goal状态/聊天与Goal版本，无Provider配置也可处理。保存用户消息和harness notice（edit_proposed/edit_guidance）同batch，提案无审阅写入；疑问/多项/残留命令不猜值，高风险用户事实保存policy提示并阻止确认。最多40轮，属于独立免费动作，澄清个人/全局计数均排除draft-edit-v1；非支持表达仍按原澄清流程，不能称所有自然语言改稿都免费。
 
 采用由业务审阅Service验证proposal_run_id/请求键/完整提议、旧Goal/Review/newest planning source/policy，conditional INSERT防覆盖；Model从未直接写表。messages用源提议run返回edit_receipt_revision和edit_proposal_stale，已保存历史显示真实版本，未采用过期项禁用；未知网络可同键读取原回执，不自动重生成。
+
+
+### 2026-10-14 已确认目标的时间补充
+
+活跃目标继续使用问题卡片收集用户补充，不要求填星期/日期slot。schedule_change Provider按[DeepSeek JSON输出](https://api-docs.deepseek.com/guides/json_mode/)给出结构化偏好，由harness校验字段、原文回显、日期/星期/同日时段边界；模型不执行数据库动作。当前范围为原周期内未来任务的星期避让、具体日期排除与时段调整，频次/任务内容、时区不明或跨日请求需进一步核对，不能声称已经修改。
+
+委托“你来安排吧”及明确未知沿用原偏好作为待确认建议，不重复付费追问。明确修改调用一次模型；同键重放不重复，既有偏好的冲突刷新不调用模型。Goal/生效父版本/聊天序号、policy与预算控制领取，45秒租约、25秒模型等待；失败保留请求和原日历，不自动付费重跑。已确认/未确认偏好都只是方案输入，不写用户固定占用或把未知变成空闲事实。

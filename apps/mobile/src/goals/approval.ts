@@ -13,9 +13,9 @@ export function checkedApproval(value:ApprovalSnapshot,goalId:string){
  return value;
 }
 
-export type CalendarEntry={id:string;title:string;instructions:string;start_at:number;end_at:number;timezone:'UTC'|'Asia/Shanghai';source:'user'|'plan';goal_id:string|null;plan_version_id:string|null};
+export type CalendarEntry={status?:'fixed'|'scheduled'|'completed'|'skipped';id:string;title:string;instructions:string;start_at:number;end_at:number;timezone:'UTC'|'Asia/Shanghai';source:'user'|'plan';goal_id:string|null;plan_version_id:string|null};
 export type UpcomingCalendar={schema_version:1;from:number;to:number;revision:number;events:CalendarEntry[]};
 export function checkedUpcoming(v:UpcomingCalendar,from:number,to:number){
- if(v?.schema_version!==1||v.from!==from||v.to!==to||!Number.isSafeInteger(v.revision)||v.revision<0||!Array.isArray(v.events)||v.events.length>2500||new Set(v.events.map(e=>e.id)).size!==v.events.length||v.events.some(e=>!e||!uuid(e.id)||typeof e.title!=='string'||!e.title.trim()||e.title.length>80||typeof e.instructions!=='string'||e.instructions.length>400||![e.start_at,e.end_at].every(Number.isSafeInteger)||e.end_at<=e.start_at||e.start_at>=to||e.end_at<=from||!['UTC','Asia/Shanghai'].includes(e.timezone)||(e.source==='plan'?!uuid(e.goal_id)||!uuid(e.plan_version_id)||!e.instructions.trim():e.source!=='user'||e.goal_id!==null||e.plan_version_id!==null||e.instructions!=='')))throw new Error('日历数据未通过校验。');
+ if(v?.schema_version!==1||v.from!==from||v.to!==to||!Number.isSafeInteger(v.revision)||v.revision<0||!Array.isArray(v.events)||v.events.length>2500||new Set(v.events.map(e=>e.id)).size!==v.events.length||v.events.some(e=>!e||!uuid(e.id)||typeof e.title!=='string'||!e.title.trim()||e.title.length>80||typeof e.instructions!=='string'||e.instructions.length>400||![e.start_at,e.end_at].every(Number.isSafeInteger)||e.end_at<=e.start_at||e.start_at>=to||e.end_at<=from||!['UTC','Asia/Shanghai'].includes(e.timezone)||(e.status!==undefined&&(e.source==='plan'?!['scheduled','completed','skipped'].includes(e.status):e.status!=='fixed'))||(e.source==='plan'?!uuid(e.goal_id)||!uuid(e.plan_version_id)||!e.instructions.trim():e.source!=='user'||e.goal_id!==null||e.plan_version_id!==null||e.instructions!=='')))throw new Error('日历数据未通过校验。');
  return v;
 }

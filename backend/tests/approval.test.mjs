@@ -379,7 +379,7 @@ test("a collision arriving between recheck and commit cannot bypass the atomic a
   const db = {
     prepare: (...args) => f.db.prepare(...args),
     batch: async (statements) => {
-      if (statements.length === 6 && !injected) {
+      if (statements.length >= 6 && !injected) {
         injected = true;
         const p = g.schedule.preview.placements[0];
         await f.db

@@ -85,6 +85,7 @@ export async function planningCalendarSnapshot(
   db: D1Database,
   owner: string,
   range?: Interval,
+  excludeFutureVersion?: string,
 ) {
   const bounds = range ?? {
     start_at: Date.now() - 86400000,
@@ -101,9 +102,15 @@ export async function planningCalendarSnapshot(
       .bind(owner, bounds.end_at, bounds.start_at),
     db
       .prepare(
-        "SELECT o.id,o.start_at,o.end_at FROM scheduled_occurrences o JOIN goal_active_plans a ON a.plan_version_id=o.plan_version_id AND a.goal_id=o.goal_id AND a.owner_id=o.owner_id WHERE o.owner_id=? AND o.status='scheduled' AND o.start_at<? AND o.end_at>? ORDER BY o.start_at,o.id LIMIT 2001",
+        "SELECT o.id,o.start_at,o.end_at FROM scheduled_occurrences o WHERE o.owner_id=? AND o.status='scheduled' AND o.start_at<? AND o.end_at>? AND NOT(o.plan_version_id=? AND o.start_at>?) ORDER BY o.start_at,o.id LIMIT 2001",
       )
-      .bind(owner, bounds.end_at, bounds.start_at),
+      .bind(
+        owner,
+        bounds.end_at,
+        bounds.start_at,
+        excludeFutureVersion ?? "",
+        Date.now(),
+      ),
   ]);
   if (rows[1].results.length > 500 || rows[2].results.length > 2000)
     throw new Error("CALENDAR_LIMIT");
@@ -156,12 +163,12 @@ export async function upcomingCalendarResponse(
       .bind(owner),
     db
       .prepare(
-        "SELECT id,title,start_at,end_at,timezone,'user' source,'' instructions,NULL goal_id,NULL plan_version_id FROM calendar_events WHERE owner_id=? AND start_at<? AND end_at>? ORDER BY start_at,id LIMIT 501",
+        "SELECT id,title,start_at,end_at,timezone,'fixed' status,'user' source,'' instructions,NULL goal_id,NULL plan_version_id FROM calendar_events WHERE owner_id=? AND start_at<? AND end_at>? ORDER BY start_at,id LIMIT 501",
       )
       .bind(owner, to, from),
     db
       .prepare(
-        "SELECT o.id,t.title,t.instructions,o.start_at,o.end_at,o.timezone,'plan' source,o.goal_id,o.plan_version_id FROM scheduled_occurrences o JOIN goal_active_plans a ON a.plan_version_id=o.plan_version_id AND a.goal_id=o.goal_id AND a.owner_id=o.owner_id JOIN tasks t ON t.id=o.task_id AND t.plan_version_id=o.plan_version_id AND t.goal_id=o.goal_id AND t.owner_id=o.owner_id WHERE o.owner_id=? AND o.status='scheduled' AND o.start_at<? AND o.end_at>? ORDER BY o.start_at,o.id LIMIT 2001",
+        "SELECT o.id,t.title,t.instructions,o.start_at,o.end_at,o.timezone,o.status,'plan' source,o.goal_id,o.plan_version_id FROM scheduled_occurrences o JOIN tasks t ON t.id=o.task_id AND t.plan_version_id=o.plan_version_id AND t.goal_id=o.goal_id AND t.owner_id=o.owner_id WHERE o.owner_id=? AND o.status IN ('scheduled','completed','skipped') AND o.start_at<? AND o.end_at>? ORDER BY o.start_at,o.id LIMIT 2001",
       )
       .bind(owner, to, from),
   ]);
