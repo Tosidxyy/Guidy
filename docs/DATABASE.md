@@ -253,3 +253,12 @@ calendar_states按owner保存revision/提交run标记；calendar_events首批只
 旧停止/数字改稿/日程控制记录保留 user_text、顺序与时间，将生成上下文及回复替换为 plans_cleared 提示；同步其 assistant 消息，取消遗留 running 控制记录。真正问题及回答、chat_condition_captures、goal_slots、账号/会话/目标、用户固定占用、search_usage 和 plan_draft_usage 不删除，预算不退款。迁移保留原表结构，不用删除字段的方式绕过一致性约束。
 
 审计工具 backend/scripts/plan-reset-audit.mjs 只接受 dev、test、cloud，cloud 校验固定账户及 guidy-development 的数据库 ID；输出匿名聚合数量，不输出邮箱、回答、密钥或方案正文。清理前后比较保留数量及旧数据残留；测试额外证明完整 user_text 不变、截止点保护、客户端 DTO 可读取、同批失败回滚和重复执行无新增损失。D1 迁移应用失败会回滚本次迁移，见[官方说明](https://developers.cloudflare.com/workers/wrangler/commands/d1/)。
+
+
+### 2026-10-14 首次方案确认与生效日历
+
+0019采用新增表迁移，不重建goals或丢失外键子数据。plan_versions保存已接受的原稿/上下文/完整日程快照、Goal基准版本、日历前后版本、确认时间与幂等回执；tasks以(id,plan_version_id)作为版本内身份，scheduled_occurrences保存每次执行的具体时刻与状态。未确认预览不会写入这些表，确认也不代表执行完成或提醒已发送。
+
+**当前生效指针唯一事实源为goal_active_plans**，外键绑定同Goal/owner的plan_versions。早期goals.active_plan_version_id存在CHECK只允许NULL，作为兼容保留字段不写入、不作生效查询事实源；前面模型表格中的概念指针通过这张新增关联实现。一次确认在D1.batch内写版本、任务、实例、关联、日历版本及Goal active/revision+1。不原地覆盖计划快照；后续重规划仍需新版本与旧实例状态/执行历史保留策略，本轮尚未接通。
+
+确认请求绑定服务端日程run、Goal版本和账号日历版本，核对最新来源/审阅/聊天、安全状态和未来时间；重新运行确定性检查，再由同事务SQL准入校验最新版本与实际重叠。未安排项阻止确认，同键重放返回原回执，插入失败整体回滚。已确认目标实例参与后续其他目标排程避让，不能把它们当空闲。

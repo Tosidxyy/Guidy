@@ -163,7 +163,7 @@ export async function dialogueResponse(
     ]);
     const autoRow = await db
       .prepare(
-        "SELECT reply_json FROM agent_runs WHERE goal_id=? AND owner_id=? AND user_text=? AND status='succeeded' ORDER BY turn_index DESC LIMIT 1",
+        "SELECT id,reply_json FROM agent_runs WHERE goal_id=? AND owner_id=? AND user_text=? AND status='succeeded' ORDER BY turn_index DESC LIMIT 1",
       )
       .bind(goalId, owner, ASK_AUTO)
       .first();
@@ -173,6 +173,10 @@ export async function dialogueResponse(
       auto_schedule: autoRow?.reply_json
         ? (JSON.parse(String(autoRow.reply_json)).schedule ?? null)
         : null,
+      auto_schedule_run_id:
+        autoRow?.reply_json && JSON.parse(String(autoRow.reply_json)).schedule
+          ? autoRow.id
+          : null,
       calendar_revision: Number(rows[2].results[0]?.revision ?? 0),
       asked_topics: await askedTopics(),
       clarification_budget: await clarificationBudget(db, owner, env),

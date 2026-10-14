@@ -1,3 +1,4 @@
+import {checkedApproval,checkedUpcoming,type ApprovalSnapshot,type UpcomingCalendar} from './approval';
 import {requestTimeout,PLANNING_READ_INTERRUPTED} from './request-policy';
 import {checkedCalendar,type CalendarSnapshot} from './calendar';
 import {checkedPlanning,type PlanningSnapshot} from './planning';
@@ -24,6 +25,7 @@ async function request(method: 'GET' | 'POST' | 'PATCH', body?: Record<string, u
     const response = await fetch(path.startsWith('/api/v1/calendar/')?`${apiOrigin}${path}`:`${apiOrigin}/api/v1/goals${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: Platform.OS === 'web' ? 'include' : 'omit', signal: controller.signal });
     const payload = await response.json();
     if (!response.ok) {
+      if(path.endsWith('/plan-approval')&&![401,404].includes(response.status)){const code=payload.error?.code;throw new GoalApiError(code==='CALENDAR_CHANGED'?'日历已有变化，请更新建议安排。':code==='SCHEDULE_EXPIRED'?'建议时间已过去，请更新日程。':code==='PLAN_NOT_READY'?'仍有任务需要调整，确认前请核对完整方案。':'方案确认未完成，请读取最新状态后再试。',code??'APPROVAL_FAILED');}
       if(path.startsWith('/api/v1/calendar/')&&response.status!==401)throw new Error('日历占用未能读取，请稍后重试。');
       if(path.endsWith('/messages') && response.status!==401 && response.status!==404)throw new GoalApiError(dialogueError(payload.error?.code??''),payload.error?.code??'AI_UNAVAILABLE');
       if (response.status === 401) throw new Error('登录已失效，请重新登录。请求失败不会清空输入。');
@@ -78,3 +80,7 @@ export async function getPlanning(id:string,signal?:AbortSignal):Promise<Plannin
 export async function resumePlanning(id:string,jobId:string):Promise<PlanningSnapshot>{return checkedPlanning(await request('POST',{job_id:jobId},undefined,undefined,`/${id}/planning-runs`),id);}
 
 export async function getCalendar(from:number,to:number,signal:AbortSignal):Promise<CalendarSnapshot>{return checkedCalendar(await request('GET',undefined,undefined,signal,'/api/v1/calendar/fixed-events?from='+from+'&to='+to),from,to);}
+
+export async function getApproval(id:string,signal?:AbortSignal):Promise<ApprovalSnapshot>{return checkedApproval(await request('GET',undefined,undefined,signal,`/${id}/plan-approval`),id);}
+export async function approvePlan(id:string,body:{schedule_run_id:string;expected_goal_revision:number;expected_calendar_revision:number},key:string):Promise<ApprovalSnapshot>{return checkedApproval(await request('POST',body,key,undefined,`/${id}/plan-approval`),id);}
+export async function getUpcomingCalendar(from:number,to:number,signal:AbortSignal):Promise<UpcomingCalendar>{return checkedUpcoming(await request('GET',undefined,undefined,signal,'/api/v1/calendar/events?from='+from+'&to='+to),from,to);}

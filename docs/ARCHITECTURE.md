@@ -143,3 +143,10 @@ Goal聊天已接draft-edit-v1确定性单项数字提案与明确采用，复用
 ### 自动全阶段排程
 
 planCycle按PlanDraft的stage_weeks展开完整周期；SchedulingService的previewSchedule只在full_plan_cycle_v1模式允许84天/600条有界输入，旧模式保留31天/100条保护。最多500条已确认占用加84个不可用日窗口仍在边界内，不截断占用。Agent只生成阶段建议；时间、依赖、每天上限、冲突由确定性逻辑核对，未安排项不能被忽略或迁到下一周。最终批准与内部生效日历持久化仍未实现，本轮全阶段建议不能冒称批准入历。
+
+
+### 首次确认入历服务
+
+POST goals/:id/plan-approval由已登录用户明确确认具体预览；模型不能调用该写入路径。GET同接口读已接受快照；GET calendar/events读本人固定事项与当前生效计划实例。模块scheduling/approval负责原子准入和持久化；calendar的planningCalendarSnapshot在调度时包含已确认目标实例，并有界读取全部占用，不静默截断。日志只记录路由模板。
+
+本轮支持首次确认、幂等恢复和日历读回；活跃目标问答调整、局部重规划/替代实例、通知意图与本地提醒尚未接通。普通结果页不再显示旧手动研究步骤；最终确认是一项明确用户操作。生效关联的兼容迁移说明见[数据库](DATABASE.md)。

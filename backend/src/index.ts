@@ -4,7 +4,11 @@ import { goalsResponse } from "./goals.ts";
 import type { SearchEnv } from "./research/search-provider.ts";
 import type { WorkflowBinding } from "./agent/workflow-binding.ts";
 import { dialogueResponse } from "./agent/harness.ts";
-import { calendarResponse } from "./scheduling/calendar.ts";
+import { approvalResponse } from "./scheduling/approval.ts";
+import {
+  upcomingCalendarResponse,
+  calendarResponse,
+} from "./scheduling/calendar.ts";
 import type { AgentEnv } from "./agent/provider.ts";
 
 export interface Env extends AuthEnv, AgentEnv, SearchEnv {
@@ -58,9 +62,10 @@ async function authResponse(
   }
   const path = new URL(request.url).pathname;
   if (
+    path === "/api/v1/calendar/events" ||
     path === "/api/v1/calendar/fixed-events" ||
     path === "/api/v1/goals" ||
-    /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|planning-runs))?$/.test(
+    /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|planning-runs|plan-approval))?$/.test(
       path,
     )
   ) {
@@ -73,6 +78,10 @@ async function authResponse(
       return error(id, 403, "ORIGIN_REJECTED", "请求来源未获允许。");
     const session = await auth.api.getSession({ headers: request.headers });
     if (!session) return error(id, 401, "UNAUTHORIZED", "请重新登录。");
+    if (path === "/api/v1/calendar/events")
+      return upcomingCalendarResponse(request, env.DB!, session.user.id, id);
+    if (path.endsWith("/plan-approval"))
+      return approvalResponse(request, env.DB!, session.user.id, id);
     if (path === "/api/v1/calendar/fixed-events")
       return calendarResponse(request, env.DB!, session.user.id, id);
     if (path.endsWith("/planning-runs"))
@@ -311,39 +320,31 @@ export function createApp({
       const started = performance.now();
       const path = new URL(request.url).pathname;
       const isGoals =
+        path === "/api/v1/calendar/events" ||
         path === "/api/v1/calendar/fixed-events" ||
         path === "/api/v1/goals" ||
-        /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|planning-runs))?$/.test(
+        /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|planning-runs|plan-approval))?$/.test(
           path,
         );
       const isAuth =
         path.startsWith("/api/auth/") || path === "/api/v1/me" || isGoals;
       const route = isAuth
         ? {
-            path:
-              path === "/api/v1/calendar/fixed-events"
+            path: isGoals
+              ? path.startsWith("/api/v1/calendar/")
                 ? path
-                : isGoals
-                  ? path.endsWith("/planning-runs")
-                    ? "/api/v1/goals/:id/planning-runs"
-                    : path.endsWith("/draft-reviews")
-                      ? "/api/v1/goals/:id/draft-reviews"
-                      : path.endsWith("/plan-drafts")
-                        ? "/api/v1/goals/:id/plan-drafts"
-                        : path.endsWith("/search-runs")
-                          ? "/api/v1/goals/:id/search-runs"
-                          : path.endsWith("/research-runs")
-                            ? "/api/v1/goals/:id/research-runs"
-                            : path.endsWith("/evidence")
-                              ? "/api/v1/goals/:id/evidence"
-                              : path.endsWith("/messages")
-                                ? "/api/v1/goals/:id/messages"
-                                : path.endsWith("/slots")
-                                  ? "/api/v1/goals/:id/slots"
-                                  : "/api/v1/goals/:id?"
-                  : path === "/api/v1/me"
-                    ? path
-                    : "/api/auth/*",
+                : path === "/api/v1/goals"
+                  ? path
+                  : path.endsWith("/plan-approval")
+                    ? "/api/v1/goals/:id/plan-approval"
+                    : path.endsWith("/planning-runs")
+                      ? "/api/v1/goals/:id/planning-runs"
+                      : path.endsWith("/messages")
+                        ? "/api/v1/goals/:id/messages"
+                        : "/api/v1/goals/:id?"
+              : path === "/api/v1/me"
+                ? path
+                : "/api/auth/*",
             method: authPaths.get(path) ?? "GET",
             handle: (requestId: string) =>
               authResponse(

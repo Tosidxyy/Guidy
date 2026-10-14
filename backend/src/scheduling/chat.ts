@@ -1,6 +1,6 @@
 import { planCycle } from "./cycle.ts";
 import { weeklyTrial } from "./weekly.ts";
-import { calendarSnapshot } from "./calendar.ts";
+import { calendarSnapshot, planningCalendarSnapshot } from "./calendar.ts";
 import type { D1Database } from "@cloudflare/workers-types";
 import { isDraftEditText } from "../agent/draft-edit.ts";
 import {
@@ -206,7 +206,10 @@ export async function scheduleChat(
   const lastReply = last?.reply_json
     ? JSON.parse(String(last.reply_json))
     : null;
-  const calendar = await calendarSnapshot(db, owner);
+  const calendar =
+    text === ASK_AUTO
+      ? await planningCalendarSnapshot(db, owner)
+      : await calendarSnapshot(db, owner);
   const weekly =
     text === ASK_AUTO ||
     text === ASK_WEEK ||

@@ -84,7 +84,11 @@ function validate(input: PreviewInput): void {
     input.tasks,
     input.completed_dependencies,
   ]) {
-    if (!Array.isArray(list) || list.length > (cycle ? 600 : LIMIT)) invalid();
+    if (
+      !Array.isArray(list) ||
+      list.length > (cycle ? (list === input.busy ? 2600 : 600) : LIMIT)
+    )
+      invalid();
   }
   if (!input.windows.every(interval) || !input.busy.every(interval)) invalid();
   const known = new Set<string>();

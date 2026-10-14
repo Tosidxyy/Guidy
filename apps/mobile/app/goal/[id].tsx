@@ -87,7 +87,7 @@ export default function GoalDetail() {
       {!!notice && <AppText accessibilityLiveRegion="polite">{notice}</AppText>}
       {owner && !loading && (conflict || !goal) && <Action label={conflict ? '读取最新版本（保留输入）' : '重新读取目标'} secondary disabled={saving} onPress={() => { preserve.current = conflict; setRefresh(n => n+1); }} />}
       {goal && <>
-        <Badge>{goal.status === 'paused' ? '已暂停' : goal.status === 'draft' ? '草稿 · 待澄清' : '当前状态暂不可编辑'}</Badge>
+        <Badge>{goal.status === 'paused' ? '已暂停' : goal.status === 'draft' ? '草稿 · 待澄清' : goal.status==='active'?'已开始': '当前状态暂不可编辑'}</Badge>
         <Card>
           <AppText>我的目标</AppText>
           <TextInput accessibilityLabel="账号目标内容" multiline maxLength={300} value={description} onChangeText={setDescription} editable={editable && !saving && !loading} style={[inputStyle,{minHeight:160,textAlignVertical:'top'}]} />
@@ -95,6 +95,7 @@ export default function GoalDetail() {
           <AppText>期望时间（可不填）</AppText>
           <TextInput accessibilityLabel="账号期望时间" maxLength={80} value={timeframe} onChangeText={setTimeframe} editable={editable && !saving && !loading} style={inputStyle} />
         </Card>
+        {goal.status==='active'&&<Action label="查看方案" onPress={()=>router.push({pathname:'/goal/[id]/chat',params:{id}})}/>}
         {editable && <>
           <Action label="Guidy！" disabled={saving || loading || conflict || dirty} onPress={() => router.push({ pathname: '/goal/[id]/chat', params: { id } })} />
           <Action label={saving ? '正在保存…' : '保存修改'} disabled={saving || loading || conflict} onPress={() => save(goal.status as 'draft' | 'paused')} />
