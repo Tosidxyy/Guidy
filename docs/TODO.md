@@ -1059,3 +1059,15 @@ Browser plugin not available，Playwright/Edge实测已确认五周方案→继�
 Browser plugin not available，Playwright/Edge 使用隔离本地身份实测：首页真实空态→单输入→模拟提交失败保留输入→Reload恢复→同键再提交仅1目标→直达受控首问卡→已有目标回问答不重复首问→返回首页→320×480无横向溢出；393×852首页/新想法截图与01-goals黑白tokens核对，截图 guidy-entry-home/new/question/small.png 已检查。问答供应商响应为受控UI fixture，目标写入/认证/读取用真实本地后端，不冒称完整真实AI生成。精确清理该测试邮箱和测试账号级联。
 
 首次脚本在草稿异步恢复前读取输入导致失败，改为等待实际恢复值后两次通过；创建页写入首次 apply_patch 同路径删除/新增未执行，改用明确整文件写入成功。首次重复启动8090提示已占用，核对原Guidy PID16472与HTTP200后复用，不误停手机服务。此轮已有入口检查通过但不称整体改造完成。按约定单独提交 TODO，再 push origin/main 并核对远程 SHA；下一轮继续移除审阅/历史手动协议，补完整卡片历史体验。
+
+### 2026-10-14 退役手动审阅与无入口提案清理
+
+- [x] 删除 review-service.ts、draft-edit.ts 及无线上入口的审阅/提案采用测试；草稿数值偏好进入 Agent 正常问答，保留原文/幂等回执，零审阅版本写入。纯投入/时段辨识保留在 input-intent.ts。
+- [x] 客户端移除数值偏好免费绕过额度；超限时提示并保留输入，不发模型请求。自动计划/日程批准/自然时间调整及冻结版本校验保留。
+- [ ] 完整卡片历史分页仍未接通（当前 snapshot LIMIT 30）；任意内容/频次改稿、旧首阶段/窗口排程执行协议、执行反馈及通知仍需继续。整体目标保持未完成，新版本数据与历史不会为了清旧功能再批量删除。
+
+实现 Commit 319fbf4af6382c1cc47c93d437d73ac1527000f4。backend typecheck/lint/format:check/build:cloud通过；draft-edit/planning-jobs/approval/replan/retired-routes最终39/39通过，含数值原文给模型→问题、无差异提案/审阅写入、同键模型一次。删去的是退役功能测试，未用降低自动核心断言凑通过。mobile typecheck/lint、ui-state36/36、export:ios通过；2文档19链接及diff检查通过，无新依赖/迁移/额外真实数据删除。
+
+Browser plugin not available，Playwright/Edge隔离本地身份，真实认证/目标保存+受控问题fixture实测入口/同键重试/Reload/返回/320窄屏继续通过；额度耗尽填写“第一项改为每次15分钟”→即时提示→输入保留→没有新增消息请求，模型/搜索/邮件0。截图guidy-effort-quota.png已核对卡片黑白布局。首次追加回归因backend cwd多写backend前缀路径失败，修正路径并实际追加/执行通过；首次页面goto60秒超时，本地受限连接错误没有当服务终止，复查原session23049存活、PID16472/8090监听/Metro status200，具体/me随后200，复用原服务重跑通过，无重启/数据重置。失败不算通过。
+
+云开发部署 eabd22e4-951c-4f59-aa9e-4fc88959da42，health200、旧draft-reviews404、messages匿名401。未读取真实用户内容或密钥值，未调用真实付费模型。iPhone/键盘/VoiceOver本轮未验证。TODO单独提交后push origin/main核对SHA；下一轮以私有游标分页补完整回答卡片历史，继续删首阶段手动排程协议，完成正式自动改稿路径。
