@@ -1,4 +1,5 @@
 import { draftRefinement } from "./draft-refinement.ts";
+import { automaticScheduleRequest } from "../scheduling/automatic-key.ts";
 import { activeReplan } from "./active-replan.ts";
 import { ASK_AUTO, scheduleChat } from "../scheduling/chat.ts";
 import {
@@ -161,15 +162,29 @@ export async function dialogueResponse(
         .prepare("SELECT revision FROM calendar_states WHERE owner_id=?")
         .bind(owner),
     ]);
-    const autoRow = await db
+    let autoRow = await db
       .prepare(
-        "SELECT id,reply_json FROM agent_runs WHERE goal_id=? AND owner_id=? AND (? IS NOT NULL) AND status='succeeded' AND json_extract(reply_json,'$.stage')='schedule_preview' AND json_extract(reply_json,'$.schedule.scope') IN ('full_plan_cycle_v1','remaining_plan_v1') ORDER BY turn_index DESC LIMIT 1",
+        "SELECT id,reply_json,turn_index FROM agent_runs WHERE goal_id=? AND owner_id=? AND (? IS NOT NULL) AND status='succeeded' AND json_extract(reply_json,'$.stage')='schedule_preview' AND json_extract(reply_json,'$.schedule.scope') IN ('full_plan_cycle_v1','remaining_plan_v1') ORDER BY turn_index DESC LIMIT 1",
       )
       .bind(goalId, owner, ASK_AUTO)
       .first();
+    const parent = autoRow?.reply_json
+      ? JSON.parse(String(autoRow.reply_json)).schedule?.replaces_plan_id
+      : null;
+    if (
+      parent &&
+      (await db
+        .prepare(
+          "SELECT 1 FROM agent_runs WHERE goal_id=? AND owner_id=? AND turn_index>? AND status='succeeded' AND harness_version='replan-refresh-v1' AND json_extract(reply_json,'$.clears_schedule_for_plan')=? LIMIT 1",
+        )
+        .bind(goalId, owner, autoRow!.turn_index, parent)
+        .first())
+    )
+      autoRow = null;
     const liveGoal = rows[0].results[0];
     return {
       goal: liveGoal,
+      auto_schedule_key: await automaticScheduleRequest(db, owner, goalId),
       auto_schedule: autoRow?.reply_json
         ? (JSON.parse(String(autoRow.reply_json)).schedule ?? null)
         : null,

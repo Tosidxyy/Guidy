@@ -312,3 +312,63 @@ test("past instances and completion state remain untouched when future work is s
     2,
   );
 });
+
+test("expired pending adjustment refresh clears obsolete candidate when no future work remains", async (t) => {
+  const f = await approved(t);
+  let calls = 0;
+  const provider = {
+    complete: async (context) => {
+      calls++;
+      return {
+        content: JSON.stringify(preferences(JSON.parse(context).user_message)),
+        inputTokens: 1,
+        outputTokens: 1,
+      };
+    },
+  };
+  const changed = await send(f, "改到早上7点", "expiry-prepare-key", provider);
+  assert.ok(changed.data.auto_schedule.replaces_plan_id);
+  const old = await f.db
+    .prepare("SELECT schedule_json FROM plan_versions WHERE id=?")
+    .bind(f.parent.id)
+    .first();
+  // Mark controlled fixture work as actually complete; refresh may never fabricate completion.
+  await f.db
+    .prepare(
+      "UPDATE scheduled_occurrences SET status='completed' WHERE plan_version_id=?",
+    )
+    .bind(f.parent.id)
+    .run();
+  const refresh = await send(f, REFRESH_REPLAN, "expiry-refresh-key", provider);
+  assert.equal(refresh.response.status, 200);
+  checkedDialogue(refresh.data);
+  assert.equal(refresh.data.auto_schedule, null);
+  assert.equal(refresh.data.auto_schedule_run_id, null);
+  assert.equal(
+    refresh.data.runs.at(-1).reply.clears_schedule_for_plan,
+    f.parent.id,
+  );
+  assert.equal(calls, 1);
+  assert.equal(refresh.data.clarification_budget.used, 1);
+  assert.deepEqual(
+    await f.db
+      .prepare("SELECT schedule_json FROM plan_versions WHERE id=?")
+      .bind(f.parent.id)
+      .first(),
+    old,
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM plan_versions").first()).n,
+    1,
+  );
+  assert.equal(
+    (
+      await f.db
+        .prepare(
+          "SELECT count(*) n FROM scheduled_occurrences WHERE status='completed'",
+        )
+        .first()
+    ).n,
+    3,
+  );
+});

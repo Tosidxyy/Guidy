@@ -1,4 +1,8 @@
 import { planCycle } from "./cycle.ts";
+import {
+  automaticScheduleKey,
+  automaticScheduleRequest,
+} from "./automatic-key.ts";
 import { planningCalendarSnapshot } from "./calendar.ts";
 import type { D1Database } from "@cloudflare/workers-types";
 import {
@@ -18,19 +22,10 @@ export async function ensureAutomaticSchedule(
         "SELECT coalesce(max(turn_index),0) revision FROM agent_runs WHERE goal_id=? AND owner_id=?",
       )
       .bind(job.goal_id, job.owner_id),
-    db
-      .prepare(
-        "SELECT coalesce(max(revision),0) revision FROM plan_draft_reviews WHERE attempt_id=? AND owner_id=?",
-      )
-      .bind(job.id, job.owner_id),
-    db
-      .prepare("SELECT revision FROM calendar_states WHERE owner_id=?")
-      .bind(job.owner_id),
   ]);
   const chatRevision = Number(rows[0].results[0].revision),
-    revision = Number(rows[1].results[0].revision),
-    cal = Number(rows[2].results[0]?.revision ?? 0),
-    key = `auto_schedule_${job.id}_${revision}_${cal}`;
+    key = await automaticScheduleRequest(db, job.owner_id, job.goal_id);
+  if (!key) return;
   if (
     await db
       .prepare("SELECT id FROM agent_runs WHERE owner_id=? AND request_key=?")
@@ -153,7 +148,17 @@ export async function scheduleChat(
       }),
     );
     const expanded = planCycle(draft.tasks, draft.stage_weeks, day + 86400000);
-    if (key !== `auto_schedule_${source.id}_${revision}_${calendar.revision}`)
+    if (
+      key !==
+        automaticScheduleKey(
+          String(source.id),
+          revision,
+          calendar.revision,
+          zone,
+          now,
+        ) &&
+      key !== `auto_schedule_${source.id}_${revision}_${calendar.revision}`
+    )
       return { status: 409, code: "CONTEXT_CHANGED" };
     if (expanded) {
       const context = JSON.parse(String(source.context_json ?? "{}"));
@@ -241,7 +246,7 @@ export async function scheduleChat(
   const claim = await db.batch([
     db
       .prepare(
-        "INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,reply_json,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'succeeded','schedule-chat-v1',?,?,?,? FROM goals WHERE id=? AND owner_id=? AND revision=? AND status='draft' AND active_plan_version_id IS NULL AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=goals.id)=? AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=goals.id AND status='running') AND (SELECT count(*) FROM agent_runs WHERE goal_id=goals.id AND harness_version='schedule-chat-v1')<40 AND (? IS NULL OR ((SELECT id FROM planning_jobs WHERE goal_id=goals.id AND owner_id=goals.owner_id ORDER BY created_at DESC,id DESC LIMIT 1)=? AND (SELECT coalesce(max(revision),0) FROM plan_draft_reviews WHERE attempt_id=? AND owner_id=goals.owner_id)=?)) AND (? IS NULL OR coalesce((SELECT revision FROM calendar_states WHERE owner_id=goals.owner_id),0)=?)",
+        "INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,reply_json,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'succeeded','schedule-chat-v1',?,?,?,? FROM goals WHERE id=? AND owner_id=? AND revision=? AND status='draft' AND active_plan_version_id IS NULL AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=goals.id)=? AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=goals.id AND status='running') AND (SELECT count(*) FROM agent_runs WHERE goal_id=goals.id AND harness_version='schedule-chat-v1' AND created_at>=?)<40 AND (? IS NULL OR ((SELECT id FROM planning_jobs WHERE goal_id=goals.id AND owner_id=goals.owner_id ORDER BY created_at DESC,id DESC LIMIT 1)=? AND (SELECT coalesce(max(revision),0) FROM plan_draft_reviews WHERE attempt_id=? AND owner_id=goals.owner_id)=?)) AND (? IS NULL OR coalesce((SELECT revision FROM calendar_states WHERE owner_id=goals.owner_id),0)=?)",
       )
       .bind(
         id,
@@ -257,6 +262,7 @@ export async function scheduleChat(
         owner,
         goalRevision,
         chatRevision,
+        Math.floor(now / 86400000) * 86400000,
         schedule?.attempt_id ?? null,
         schedule?.attempt_id ?? null,
         schedule?.attempt_id ?? null,

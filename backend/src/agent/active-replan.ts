@@ -220,6 +220,7 @@ export async function activeReplan(
             }
           : {
               ...notice,
+              clears_schedule_for_plan: parent.id,
               question: "当前方案已没有未来待调整的安排，原记录仍保留。",
             };
       }
