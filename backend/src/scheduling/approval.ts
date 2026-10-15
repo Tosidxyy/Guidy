@@ -137,6 +137,12 @@ export async function approvalResponse(
   if (!source || source.review_revision !== schedule.review_revision)
     return fail(409, "CONTEXT_CHANGED");
   const parentId = schedule.replaces_plan_id ?? "";
+  if (
+    parentId &&
+    schedule.scope === "full_plan_cycle_v1" &&
+    JSON.parse(String(source.context_json)).replan_parent_id !== parentId
+  )
+    return fail(409, "CONTEXT_CHANGED");
   if ((goal.status === "active") !== !!parentId)
     return fail(409, "CONTEXT_CHANGED");
   const pointer = await db
@@ -205,7 +211,7 @@ export async function approvalResponse(
   await db.batch([
     db
       .prepare(
-        `INSERT OR IGNORE INTO plan_versions(id,goal_id,owner_id,version,source_attempt_id,source_run_id,goal_revision,calendar_revision_before,calendar_revision_after,request_key,request_payload,context_json,draft_json,schedule_json,accepted_at) SELECT ?,id,owner_id,(SELECT coalesce(max(version),0)+1 FROM plan_versions WHERE goal_id=g.id),?,?,?,?,?,?,?, ?,?,?,? FROM goals g WHERE id=? AND owner_id=? AND status IN ('draft','active') AND revision=? AND coalesce((SELECT plan_version_id FROM goal_active_plans WHERE goal_id=g.id AND owner_id=g.owner_id),'')=? AND coalesce((SELECT revision FROM calendar_states WHERE owner_id=g.owner_id),0)=? AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=g.id AND owner_id=g.owner_id AND json_extract(reply_json,'$.source')='policy') AND ?=(SELECT id FROM agent_runs WHERE goal_id=g.id AND owner_id=g.owner_id AND harness_version!='refine-question-v1' ORDER BY turn_index DESC LIMIT 1) AND ?=(SELECT id FROM planning_jobs WHERE goal_id=g.id AND owner_id=g.owner_id ORDER BY created_at DESC,id DESC LIMIT 1) AND ?=(SELECT coalesce(max(revision),0) FROM plan_draft_reviews WHERE attempt_id=? AND owner_id=g.owner_id) AND NOT EXISTS(SELECT 1 FROM json_each(?) p JOIN scheduled_occurrences o ON o.owner_id=g.owner_id AND o.status='scheduled' AND NOT(o.plan_version_id=? AND o.start_at>?) AND o.start_at<json_extract(p.value,'$.end_at') AND o.end_at>json_extract(p.value,'$.start_at')) AND (?='' OR (SELECT count(*) FROM scheduled_occurrences WHERE plan_version_id=? AND owner_id=g.owner_id AND status='scheduled' AND start_at>?)=?) AND NOT EXISTS(SELECT 1 FROM json_each(?) c LEFT JOIN scheduled_occurrences o ON o.id=c.value AND o.owner_id=g.owner_id AND o.status='completed' WHERE o.id IS NULL) AND NOT EXISTS(SELECT 1 FROM json_each(?) p JOIN calendar_events e ON e.owner_id=g.owner_id AND e.start_at<json_extract(p.value,'$.end_at') AND e.end_at>json_extract(p.value,'$.start_at'))`,
+        `INSERT OR IGNORE INTO plan_versions(id,goal_id,owner_id,version,source_attempt_id,source_run_id,goal_revision,calendar_revision_before,calendar_revision_after,request_key,request_payload,context_json,draft_json,schedule_json,accepted_at) SELECT ?,id,owner_id,(SELECT coalesce(max(version),0)+1 FROM plan_versions WHERE goal_id=g.id),?,?,?,?,?,?,?, ?,?,?,? FROM goals g WHERE id=? AND owner_id=? AND status IN ('draft','active') AND revision=? AND coalesce((SELECT plan_version_id FROM goal_active_plans WHERE goal_id=g.id AND owner_id=g.owner_id),'')=? AND coalesce((SELECT revision FROM calendar_states WHERE owner_id=g.owner_id),0)=? AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=g.id AND owner_id=g.owner_id AND json_extract(reply_json,'$.source')='policy') AND ?=(SELECT id FROM agent_runs WHERE goal_id=g.id AND owner_id=g.owner_id AND harness_version!='refine-question-v1' ORDER BY turn_index DESC LIMIT 1) AND ?=(SELECT id FROM planning_jobs WHERE goal_id=g.id AND owner_id=g.owner_id ORDER BY created_at DESC,id DESC LIMIT 1) AND ?=(SELECT coalesce(max(revision),0) FROM plan_draft_reviews WHERE attempt_id=? AND owner_id=g.owner_id) AND NOT EXISTS(SELECT 1 FROM json_each(?) p JOIN scheduled_occurrences o ON o.owner_id=g.owner_id AND o.status='scheduled' AND NOT(o.plan_version_id=? AND o.start_at>?) AND o.start_at<json_extract(p.value,'$.end_at') AND o.end_at>json_extract(p.value,'$.start_at')) AND (?='' OR (SELECT count(*) FROM scheduled_occurrences WHERE plan_version_id=? AND owner_id=g.owner_id AND status='scheduled' AND start_at>?)=?) AND NOT EXISTS(SELECT 1 FROM json_each(?) c LEFT JOIN scheduled_occurrences o ON o.id=c.value AND o.plan_version_id=? AND o.owner_id=g.owner_id AND o.status='scheduled' AND o.start_at>? WHERE o.id IS NULL) AND NOT EXISTS(SELECT 1 FROM json_each(?) c LEFT JOIN scheduled_occurrences o ON o.id=c.value AND o.owner_id=g.owner_id AND o.status='completed' WHERE o.id IS NULL) AND NOT EXISTS(SELECT 1 FROM json_each(?) p JOIN calendar_events e ON e.owner_id=g.owner_id AND e.start_at<json_extract(p.value,'$.end_at') AND e.end_at>json_extract(p.value,'$.start_at'))`,
       )
       .bind(
         id,
@@ -236,6 +242,9 @@ export async function approvalResponse(
         parentId,
         now,
         schedule.parent_instance_ids?.length ?? 0,
+        JSON.stringify(schedule.parent_instance_ids ?? []),
+        parentId,
+        now,
         JSON.stringify(schedule.completed_source_ids ?? []),
         JSON.stringify(instances),
       ),

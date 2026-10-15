@@ -4,7 +4,6 @@ import { setup } from "./replan-fixture.mjs";
 import { approvalResponse } from "../src/scheduling/approval.ts";
 import { dialogueResponse } from "../src/agent/harness.ts";
 import {
-  ASK_ADJUST,
   REFRESH_REPLAN,
   checkedPreferences,
 } from "../src/agent/schedule-preferences.ts";
@@ -56,12 +55,8 @@ async function send(f, text, key = "replan-test-key", provider) {
   );
   return { response: r, body, data: (await r.json()).data };
 }
-test("active goal asks a card question, interprets changes once, previews without core writes and confirms version 2", async (t) => {
+test("existing time-only requests interpret changes once, preview without core writes and confirm version 2", async (t) => {
   const f = await approved(t);
-  const ask = await send(f, ASK_ADJUST, "ask-change-key");
-  assert.equal(ask.response.status, 200);
-  checkedDialogue(ask.data);
-  assert.equal(ask.data.runs.at(-1).reply.stage, "replan_question");
   let calls = 0;
   const provider = {
     complete: async (context) => {

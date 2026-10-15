@@ -13,7 +13,22 @@ export async function draftRefinement(
   goalRevision: number,
   binding?: WorkflowBinding,
 ) {
-  const more = text === "请继续问我一个有助于完善方案的问题。";
+  if (
+    ["请根据现有信息直接拟定一周安排。", "请重新检查这份调整的日程。"].includes(
+      text,
+    )
+  )
+    return null;
+  const more = [
+    "请继续问我一个有助于完善方案的问题。",
+    "我想调整未来的安排。",
+  ].includes(text);
+  const parent = await db
+    .prepare(
+      "SELECT v.* FROM goal_active_plans a JOIN plan_versions v ON v.id=a.plan_version_id AND v.owner_id=a.owner_id WHERE a.goal_id=? AND a.owner_id=?",
+    )
+    .bind(goalId, owner)
+    .first();
   const last = await db
     .prepare(
       "SELECT reply_json FROM agent_runs WHERE goal_id=? AND owner_id=? ORDER BY turn_index DESC LIMIT 1",
@@ -37,12 +52,18 @@ export async function draftRefinement(
         }
       : null;
   }
-  const source = await db
+  let source = await db
     .prepare(
       "SELECT j.id,p.draft_json,p.context_json FROM planning_jobs j JOIN plan_draft_attempts p ON p.id=j.id AND p.owner_id=j.owner_id WHERE j.goal_id=? AND j.owner_id=? AND j.goal_revision=? AND j.status='completed' AND p.status='succeeded' ORDER BY j.created_at DESC,j.id DESC LIMIT 1",
     )
     .bind(goalId, owner, goalRevision)
     .first();
+  if (!source && parent)
+    source = {
+      id: parent.source_attempt_id,
+      draft_json: parent.draft_json,
+      context_json: parent.context_json,
+    };
   if (!source) return null;
   if (
     await db
@@ -61,12 +82,23 @@ export async function draftRefinement(
     )
     .bind(goalId, owner)
     .first();
-  if (Number(core?.n ?? 0) < 3)
+  if (!parent && Number(core?.n ?? 0) < 3)
     return { status: 422, code: "CLARIFICATION_MINIMUM_NOT_MET" };
   const request = text.replace(/^根据当前回答开始制订：/, "");
   if (request.length > 500) return { status: 422, code: "INVALID_BODY" };
   const original = JSON.parse(String(source.draft_json)),
     context = JSON.parse(String(source.context_json));
+  if (parent && source.id === parent.source_attempt_id) {
+    const schedule = JSON.parse(String(parent.schedule_json)),
+      prefs = schedule.preferences;
+    if (prefs)
+      original.time_preferences = {
+        timezone: schedule.timezone,
+        start_minute: prefs.preferred_start,
+        end_minute: prefs.preferred_end,
+        excluded_weekdays: prefs.excluded_weekdays,
+      };
+  }
   const risk =
     /处方|停药|减药|增药|药物剂量|药量|诊断|自杀|自残|伤害他人|伤病|怀孕|糖尿病|心脏病/i.test(
       JSON.stringify({
@@ -75,6 +107,16 @@ export async function draftRefinement(
         conditions: context.conditions,
       }),
     );
+  const progress = parent
+    ? (
+        await db
+          .prepare(
+            "SELECT t.title,o.status,count(*) count FROM scheduled_occurrences o JOIN tasks t ON t.id=o.task_id AND t.plan_version_id=o.plan_version_id WHERE o.goal_id=? AND o.owner_id=? AND o.status IN ('completed','skipped') GROUP BY t.title,o.status ORDER BY t.title,o.status LIMIT 24",
+          )
+          .bind(goalId, owner)
+          .all()
+      ).results
+    : [];
   const reply = risk
     ? {
         schema_version: 1,
@@ -105,6 +147,7 @@ export async function draftRefinement(
             "修改要求已记录，后台进度与新结果会显示在这里。原方案仍保留。",
           reason: "新结果仍需你确认后才加入日历。",
         };
+  if (parent && !risk) Object.assign(reply, { replan_parent_id: parent.id });
   const id = crypto.randomUUID(),
     now = Date.now();
   const compact = {
@@ -151,11 +194,20 @@ export async function draftRefinement(
     base_attempt_id: source.id,
     previous_plan: compact,
     revision_request: request,
+    ...(parent
+      ? {
+          replan_parent_id: parent.id,
+          planning_as_of: new Date(now).toISOString(),
+          execution_summary: progress,
+          previous_period_end_at: JSON.parse(String(parent.schedule_json))
+            .period.end_at,
+        }
+      : {}),
   };
   const result = await db.batch([
     db
       .prepare(
-        "INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,reply_json,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'succeeded',?,?,?,?,? FROM goals g WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=g.id)=? AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=g.id AND status='running') AND ?=(SELECT j.id FROM planning_jobs j JOIN plan_draft_attempts p ON p.id=j.id AND p.owner_id=j.owner_id WHERE j.goal_id=g.id AND j.owner_id=g.owner_id AND j.status='completed' AND p.status='succeeded' ORDER BY j.created_at DESC,j.id DESC LIMIT 1) AND NOT EXISTS(SELECT 1 FROM planning_jobs WHERE goal_id=g.id AND status NOT IN ('completed','failed','unknown')) AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=g.id AND json_extract(reply_json,'$.source')='policy') AND (SELECT count(*) FROM agent_runs WHERE goal_id=g.id AND harness_version='refine-question-v1')<40",
+        "INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,reply_json,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'succeeded',?,?,?,?,? FROM goals g WHERE id=? AND owner_id=? AND (status='draft' OR (status='active' AND (SELECT plan_version_id FROM goal_active_plans WHERE goal_id=g.id AND owner_id=g.owner_id)=?)) AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=g.id)=? AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=g.id AND status='running') AND ?=coalesce((SELECT j.id FROM planning_jobs j JOIN plan_draft_attempts p ON p.id=j.id AND p.owner_id=j.owner_id WHERE j.goal_id=g.id AND j.owner_id=g.owner_id AND j.goal_revision=g.revision AND j.status='completed' AND p.status='succeeded' ORDER BY j.created_at DESC,j.id DESC LIMIT 1),?) AND NOT EXISTS(SELECT 1 FROM planning_jobs WHERE goal_id=g.id AND status NOT IN ('completed','failed','unknown')) AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=g.id AND json_extract(reply_json,'$.source')='policy') AND (SELECT count(*) FROM agent_runs WHERE goal_id=g.id AND harness_version='refine-question-v1')<40",
       )
       .bind(
         id,
@@ -170,9 +222,11 @@ export async function draftRefinement(
         now,
         goalId,
         owner,
+        parent?.id ?? "",
         goalRevision,
         chatRevision,
         source.id,
+        parent?.source_attempt_id ?? "",
       ),
     ...(!more && !risk
       ? planningStatements(

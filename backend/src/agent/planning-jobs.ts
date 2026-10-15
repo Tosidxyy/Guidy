@@ -54,7 +54,7 @@ export function planningStatements(
   return [
     db
       .prepare(
-        "INSERT OR IGNORE INTO planning_jobs(id,source_run_id,goal_id,owner_id,goal_revision,status,context_json,sources_json,created_at,updated_at,lease_until) SELECT ?,r.id,r.goal_id,r.owner_id,r.goal_revision,'queued',?,?,?,?,? FROM agent_runs r JOIN goals g ON g.id=r.goal_id AND g.owner_id=r.owner_id WHERE r.id=? AND r.goal_id=? AND r.owner_id=? AND r.status='succeeded' AND json_extract(r.reply_json,'$.stage')='draft_requested' AND json_extract(r.reply_json,'$.source')='harness' AND r.harness_version='clarify-stop-v1' AND g.status='draft' AND g.revision=? AND g.active_plan_version_id IS NULL AND (SELECT count(*) FROM plan_draft_usage WHERE owner_id=? AND created_at>=?)<3 AND (SELECT count(*) FROM plan_draft_usage WHERE created_at>=?)<10 AND (SELECT count(*) FROM planning_jobs WHERE goal_id=?)<10 AND (SELECT count(*) FROM plan_draft_attempts WHERE goal_id=?)<10 AND NOT EXISTS(SELECT 1 FROM plan_draft_attempts WHERE goal_id=? AND status='submitted') AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' AND json_extract(reply_json,'$.source')='policy')",
+        "INSERT OR IGNORE INTO planning_jobs(id,source_run_id,goal_id,owner_id,goal_revision,status,context_json,sources_json,created_at,updated_at,lease_until) SELECT ?,r.id,r.goal_id,r.owner_id,r.goal_revision,'queued',?,?,?,?,? FROM agent_runs r JOIN goals g ON g.id=r.goal_id AND g.owner_id=r.owner_id WHERE r.id=? AND r.goal_id=? AND r.owner_id=? AND r.status='succeeded' AND json_extract(r.reply_json,'$.stage')='draft_requested' AND json_extract(r.reply_json,'$.source')='harness' AND r.harness_version='clarify-stop-v1' AND (g.status='draft' OR (g.status='active' AND (SELECT plan_version_id FROM goal_active_plans WHERE goal_id=g.id AND owner_id=g.owner_id)=json_extract(r.reply_json,'$.replan_parent_id'))) AND g.revision=? AND g.active_plan_version_id IS NULL AND (SELECT count(*) FROM plan_draft_usage WHERE owner_id=? AND created_at>=?)<3 AND (SELECT count(*) FROM plan_draft_usage WHERE created_at>=?)<10 AND (SELECT count(*) FROM planning_jobs WHERE goal_id=?)<10 AND (SELECT count(*) FROM plan_draft_attempts WHERE goal_id=?)<10 AND NOT EXISTS(SELECT 1 FROM plan_draft_attempts WHERE goal_id=? AND status='submitted') AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' AND json_extract(reply_json,'$.source')='policy')",
       )
       .bind(
         id,
@@ -92,9 +92,9 @@ async function load(db: D1Database, id: string) {
 async function valid(db: D1Database, j: Job) {
   return !!(await db
     .prepare(
-      "SELECT 1 found FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND active_plan_version_id IS NULL AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' AND json_extract(reply_json,'$.source')='policy')",
+      "SELECT 1 found FROM goals WHERE id=? AND owner_id=? AND (status='draft' OR (status='active' AND (SELECT plan_version_id FROM goal_active_plans WHERE goal_id=goals.id AND owner_id=goals.owner_id)=json_extract((SELECT context_json FROM planning_jobs WHERE id=?),'$.replan_parent_id'))) AND revision=? AND active_plan_version_id IS NULL AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' AND json_extract(reply_json,'$.source')='policy')",
     )
-    .bind(j.goal_id, j.owner_id, j.goal_revision, j.goal_id, j.owner_id)
+    .bind(j.goal_id, j.owner_id, j.id, j.goal_revision, j.goal_id, j.owner_id)
     .first());
 }
 async function end(
@@ -373,7 +373,7 @@ export async function generatePlanning(
     await db.batch([
       db
         .prepare(
-          "INSERT OR IGNORE INTO plan_draft_attempts(id,goal_id,owner_id,goal_revision,request_key,request_payload,context_json,status,draft_json,input_tokens,output_tokens,created_at,lease_until) SELECT id,goal_id,owner_id,goal_revision,?, ?,?,'succeeded',?,?,?,created_at,? FROM planning_jobs WHERE id=? AND status='generating' AND lease_until>? AND EXISTS(SELECT 1 FROM goals WHERE id=goal_id AND owner_id=planning_jobs.owner_id AND status='draft' AND revision=planning_jobs.goal_revision AND active_plan_version_id IS NULL) AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=planning_jobs.goal_id AND owner_id=planning_jobs.owner_id AND status='succeeded' AND json_extract(reply_json,'$.source')='policy')",
+          "INSERT OR IGNORE INTO plan_draft_attempts(id,goal_id,owner_id,goal_revision,request_key,request_payload,context_json,status,draft_json,input_tokens,output_tokens,created_at,lease_until) SELECT id,goal_id,owner_id,goal_revision,?, ?,?,'succeeded',?,?,?,created_at,? FROM planning_jobs WHERE id=? AND status='generating' AND lease_until>? AND EXISTS(SELECT 1 FROM goals WHERE id=goal_id AND owner_id=planning_jobs.owner_id AND (status='draft' OR (status='active' AND (SELECT plan_version_id FROM goal_active_plans WHERE goal_id=goals.id AND owner_id=goals.owner_id)=json_extract(planning_jobs.context_json,'$.replan_parent_id'))) AND revision=planning_jobs.goal_revision AND active_plan_version_id IS NULL) AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=planning_jobs.goal_id AND owner_id=planning_jobs.owner_id AND status='succeeded' AND json_extract(reply_json,'$.source')='policy')",
         )
         .bind(
           `auto_plan_${id}`,

@@ -306,6 +306,35 @@ export async function dialogueResponse(
     return ok(await snapshot(), previous.status === "running" ? 202 : 200);
   }
   if (goal.status === "active" && goal.revision === goalRevision) {
+    const refinement = await draftRefinement(
+      db,
+      owner,
+      goalId,
+      text,
+      key,
+      payload,
+      chatRevision,
+      goalRevision,
+      planningBinding,
+    );
+    if (refinement)
+      return refinement.status === 200
+        ? ok(await snapshot())
+        : fail(refinement.status, refinement.code!);
+    const automatic = await scheduleChat(
+      db,
+      owner,
+      goalId,
+      text,
+      key,
+      payload,
+      chatRevision,
+      goalRevision,
+    );
+    if (automatic)
+      return automatic.status === 200
+        ? ok(await snapshot())
+        : fail(automatic.status, automatic.code!);
     const result = await activeReplan(
       db,
       owner,

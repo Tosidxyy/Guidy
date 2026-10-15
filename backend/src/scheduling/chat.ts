@@ -102,12 +102,43 @@ export async function scheduleChat(
       )
       .bind(goalId, owner),
     db
-      .prepare("SELECT description FROM goals WHERE id=? AND owner_id=?")
+      .prepare("SELECT description,status FROM goals WHERE id=? AND owner_id=?")
       .bind(goalId, owner),
   ]);
   const source = rows[0].results[0],
     now = Date.now();
-  const calendar = await planningCalendarSnapshot(db, owner);
+  const context = JSON.parse(String(source?.context_json ?? "{}"));
+  const parentId =
+    typeof context.replan_parent_id === "string"
+      ? context.replan_parent_id
+      : "";
+  const pointer = await db
+    .prepare(
+      "SELECT plan_version_id FROM goal_active_plans WHERE goal_id=? AND owner_id=?",
+    )
+    .bind(goalId, owner)
+    .first();
+  if (
+    rows[3].results[0]?.status === "active" &&
+    (!parentId || pointer?.plan_version_id !== parentId)
+  )
+    return { status: 409, code: "CONTEXT_CHANGED" };
+  const parentInstances = parentId
+    ? (
+        await db
+          .prepare(
+            "SELECT id FROM scheduled_occurrences WHERE plan_version_id=? AND owner_id=? AND status='scheduled' AND start_at>? ORDER BY id",
+          )
+          .bind(parentId, owner, now)
+          .all()
+      ).results.map((r) => String(r.id))
+    : [];
+  const calendar = await planningCalendarSnapshot(
+    db,
+    owner,
+    undefined,
+    parentId,
+  );
   let stage = "schedule_guidance",
     schedule: ScheduleData | undefined;
   let question = "最新方案草稿尚未准备好，请稍后读取制订结果。";
@@ -207,6 +238,9 @@ export async function scheduleChat(
         timezone: zone,
         windows,
         scope: "full_plan_cycle_v1",
+        ...(parentId
+          ? { replaces_plan_id: parentId, parent_instance_ids: parentInstances }
+          : {}),
         ...expanded,
         window_basis: preference ? "agent_proposal_v1" : "assumed_default_v1",
         unavailable_from_notes: unavailable,
@@ -246,7 +280,7 @@ export async function scheduleChat(
   const claim = await db.batch([
     db
       .prepare(
-        "INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,reply_json,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'succeeded','schedule-chat-v1',?,?,?,? FROM goals WHERE id=? AND owner_id=? AND revision=? AND status='draft' AND active_plan_version_id IS NULL AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=goals.id)=? AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=goals.id AND status='running') AND (SELECT count(*) FROM agent_runs WHERE goal_id=goals.id AND harness_version='schedule-chat-v1' AND created_at>=?)<40 AND (? IS NULL OR ((SELECT id FROM planning_jobs WHERE goal_id=goals.id AND owner_id=goals.owner_id ORDER BY created_at DESC,id DESC LIMIT 1)=? AND (SELECT coalesce(max(revision),0) FROM plan_draft_reviews WHERE attempt_id=? AND owner_id=goals.owner_id)=?)) AND (? IS NULL OR coalesce((SELECT revision FROM calendar_states WHERE owner_id=goals.owner_id),0)=?)",
+        "INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,reply_json,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'succeeded','schedule-chat-v1',?,?,?,? FROM goals WHERE id=? AND owner_id=? AND revision=? AND ((status='draft' AND ?='') OR (status='active' AND (SELECT plan_version_id FROM goal_active_plans WHERE goal_id=goals.id AND owner_id=goals.owner_id)=?)) AND active_plan_version_id IS NULL AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=goals.id)=? AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=goals.id AND status='running') AND (SELECT count(*) FROM agent_runs WHERE goal_id=goals.id AND harness_version='schedule-chat-v1' AND created_at>=?)<40 AND (? IS NULL OR ((SELECT id FROM planning_jobs WHERE goal_id=goals.id AND owner_id=goals.owner_id ORDER BY created_at DESC,id DESC LIMIT 1)=? AND (SELECT coalesce(max(revision),0) FROM plan_draft_reviews WHERE attempt_id=? AND owner_id=goals.owner_id)=?)) AND (? IS NULL OR coalesce((SELECT revision FROM calendar_states WHERE owner_id=goals.owner_id),0)=?)",
       )
       .bind(
         id,
@@ -261,6 +295,8 @@ export async function scheduleChat(
         goalId,
         owner,
         goalRevision,
+        parentId,
+        parentId,
         chatRevision,
         Math.floor(now / 86400000) * 86400000,
         schedule?.attempt_id ?? null,
