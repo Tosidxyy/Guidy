@@ -1141,3 +1141,18 @@ Browser plugin not available，Playwright/Edge沿用已验证存活本地服务�
 云端完整部署b902c6e9-3671-44eb-b954-dbc2b0bea331（Worker+Workflow trigger），隔离云身份真实DeepSeek研究判断+strict生成2次、搜索0、邮件0：先批准原2周方案并标记受控完成/跳过各1→卡片修改跟读/15分钟/每周2次/两周/7–8点避周二→4未来候选→旧稿/旧日历未改→同键回放仍仅1新Job→明确批准版本2、新4实例→旧4未来superseded且完成/跳过仍各1，客户端契约通过。verification与QA用户按ID+固定随机测试邮箱精确清理，未输出OTP/Cookie/Key或真实用户正文。health200、messages匿名401。
 
 初始恢复用例错误复用已占用的请求键得到409，改为模拟真实日历版本变化生成新恢复键后通过；保留原请求键冲突校验。检查补齐后台完成后只读刷新消息快照，避免父页面还持有queued时的空候选键；未让GET调度或重试付费调用。最终前端回看进一步区分已批准稿与未批准稿。旧时段专用测试改为直接时段请求，新的主卡片流程由content-replan覆盖，未删除成功/失败/历史断言。按约定本记录单独提交后push origin/main并核对远程SHA；下一轮补齐失败修订要求恢复及入口精简。
+
+### 2026-10-15 失败修改要求恢复与个人页精简
+
+- [x] 保存修订原稿与完整要求回执；失败Job优先读冻结上下文，未预留Job的旧记录可由紧邻修订卡和原提交恢复。只取最新请求，不意外沿用更早失败稿。明确“按上次要求再试”继承实际要求，记录retry_of_run_id/job_id；不把重试文字当新要求。
+- [x] messages/planning-runs只读呈现retry_refinement，失败后页面直接显示单个明确重试动作及用量说明，无需重开或回填。校验Goal/原稿/父版本、活跃任务与策略，读取不派发；成功/进行中或过期上下文不可重试旧要求。失败/unknown明确重试仍计原生成额度，同键不重复预留；额度仍满时保存要求，不绕过限额。
+- [x] 删除不再用于日常流程的ConnectionStatus组件与个人页调试连接面板，去掉演示数据误导和未实现设置的阶段占位。网页Tab图标改为主题色线条几何图形，修复符号字体缺字方框；原生expo-symbols映射、三Tab顺序/名称、品牌均不变。
+- [ ] 目标管理页仍有旧描述/期望时间编辑表单及相关状态管理，需要继续按聊天主流程精简；剩余无用代码与最终需求逐项验收未结束。真实iPhone前后台/键盘/VoiceOver本轮未验证，整体目标保持未完成。
+
+实现 Commit bc378449fe0b123ef014fe737eaf548e9c5f720f。backend最终typecheck/lint/format:check/build:cloud通过，content-replan/draft-edit/planning-jobs/approval/candidate-expiry/replan最终37/37通过；包括跨另开问题卡保留完整要求、同键回放只预留一次、额度拒绝后多次重试保留且不增额度、额度恢复后正确沿用、目标变更拒绝、unknown只读不自动启动、进度端点正确呈现恢复状态。mobile最终typecheck/lint、test:ui-state40/40与最终export:ios通过；2文档28本地链接及diff检查通过。无依赖/迁移/额外真实历史数据清理。
+
+Browser plugin not available，Playwright/Edge复用已确认存活服务，隔离身份实际验证：已确认5周12实例/受控完成跳过各1→修订卡→受控生成失败→自动出现“按上次要求再试”→完整原要求不变→受控新生成10晨间候选→确认前旧版本不变→明确确认版本2→旧未来10superseded/完成跳过保持/新10scheduled→Reload/320窄屏通过。模型/搜索0，本地开发收件箱；领域函数+CLI D1 facade使用受控供应商，meta.changes按实际状态规范化，不冒称单凭该浏览器脚本证明并发原子性。QA身份及本地收件箱精确清理。
+
+个人页已登录320窄屏无调试按钮/旧演示提示，另以匿名393/320实测三个Tab、主题选择与无页面溢出。截图检查发现网页符号字体缺字后补线条图标，最终profile-icons-qa通过浅色/深色；.cache/guidy-profile-icons.png已view_image核对黑白排版和三图标。新增TabIcon初始color:string与导航ColorValue类型不匹配，改为官方ColorValue后最终检查通过；原生分支沿用既有SymbolView，未声称真机图标已测试。
+
+云端完整部署60b7e246-edba-4b12-ab50-0ed6c0538bcd（Worker+Workflow trigger）。隔离云身份先批准原稿并保留受控完成/跳过，种入一条有真实字段结构的受控失败请求/用量记录（不是一次实际付费模型失败），经正式POST明确重试→真实Workflow/DeepSeek研究判断+strict生成2次/搜索0/邮件0→冻结revision_request完全继承并关联原失败Job→4候选→明确确认版本2→旧完成/跳过/未来替换正确，同键回放仍仅1新恢复Job。verification与QA用户按ID+固定随机测试邮箱精确清理；未输出OTP/Cookie/Key或读取真实用户正文。health200/messages匿名401。按约定本记录单独提交后push origin/main核对远程SHA；下一轮收敛旧目标管理表单并开展整体需求验收。
