@@ -1,3 +1,4 @@
+import {checkedHistory,type QuestionHistory} from './question-history';
 import {checkedApproval,checkedUpcoming,type ApprovalSnapshot,type UpcomingCalendar} from './approval';
 import {requestTimeout,PLANNING_READ_INTERRUPTED} from './request-policy';
 import {checkedCalendar,type CalendarSnapshot} from './calendar';
@@ -25,6 +26,7 @@ async function request(method: 'GET' | 'POST' | 'PATCH', body?: Record<string, u
     const response = await fetch(path.startsWith('/api/v1/calendar/')?`${apiOrigin}${path}`:`${apiOrigin}/api/v1/goals${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: Platform.OS === 'web' ? 'include' : 'omit', signal: controller.signal });
     const payload = await response.json();
     if (!response.ok) {
+      if(path.includes('/question-history')&&![401,404].includes(response.status))throw new Error('回答历史未能读取，请稍后重试。');
       if(path.endsWith('/plan-approval')&&![401,404].includes(response.status)){const code=payload.error?.code;throw new GoalApiError(code==='CALENDAR_CHANGED'?'日历已有变化，请更新建议安排。':code==='SCHEDULE_EXPIRED'?'建议时间已过去，请更新日程。':code==='PLAN_NOT_READY'?'仍有任务需要调整，确认前请核对完整方案。':'方案确认未完成，请读取最新状态后再试。',code??'APPROVAL_FAILED');}
       if(path.startsWith('/api/v1/calendar/')&&response.status!==401)throw new Error('日历占用未能读取，请稍后重试。');
       if(path.endsWith('/messages') && response.status!==401 && response.status!==404)throw new GoalApiError(dialogueError(payload.error?.code??''),payload.error?.code??'AI_UNAVAILABLE');
@@ -84,3 +86,5 @@ export async function getCalendar(from:number,to:number,signal:AbortSignal):Prom
 export async function getApproval(id:string,signal?:AbortSignal):Promise<ApprovalSnapshot>{return checkedApproval(await request('GET',undefined,undefined,signal,`/${id}/plan-approval`),id);}
 export async function approvePlan(id:string,body:{schedule_run_id:string;expected_goal_revision:number;expected_calendar_revision:number},key:string):Promise<ApprovalSnapshot>{return checkedApproval(await request('POST',body,key,undefined,`/${id}/plan-approval`),id);}
 export async function getUpcomingCalendar(from:number,to:number,signal:AbortSignal):Promise<UpcomingCalendar>{return checkedUpcoming(await request('GET',undefined,undefined,signal,'/api/v1/calendar/events?from='+from+'&to='+to),from,to);}
+
+export async function getQuestionHistory(id:string,before?:number,signal?:AbortSignal):Promise<QuestionHistory>{if(!/^[0-9a-f-]{36}$/.test(id))throw new Error('目标地址不正确。');return checkedHistory(await request('GET',undefined,undefined,signal,`/${id}/question-history${before===undefined?'':'?before='+before}`),id,before);}

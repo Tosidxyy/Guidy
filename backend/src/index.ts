@@ -3,6 +3,7 @@ import { createAuth, isLocalHost, type AuthEnv } from "./auth.ts";
 import { goalsResponse } from "./goals.ts";
 import type { SearchEnv } from "./research/search-provider.ts";
 import type { WorkflowBinding } from "./agent/workflow-binding.ts";
+import { questionHistoryResponse } from "./agent/question-history.ts";
 import { dialogueResponse } from "./agent/harness.ts";
 import { approvalResponse } from "./scheduling/approval.ts";
 import {
@@ -65,7 +66,7 @@ async function authResponse(
     path === "/api/v1/calendar/events" ||
     path === "/api/v1/calendar/fixed-events" ||
     path === "/api/v1/goals" ||
-    /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|planning-runs|plan-approval))?$/.test(
+    /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|question-history|planning-runs|plan-approval))?$/.test(
       path,
     )
   ) {
@@ -92,6 +93,8 @@ async function authResponse(
         id,
         env.RESEARCH_WORKFLOW,
       );
+    if (path.endsWith("/question-history"))
+      return questionHistoryResponse(request, env.DB!, session.user.id, id);
     if (path.endsWith("/messages"))
       return dialogueResponse(
         request,
@@ -323,7 +326,7 @@ export function createApp({
         path === "/api/v1/calendar/events" ||
         path === "/api/v1/calendar/fixed-events" ||
         path === "/api/v1/goals" ||
-        /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|planning-runs|plan-approval))?$/.test(
+        /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|question-history|planning-runs|plan-approval))?$/.test(
           path,
         );
       const isAuth =
@@ -339,9 +342,11 @@ export function createApp({
                     ? "/api/v1/goals/:id/plan-approval"
                     : path.endsWith("/planning-runs")
                       ? "/api/v1/goals/:id/planning-runs"
-                      : path.endsWith("/messages")
-                        ? "/api/v1/goals/:id/messages"
-                        : "/api/v1/goals/:id?"
+                      : path.endsWith("/question-history")
+                        ? "/api/v1/goals/:id/question-history"
+                        : path.endsWith("/messages")
+                          ? "/api/v1/goals/:id/messages"
+                          : "/api/v1/goals/:id?"
               : path === "/api/v1/me"
                 ? path
                 : "/api/auth/*",
