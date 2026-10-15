@@ -1113,3 +1113,16 @@ Browser plugin not available，Playwright/Edge隔离本地身份实测：原五�
 隔离云身份从受控原稿开始，真实Cloudflare Workflow完成DeepSeek研究判断+strict生成2次、搜索0、邮件0：保留一个任务，改为15分钟/每周2次/加入跟读/两周/北京时间7–8点避周二→4候选→原稿未改/确认前核心0→同键回放仍1新Job→明确确认4实例，客户端契约通过。verification与QA用户按ID+固定随机测试邮箱精确清理，未输出OTP/Cookie/Key或真实用户正文。首次部署Worker上传成功但Workflow trigger fetch失败，未报完整成功，重试f82c8f86-f087-453e-b403-56472ec6133a完整部署后才跑真实模型；最终请求保存提示同步部署4b72713b-3cdc-4153-a255-7d74fd8c3a95，health200/messages匿名401。
 
 初次新增卡响应漏加harness阶段白名单，2项回归失败后修正；可选last类型检查失败后修正；在已有草稿上的继续问答现在应进入修订，旧补充问题用例改为“尚无完成稿”场景并保留覆盖，未删断言来掩盖新流程。无效生成保留旧稿的结果经真实单元验证；最终UI测试在构建前独立完成，再执行iOS导出，未把模拟输出当真实模型成功。按约定单独TODO提交后push origin/main并核对远程SHA；下一轮处理过期候选恢复与确认后内容修订的完整版本衔接。
+
+### 2026-10-15 未确认日历候选过期自动恢复
+
+- [x] 以最新草稿、审阅/日历版本和草稿时区本地日期生成免费自动排程键，旧候选不覆盖；再次进入/前台恢复/页面计时发现未确认日期过期后自动准备未来建议，无需再问具体日期、不调用AI或新建生成任务。
+- [x] 刷新期间不显示可批准的过期日历；SCHEDULE_EXPIRED与日历版本变化读取后恢复；新旧草稿切换时区按当前草稿判定。已批准日历不按候选过期处理，明确确认仍是写入核心日历的入口。
+- [x] 待确认未来调整免费沿用偏好重新检查；若已无未来待调整实例，撤下该父版本失效候选，保留已确认版本与实际完成记录。自动排程保护为每目标每天40次，避免长期使用后被累计次数永久阻断。
+- [ ] 已确认后任意内容/频次的自然语言重规划、失败修订要求复用仍待实现；真实iPhone前后台切换、键盘、VoiceOver未验证。此轮不是整体目标完成。
+
+实现 Commit 43ba0be210cc873e5d910ed93b1c302515254c07。backend typecheck/lint/format:check及build:cloud通过；node --experimental-strip-types --test tests/candidate-expiry.test.mjs tests/approval.test.mjs tests/replan.test.mjs tests/draft-edit.test.mjs tests/planning-jobs.test.mjs共30/30通过。mobile最终typecheck/lint、test:ui-state40/40、最终export:ios通过；2文档28本地链接与git diff --check通过。跨上海午夜/UTC键一致、过期含未安排deadline、GET无新候选、重复请求只创建一次、原稿/旧候选不变、确认前核心0、明确批准及完成记录保留均有覆盖。无新依赖/迁移/额外真实数据删除。
+
+Browser plugin not available，Playwright/Edge隔离本地身份实际验证：完成稿→自动候选→构造合法过期的受控候选→Reload免费刷新一次→旧稿及旧候选字节保持→再次Reload不重复→明确确认12实例→日历日期详情/回看/已确认恢复→320窄屏无页面溢出，模型/搜索0。截图.cache/guidy-approved-calendar-small.png已view_image检查。QA使用本地开发收件箱，不发送真实邮件；受控测试身份最后精确清理。初次预览SSR约149秒编译导致导航超时，后续登录也超时；检查既有进程/日志后恢复本地预览，最终完整用例通过。首个新增单元的过期夹具位移方向错误后修正为完整合法日期整体平移；首次lint遗漏globalThis.Request已修正；受限环境Wrangler日志EPERM后通过正常提权重跑构建，无审批绕过。最终检查均通过后才提交实现。
+
+开发云部署2dc92474-08ca-41b5-872f-3e71e7436db9完成（Worker与Workflow trigger）；health200、messages匿名401。未调用付费模型，未读取真实用户正文或输出凭据。按约定本记录单独提交后push origin/main并核对远程SHA。下一轮推进确认后的内容/频次版本修订与失败修订上下文恢复。
