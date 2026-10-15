@@ -1071,3 +1071,18 @@ Browser plugin not available，Playwright/Edge 使用隔离本地身份实测：
 Browser plugin not available，Playwright/Edge隔离本地身份，真实认证/目标保存+受控问题fixture实测入口/同键重试/Reload/返回/320窄屏继续通过；额度耗尽填写“第一项改为每次15分钟”→即时提示→输入保留→没有新增消息请求，模型/搜索/邮件0。截图guidy-effort-quota.png已核对卡片黑白布局。首次追加回归因backend cwd多写backend前缀路径失败，修正路径并实际追加/执行通过；首次页面goto60秒超时，本地受限连接错误没有当服务终止，复查原session23049存活、PID16472/8090监听/Metro status200，具体/me随后200，复用原服务重跑通过，无重启/数据重置。失败不算通过。
 
 云开发部署 eabd22e4-951c-4f59-aa9e-4fc88959da42，health200、旧draft-reviews404、messages匿名401。未读取真实用户内容或密钥值，未调用真实付费模型。iPhone/键盘/VoiceOver本轮未验证。TODO单独提交后push origin/main核对SHA；下一轮以私有游标分页补完整回答卡片历史，继续删首阶段手动排程协议，完成正式自动改稿路径。
+
+### 2026-10-15 完整私有回答历史与滑动卡片
+
+- [x] 新增只读 question-history 私有游标接口，每页20个问题，账号/Goal隔离、严格游标、private/no-store；返回已提交回答，过滤后台控制文本，不调用模型或写入计划/日历。
+- [x] 卡片右上角回看与方案回看入口打开全页历史，滑动/更早/较新浏览全部问题；仅渲染当前页，较新页缓存；失败保留当前页并重试相同游标，关闭保留未发送输入与原方案视图。
+- [x] 修正滚轮页码同步及快速跨页旧回调覆盖；核对实际RN Web支持的onWheel，并在用户滚轮/触摸开始时解除程序定位标记，保持44pt动作与现有黑白卡片视觉。
+- [ ] 真实iPhone手势/键盘/VoiceOver本轮未验证。任意内容/频次自动改稿、旧手动首阶段/窗口协议仍待继续清理；整体目标未完成，不将本轮历史功能当全任务交付。
+
+实现 Commit d3567f1f47cbe85b0931c22b7cf3a66d2bc038f7。backend typecheck/lint/format:check通过；question-history/retired-routes/worker/approval 19/19通过（含45问题20/20/5完整遍历、游标间新增问题不破坏旧页、边界回答、失败提交、控制文字、owner/方法/非法游标及零核心写入）。此前build:cloud通过且部署 c5a76003-bfdf-4958-9a92-64736887e342；本轮复核云health200、新历史匿名401，未读取真实用户正文。mobile最终typecheck/lint、ui-state38/38、最终export:ios通过；2文档28链接及diff检查通过，无新依赖/迁移/额外真实数据删除。
+
+Browser plugin not available，Playwright/Edge隔离本地账号+真实本地D1/API，45条固定QA问题验证：最新卡横向滚轮→更早页→模拟503保留原页→重试→最早卡→横向往返→快速较新44次/缓存不增请求→320窄屏→关闭后未发送输入保留；3页4次读取（含1失败）、agent_runs仍45、plan_versions0，模型/搜索/邮件0。最终 .cache/guidy-history-card/earliest/small.png 已view_image核对黑白02-agent-chat排版，实际页码与卡片位置一致。QA身份/本地收件箱按固定测试邮箱精确清理，截图和脚本在忽略缓存内，不提交私人内容。
+
+过程如实记录：effect同步setState被lint拦截后改真正异步读取回调；脚本未等待Modal语义就绪查询空节点、底层与回看相同文本计数重复，改等待实际dialog并限定窗口；此前窗口消失推断不作为事实。滚动实测发现onMomentum不足和程序定位标记拦截人工滚轮，核对scrollLeft后修正，未只改断言掩盖。自动审批曾因用量耗尽拒绝最后诊断，未执行该操作/未绕过审批，恢复后继续；原服务进程已消失后重启同数据库，首次预览未ready连接拒绝，等待确认就绪后复测通过。最终浏览器与export顺序执行，无构建并行干扰。未通过的早期滑动版本不算完成。
+
+TODO单独提交后push origin/main并核对远程SHA。下一轮继续以自动制订主流程为准移除旧手动排程协议，补可验证的自然语言改稿；保留用户回答、已确认版本和执行历史。
