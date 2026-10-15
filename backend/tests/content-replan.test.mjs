@@ -4,6 +4,7 @@ import { setup } from "./replan-fixture.mjs";
 import { approvalResponse } from "../src/scheduling/approval.ts";
 import { dialogueResponse } from "../src/agent/harness.ts";
 import {
+  planningResponse,
   decidePlanning,
   generatePlanning,
 } from "../src/agent/planning-jobs.ts";
@@ -384,6 +385,159 @@ test("approval atomically rejects a different future instance set even when its 
   assert.equal(
     (await f.db.prepare("SELECT count(*) n FROM plan_versions").first()).n,
     1,
+  );
+  assert.equal(
+    (
+      await f.db
+        .prepare("SELECT plan_version_id FROM goal_active_plans")
+        .first()
+    ).plan_version_id,
+    f.parent.id,
+  );
+});
+
+test("explicit retry preserves the complete failed revision across another question card and reserves once", async (t) => {
+  const f = await approved(t),
+    request = "改成韩语跟读，每次15分钟、每周2次，早上7点";
+  await send(f, MORE, "retry-first-question");
+  await send(f, request, "retry-first-answer");
+  const first = await f.db
+    .prepare("SELECT * FROM planning_jobs WHERE goal_revision=1")
+    .first();
+  await generate(f, first.id, "{}");
+  assert.equal((await state(f)).retry_refinement, true);
+  const progress = await planningResponse(
+    new globalThis.Request(
+      "http://localhost/api/v1/goals/" + f.g.id + "/planning-runs",
+    ),
+    f.db,
+    f.owner,
+    "test",
+  );
+  assert.equal((await progress.json()).data.retry_refinement, true);
+  await send(f, MORE, "retry-open-question");
+  const retried = await send(f, "按上次要求再试。", "retry-failed-revision");
+  assert.equal((await retried.call()).status, 200);
+  const jobs = (
+    await f.db
+      .prepare(
+        "SELECT * FROM planning_jobs WHERE goal_revision=1 ORDER BY created_at,id",
+      )
+      .all()
+  ).results;
+  assert.equal(jobs.length, 2);
+  const next = jobs.find((j) => j.id !== first.id),
+    frozen = JSON.parse(next.context_json);
+  assert.equal(frozen.revision_request, request);
+  assert.equal(frozen.retry_of_run_id, first.source_run_id);
+  assert.equal(frozen.retry_of_job_id, first.id);
+  assert.equal(frozen.replan_parent_id, f.parent.id);
+  assert.equal(retried.data.retry_refinement, false);
+  assert.equal(
+    (
+      await f.db
+        .prepare("SELECT count(*) n FROM plan_draft_usage WHERE owner_id=?")
+        .bind(f.owner)
+        .first()
+    ).n,
+    2,
+  );
+  await generate(f, next.id);
+  assert.equal((await state(f)).retry_refinement, false);
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM plan_versions").first()).n,
+    1,
+  );
+});
+
+test("quota-rejected revision retains its requirements through repeated explicit retry without granting quota", async (t) => {
+  const f = await approved(t),
+    now = Date.now();
+  for (let i = 0; i < 3; i++)
+    await f.db
+      .prepare(
+        "INSERT INTO plan_draft_usage(id,owner_id,created_at) VALUES(?,?,?)",
+      )
+      .bind(globalThis.crypto.randomUUID(), f.owner, now)
+      .run();
+  const request = "改为15分钟并加入跟读，每周2次";
+  await send(f, MORE, "quota-retry-question");
+  await send(f, request, "quota-retry-answer");
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM planning_jobs").first()).n,
+    1,
+  );
+  assert.equal((await state(f)).retry_refinement, true);
+  await send(f, "按上次要求再试。", "quota-still-full");
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM plan_draft_usage").first()).n,
+    3,
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM planning_jobs").first()).n,
+    1,
+  );
+  await f.db
+    .prepare("DELETE FROM plan_draft_usage WHERE owner_id=?")
+    .bind(f.owner)
+    .run();
+  await send(f, "按上次要求再试。", "quota-restored-retry");
+  const j = await f.db
+    .prepare("SELECT context_json FROM planning_jobs WHERE goal_revision=1")
+    .first();
+  assert.equal(JSON.parse(j.context_json).revision_request, request);
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM plan_draft_usage").first()).n,
+    1,
+  );
+});
+
+test("a changed goal cannot retry an old frozen revision and GET never starts unknown work", async (t) => {
+  const f = await approved(t);
+  await send(f, MORE, "stale-retry-question");
+  await send(f, "改成跟读", "stale-retry-answer");
+  await f.db
+    .prepare(
+      "UPDATE planning_jobs SET status='unknown',error_code='PLANNING_RESULT_UNKNOWN' WHERE goal_revision=1",
+    )
+    .run();
+  assert.equal((await state(f)).retry_refinement, true);
+  assert.equal((await state(f)).retry_refinement, true);
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM planning_jobs").first()).n,
+    2,
+  );
+  await f.db
+    .prepare("UPDATE goals SET revision=revision+1 WHERE id=?")
+    .bind(f.g.id)
+    .run();
+  const d = await state(f);
+  assert.equal(d.retry_refinement, false);
+  const r = await dialogueResponse(
+    new globalThis.Request(
+      "http://localhost/api/v1/goals/" + f.g.id + "/messages",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "stale-explicit-retry",
+        },
+        body: JSON.stringify({
+          text: "按上次要求再试。",
+          expected_chat_revision: d.chat_revision,
+          expected_goal_revision: d.goal.revision,
+        }),
+      },
+    ),
+    f.db,
+    f.owner,
+    "test",
+    {},
+  );
+  assert.equal(r.status, 409);
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM planning_jobs").first()).n,
+    2,
   );
   assert.equal(
     (

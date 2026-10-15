@@ -1,3 +1,4 @@
+import { refinementRetryAvailable } from "./refinement-retry.ts";
 import type { D1Database } from "@cloudflare/workers-types";
 import { ensureAutomaticSchedule } from "../scheduling/chat.ts";
 import {
@@ -555,7 +556,17 @@ export async function planningResponse(
       : null,
   }));
   return Response.json({
-    data: { goal, jobs },
+    data: {
+      goal,
+      jobs,
+      retry_refinement: await refinementRetryAvailable(
+        db,
+        owner,
+        goalId,
+        goal.revision,
+        goal.status,
+      ),
+    },
     error: null,
     request_id: requestId,
   });

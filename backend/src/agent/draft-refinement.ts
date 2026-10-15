@@ -1,6 +1,10 @@
 import type { D1Database } from "@cloudflare/workers-types";
 import { planningStatements, dispatchPlanning } from "./planning-jobs.ts";
 import type { WorkflowBinding } from "./workflow-binding.ts";
+import {
+  isRefinementRetry,
+  latestRefinementRequest,
+} from "./refinement-retry.ts";
 
 export async function draftRefinement(
   db: D1Database,
@@ -38,7 +42,15 @@ export async function draftRefinement(
   const previous = last?.reply_json
     ? JSON.parse(String(last.reply_json))
     : null;
-  if (!more && previous?.stage !== "refine_question") {
+  const explicitRetry = isRefinementRetry(text);
+  const saved =
+    explicitRetry || text === "先到这里，请根据现有信息准备方案草稿。"
+      ? await latestRefinementRequest(db, owner, goalId)
+      : null;
+  if (explicitRetry && (!saved || !saved.available))
+    return { status: 409, code: "REFINEMENT_RETRY_UNAVAILABLE" };
+  const retry = saved?.available ? saved : null;
+  if (!more && !retry && previous?.stage !== "refine_question") {
     const replay = await db
       .prepare(
         "SELECT request_payload FROM agent_runs WHERE goal_id=? AND owner_id=? AND request_key=?",
@@ -74,7 +86,14 @@ export async function draftRefinement(
       .first()
   )
     return { status: 409, code: "PLANNING_BUSY" };
-  if (!more && previous.base_attempt_id !== source.id)
+  if (
+    retry &&
+    (retry.goalRevision !== goalRevision ||
+      retry.baseAttemptId !== source.id ||
+      (retry.parentId ?? "") !== (parent?.id ?? ""))
+  )
+    return { status: 409, code: "CONTEXT_CHANGED" };
+  if (!more && !retry && previous.base_attempt_id !== source.id)
     return { status: 409, code: "CONTEXT_CHANGED" };
   const core = await db
     .prepare(
@@ -84,7 +103,7 @@ export async function draftRefinement(
     .first();
   if (!parent && Number(core?.n ?? 0) < 3)
     return { status: 422, code: "CLARIFICATION_MINIMUM_NOT_MET" };
-  const request = text.replace(/^根据当前回答开始制订：/, "");
+  const request = retry?.request ?? text.replace(/^根据当前回答开始制订：/, "");
   if (request.length > 500) return { status: 422, code: "INVALID_BODY" };
   const original = JSON.parse(String(source.draft_json)),
     context = JSON.parse(String(source.context_json));
@@ -148,6 +167,11 @@ export async function draftRefinement(
           reason: "新结果仍需你确认后才加入日历。",
         };
   if (parent && !risk) Object.assign(reply, { replan_parent_id: parent.id });
+  if (!more && !risk)
+    Object.assign(reply, {
+      base_attempt_id: source.id,
+      revision_request: request,
+    });
   const id = crypto.randomUUID(),
     now = Date.now();
   const compact = {
@@ -194,6 +218,9 @@ export async function draftRefinement(
     base_attempt_id: source.id,
     previous_plan: compact,
     revision_request: request,
+    ...(retry
+      ? { retry_of_run_id: retry.runId, retry_of_job_id: retry.jobId }
+      : {}),
     ...(parent
       ? {
           replan_parent_id: parent.id,

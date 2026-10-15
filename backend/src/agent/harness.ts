@@ -1,4 +1,5 @@
 import { draftRefinement } from "./draft-refinement.ts";
+import { refinementRetryAvailable } from "./refinement-retry.ts";
 import { automaticScheduleRequest } from "../scheduling/automatic-key.ts";
 import { activeReplan } from "./active-replan.ts";
 import { ASK_AUTO, scheduleChat } from "../scheduling/chat.ts";
@@ -184,6 +185,13 @@ export async function dialogueResponse(
     const liveGoal = rows[0].results[0];
     return {
       goal: liveGoal,
+      retry_refinement: await refinementRetryAvailable(
+        db,
+        owner,
+        goalId,
+        liveGoal.revision,
+        liveGoal.status,
+      ),
       auto_schedule_key: await automaticScheduleRequest(db, owner, goalId),
       auto_schedule: autoRow?.reply_json
         ? (JSON.parse(String(autoRow.reply_json)).schedule ?? null)

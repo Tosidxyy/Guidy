@@ -194,3 +194,9 @@ messages快照只读提供auto_schedule_key，绑定最新完成草稿、review/
 planning_jobs预留、各阶段有效性及最终草稿写入均绑定当前Goal revision和活动父版本；父版本或目标变化使迟到结果失效。新草稿full_plan_cycle_v1携带replaces_plan_id及当时未来scheduled父实例ID，排程避让其他目标和原计划过去实例，只排新建议未来周期。候选的周期和任务内容仍须核对。旧remaining_plan_v1时间调整/免费恢复继续可读和执行，但普通问答不再只接受时段修改。
 
 批准核对新稿上下文中的父版本、指针、日历/目标/对话版本、未来父实例完整集合和实际completed依赖；原子批次再次逐ID与数量检查未来集合。成功生成新PlanVersion/tasks/instances，仅将原父版本未来scheduled改为superseded，completed、skipped和过去记录保留。失败及未确认不改生效日历。后台完成时页面自动读取候选；等待或失败仍可回看原已确认方案。无迁移或额外历史数据删除。
+
+### 2026-10-15 失败修订恢复
+
+最新clarify-stop修订请求保存base_attempt_id和完整revision_request回执；已存在的失败Job优先读其冻结上下文，较旧且未预留Job的记录可由紧邻的refine_question及原提交还原。只考虑最新方案请求，不搜索更早失败修改。messages与planning-runs只读提供retry_refinement状态，后台失败后前端无需重开页面即可呈现恢复动作；读取不预留任务或重复模型调用。
+
+用户明确“按上次要求再试”或在未启动提示中明确重新提交时，沿用原要求，而不是把重试文字当新要求。校验Goal revision、原稿、活动父版本、活跃任务与策略记录，再创建新请求和新Job；保留retry_of_run_id/job_id关联。失败/unknown均不自动重发；明确重试继续沿用现有每日生成额度，同请求键只创建一次，额度仍满时只保存可继续恢复的请求。成功/正在执行或过期上下文不能误用旧失败要求。

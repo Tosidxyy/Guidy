@@ -6,8 +6,9 @@ export type EditProposal={attempt_id:string;goal_revision:number;review_revision
 export type SlotSuggestion = { key: SlotInput['key']; text: string; evidence: string };
 export type DialogueReply = { schema_version: 1; kind: 'question'|'referral'|'notice'; question: string; reason: string; source: 'deepseek'|'policy'|'harness'; suggestions?: SlotSuggestion[];requested_slot?: SlotInput['key']|null;base_attempt_id?:string;stage?:'refine_question'|'clarifying'|'research_ready'|'needs_information'|'replan_question'|'plans_cleared'|'draft_requested'|'edit_proposed'|'edit_guidance'|'schedule_guidance'|'schedule_proposed'|'schedule_preview'|'busy_guidance'|'busy_proposed'|'busy_saved';busy?:BusyProposal;schedule_help?:{example_text:string};schedule?:ScheduleData;schedule_mode?:'first_stage_week_v1';edit_proposal?:EditProposal;time_proposal?:'weekly_60_v1' };
 export type DialogueRun = { id:string;turn_index:number;user_text:string;status:'running'|'succeeded'|'failed';reply:DialogueReply|null;error_code:string|null;goal_revision?:number;edit_receipt_revision?:number|null;edit_proposal_stale?:boolean;schedule_stale?:boolean;busy_proposal_stale?:boolean };
-export type Dialogue = {auto_schedule_key?:string|null;auto_schedule_run_id?:string|null;auto_schedule?:ScheduleData|null; calendar_revision?:number; clarification_budget?:{daily_limit:8|24;used:number;remaining:number;reset_at:number;global_limited:boolean;allowed:boolean};asked_topics?: SlotInput['key'][];goal:AccountGoal;chat_revision:number;runs:DialogueRun[] };
+export type Dialogue = {retry_refinement?:boolean;auto_schedule_key?:string|null;auto_schedule_run_id?:string|null;auto_schedule?:ScheduleData|null; calendar_revision?:number; clarification_budget?:{daily_limit:8|24;used:number;remaining:number;reset_at:number;global_limited:boolean;allowed:boolean};asked_topics?: SlotInput['key'][];goal:AccountGoal;chat_revision:number;runs:DialogueRun[] };
 export function checkedDialogue(value: Dialogue): Dialogue {
+  if(value.retry_refinement!==undefined&&typeof value.retry_refinement!=='boolean')throw new Error('修改恢复状态不正确。');
   if(value.auto_schedule_key!==undefined&&value.auto_schedule_key!==null&&(typeof value.auto_schedule_key!=='string'||value.auto_schedule_key.length>128||!/^auto_schedule_[0-9a-f-]{36}_\d+_\d+_\d+$/.test(value.auto_schedule_key)))throw new Error('日程准备状态不正确。');
   if(!value||!Number.isSafeInteger(value.chat_revision)||value.chat_revision<0||!Array.isArray(value.runs)||value.runs.length>30)throw new Error('对话响应格式不正确。');
   if(value.asked_topics!==undefined&&(!Array.isArray(value.asked_topics)||value.asked_topics.length>3||new Set(value.asked_topics).size!==value.asked_topics.length||value.asked_topics.some(k=>!['outcome','available_time','constraints'].includes(k))))throw new Error('澄清进度格式不正确。');
@@ -54,6 +55,7 @@ export function reviewSuggestions(dialogue:Dialogue,runId:string,goalRevision:nu
   return run.reply.suggestions??[];
 }
 export function dialogueError(code:string):string {
+  if(code==='REFINEMENT_RETRY_UNAVAILABLE')return '当前没有可重试的失败修改，请继续问答补充新要求。';
   if(code==='PLANNING_BUSY')return '当前方案正在制订，完成后可以继续补充修改。输入仍保留。';
   if(code==='CLARIFICATION_MINIMUM_NOT_MET')return '需要先询问三个核心信息，再停止提问；可以回答暂不确定。';
   if(code==='AI_NOT_CONFIGURED')return 'AI 服务尚未配置，请先完成服务端设置。';
