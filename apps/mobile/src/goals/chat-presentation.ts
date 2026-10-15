@@ -1,5 +1,5 @@
 import type {DialogueRun} from './dialogue';
-import {ASK_WEEK,ASK_SCHEDULE,CONFIRM_WEEK,CONFIRM_SCHEDULE} from './schedule.ts';
+import {ASK_WEEK,ASK_SCHEDULE,CONFIRM_WEEK,CONFIRM_SCHEDULE} from './legacy-schedule.ts';
 export function chatPresentation(run:DialogueRun){
  const label:Record<string,string>={[ASK_WEEK]:'看看接下来一周怎么安排',[ASK_SCHEDULE]:'看看具体时间怎么安排',[CONFIRM_WEEK]:'这些时段可以，先看看一周安排',[CONFIRM_SCHEDULE]:'这些时段可以，看看安排'};
  let question=run.reply?.question??'';

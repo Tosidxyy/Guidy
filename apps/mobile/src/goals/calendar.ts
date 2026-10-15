@@ -1,6 +1,3 @@
-export const ASK_BUSY='请帮我记录已有占用。';
-export const CONFIRM_BUSY='确认保存这些已有占用。';
-export function isBusyText(text:string){return text===ASK_BUSY||text===CONFIRM_BUSY||/^已有占用[：:]/.test(text);}
 export type BusyEvent={id:string;title:string;start_at:number;end_at:number;timezone:'UTC'|'Asia/Shanghai';fixed:1;source:'user'};
 export type BusyProposal={calendar_revision:number;timezone:'UTC'|'Asia/Shanghai';events:BusyEvent[];confirmed_from_run_id?:string};
 export type CalendarSnapshot={schema_version:1;from:number;to:number;revision:number;events:BusyEvent[]};

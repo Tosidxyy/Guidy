@@ -1,10 +1,5 @@
-export const ASK_AUTO='请根据现有信息直接拟定一周安排。';
-export const ASK_WEEK='请帮我按每周频次预览首阶段一周。';
-export const CONFIRM_WEEK='确认这些时段，按频次试排首阶段一周，同项每天最多一次。';
-export const ASK_SCHEDULE='请帮我预览首阶段各项一次的具体时间。';
-export const CONFIRM_SCHEDULE='确认这些时段，预览首阶段各项一次。';
-export function isScheduleText(text:string){return text===ASK_AUTO||text===ASK_WEEK||text===CONFIRM_WEEK||text===ASK_SCHEDULE||text===CONFIRM_SCHEDULE||/^可用时段[：:]/.test(text)||/(?:北京时间|Asia\/Shanghai|UTC).*(?:\d{4}-\d{2}-\d{2}|明天|周[一二三四五六日天])/.test(text);}
 type Interval={start_at:number;end_at:number};
+export const ASK_AUTO='请根据现有信息直接拟定一周安排。';
 export type ScheduleData={attempt_id:string;goal_revision:number;review_revision:number;timezone:'Asia/Shanghai'|'UTC';windows:Interval[];scope:'first_stage_once_v1'|'first_stage_week_v1'|'full_plan_cycle_v1'|'remaining_plan_v1';replaces_plan_id?:string;parent_instance_ids?:string[];completed_source_ids?:string[];preferences?:{preferred_start:number;preferred_end:number;excluded_weekdays:number[];excluded_dates:string[]};stages?:({stage:number;weeks:number}&Interval)[];period_basis?:'agent_draft_v1'|'assumed_one_week_per_stage_v1';period?:Interval;window_basis?:'assumed_default_v1';unavailable_from_notes?:Interval[];calendar_snapshot?:{revision:number;busy:(Interval&{id:string})[]};tasks:{id:string;title:string;duration_minutes:number;depends_on:string[];stage?:number;week?:number;earliest_at?:number;deadline_at?:number;needs_previous_feedback?:boolean;series_id?:string;ordinal?:number;repeat_count?:number;max_per_day?:1}[];confirmed_from_run_id?:string;preview?:{schema_version:1;status:'preview_only';strategy:'stable_topological_earliest_v1';timezone:string;placements:(Interval&{task_id:string})[];unplaced:{task_id:string;reason:'dependency_unplaced'|'no_legal_window'}[]}};
 const uuid=(value:unknown)=>typeof value==='string'&&/^[0-9a-f-]{36}$/.test(value);
 const range=(value:Interval)=>!!value&&Number.isSafeInteger(value.start_at)&&Number.isSafeInteger(value.end_at)&&value.start_at>=0&&value.end_at>value.start_at&&value.end_at<=8640000000000000;

@@ -1,6 +1,5 @@
 import { activeReplan } from "./active-replan.ts";
 import { ASK_AUTO, scheduleChat } from "../scheduling/chat.ts";
-import { busyChat } from "../scheduling/busy-chat.ts";
 import {
   clarificationBudget,
   clarificationLimits,
@@ -308,22 +307,6 @@ export async function dialogueResponse(
   }
   if (goal.status !== "draft" || goal.revision !== goalRevision)
     return fail(409, "CONTEXT_CHANGED");
-  const busyResult = stop
-    ? null
-    : await busyChat(
-        db,
-        owner,
-        goalId,
-        text,
-        key,
-        payload,
-        chatRevision,
-        goalRevision,
-      );
-  if (busyResult)
-    return busyResult.status === 200
-      ? ok(await snapshot())
-      : fail(busyResult.status, busyResult.code!);
   const schedule = stop
     ? null
     : await scheduleChat(

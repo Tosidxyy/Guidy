@@ -166,3 +166,9 @@ POST goals/:id/plan-approval由已登录用户明确确认具体预览；模型�
 新增 GET /api/v1/goals/:id/question-history?before=<turn_index>，强制账号/Goal隔离、只读、private/no-store；按问题游标向过去分页，每页20条，next_before为当前页最早问题的turn_index，终止为null。回答读取该问题之后同Goal/owner的下一次已提交用户文本，保留失败提交的原文，剥离带回答的制订前缀并过滤内部控制命令。返回question/answer等展示字段，不返回context/usage/Key；查询不调用模型、工作流或写计划。
 
 客户端验证Goal、严格升序、ID去重、游标进度和文本长度，独立全页回看不依赖最近30条snapshot，不改写活跃对话或增加Agent上下文。一次只渲染当前页，较新页在打开期间缓存；关闭取消正在进行的读取，换账号/Goal组件卸载。失败保持已加载页，重试相同游标。
+
+### 2026-10-15 移除手填时段与首阶段试排执行协议
+
+后端 scheduling/chat.ts 只接受内部自动日程请求，保留完整阶段周期展开、占用避让、风险与版本/并发检查；删除手填时段解析、首阶段一次/一周提议和二次试排执行分支。busy-chat.ts、weekly.ts 和仅为旧分流使用的 input-intent.ts 已删除，用户时间偏好不再被旧状态劫持为时段表单。已存 calendar_events 的读取/冲突检查与已确认计划保持不变，无数据迁移或额外删除。
+
+客户端移除对应文本识别和免费操作豁免；自然补充由 Agent 处理，已确认方案的明确委托/刷新等免费动作按 active-replan 规则保留。旧命令文案只在 legacy-schedule.ts 做历史消息只读映射，冻结旧scope仍被响应校验器识别，不具备执行入口。新的自动排程不要求用户提供日期格式或额外点试排。

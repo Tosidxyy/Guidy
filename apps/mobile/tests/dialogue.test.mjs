@@ -15,12 +15,12 @@ test('confirmed account occupancy requires user provenance, valid ranges and an 
  assert.throws(()=>checkedBusy({...b,events:[{...e,source:'ai'}]},'busy_proposed'));assert.throws(()=>checkedBusy({...b,events:[{...e,end_at:1}]},'busy_proposed'));
  checkedCalendar({schema_version:1,from:0,to:100000,revision:1,events:[e]},0,100000);assert.throws(()=>checkedCalendar({schema_version:1,from:0,to:100000,revision:1,events:[e,e]},0,100000));
 });
-import {checkedSchedule,scheduleTime,isScheduleText,ASK_WEEK,CONFIRM_WEEK} from '../src/goals/schedule.ts';
+import {checkedSchedule,scheduleTime} from '../src/goals/schedule.ts';
 test('weekly occurrence identities, counts and one-per-local-day cannot be forged',()=>{
  const id='00000000-0000-0000-0000-000000000001',start=Date.parse('2026-10-20T12:00:00Z');
  const tasks=Array.from({length:3},(_,i)=>({id:id+'_'+(i+1),series_id:id,ordinal:i+1,repeat_count:3,max_per_day:1,title:'练习',duration_minutes:20,depends_on:i?[id+'_'+i]:[]}));
  const s={attempt_id:id,goal_revision:0,review_revision:0,timezone:'Asia/Shanghai',scope:'first_stage_week_v1',period:{start_at:start-20*3600000,end_at:start-20*3600000+7*86400000},windows:Array.from({length:3},(_,i)=>({start_at:start+i*86400000,end_at:start+i*86400000+3600000})),tasks};
- checkedSchedule(s,'schedule_proposed');assert.equal(isScheduleText(ASK_WEEK),true);assert.equal(isScheduleText(CONFIRM_WEEK),true);
+ checkedSchedule(s,'schedule_proposed');
  const preview={...s,confirmed_from_run_id:id,preview:{schema_version:1,status:'preview_only',strategy:'stable_topological_earliest_v1',timezone:'Asia/Shanghai',placements:tasks.map((t,i)=>({task_id:t.id,start_at:start+i*86400000,end_at:start+i*86400000+1200000})),unplaced:[]}};
  checkedSchedule(preview,'schedule_preview');
  assert.throws(()=>checkedSchedule({...s,tasks:tasks.slice(0,2)},'schedule_proposed'));
@@ -39,7 +39,7 @@ test('schedule trial provenance, exact duration, windows, dependencies and previ
  for(const patch of [{status:'scheduled'},{placements:[{task_id:id,start_at:start,end_at:start+60000}]},{placements:[{task_id:id,start_at:start-1,end_at:start+1200000-1}]},{unplaced:[{task_id:id,reason:'no_legal_window'}]}])assert.throws(()=>checkedSchedule({...preview,preview:{...preview.preview,...patch}},'schedule_preview'));
  assert.throws(()=>checkedSchedule({...schedule,tasks:[{...schedule.tasks[0],depends_on:[id]}]},'schedule_proposed'));
  assert.match(scheduleTime(start,'Asia/Shanghai'),/20:00/);
- assert.equal(isScheduleText('可用时段：北京时间，2026-10-20 20:00-21:00'),true);
+
 });
 test('dialogue provenance and completion state cannot be forged',()=>{
   assert.equal(checkedDialogue(base).runs[0].reply.source,'deepseek');
