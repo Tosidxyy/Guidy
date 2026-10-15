@@ -1086,3 +1086,15 @@ Browser plugin not available，Playwright/Edge隔离本地账号+真实本地D1/
 过程如实记录：effect同步setState被lint拦截后改真正异步读取回调；脚本未等待Modal语义就绪查询空节点、底层与回看相同文本计数重复，改等待实际dialog并限定窗口；此前窗口消失推断不作为事实。滚动实测发现onMomentum不足和程序定位标记拦截人工滚轮，核对scrollLeft后修正，未只改断言掩盖。自动审批曾因用量耗尽拒绝最后诊断，未执行该操作/未绕过审批，恢复后继续；原服务进程已消失后重启同数据库，首次预览未ready连接拒绝，等待确认就绪后复测通过。最终浏览器与export顺序执行，无构建并行干扰。未通过的早期滑动版本不算完成。
 
 TODO单独提交后push origin/main并核对远程SHA。下一轮继续以自动制订主流程为准移除旧手动排程协议，补可验证的自然语言改稿；保留用户回答、已确认版本和执行历史。
+
+### 2026-10-15 删除旧手填时段/首阶段试排与占用提案执行逻辑
+
+- [x] scheduling/chat.ts收敛为后台完整周期自动排程，删除时段文本解析、首阶段一次/一周试排与手动确认分支；删除busy-chat.ts、weekly.ts及旧分流input-intent.ts。既有固定占用读取和核心冲突检查保留。
+- [x] 前端去掉旧时段/占用/数字输入分流与免费豁免，自然偏好交回Agent；已确认方案的免费委托/刷新动作与服务端规则对齐。旧消息文案只读映射移到legacy-schedule.ts，保留冻结版本校验，不再执行旧命令。
+- [ ] 任意内容/频次及草稿阶段自然时间改稿仍需完善；自动候选跨日期过期后的免费恢复也需审计。真实iPhone/VoiceOver/键盘本轮未验证，整体目标保持进行中；未新增清空用户数据动作。
+
+实现 Commit 1bfd6ebb54235666ce808174f1880d247b198f71。backend typecheck/lint/format:check/build:cloud通过；draft-edit/approval/replan/cycle/planning-jobs/retired-routes 30/30通过，新增旧一周/时段/占用命令→Agent问题、无提案和零核心写入。随退役功能删除其实现镜像测试；保留自动全周期、每日频次/依赖、跨Goal冲突、并发与二次确认历史等真实边界。mobile最终typecheck/lint、ui-state38/38、最终export:ios通过；2文档19链接与diff检查通过。最初提取类型漏带Interval导致typecheck失败，补回纯类型后通过，不伪称首次即通过。
+
+Browser plugin not available，Playwright/Edge隔离本地身份验证：受控五周/两阶段方案→后台自动候选→确认→1版本12实例→Reload→回答历史→日历当天做法/方案链接→320窄屏通过。真实本地D1/服务/批准读回，供应商生成用受控fixture，模型/搜索/邮件0；.cache/guidy-approved-calendar.png已view_image核对黑白月历，未冒称iPhone实测。首轮/me页面60秒超时；核对原session40556存活、Metro/status200、后端200及实际编译日志（单模块一度58秒），复用服务等待并重跑通过，无重启/数据重置。旧脚本回看返回动作改为现有关闭Modal，未减少主流程验收。
+
+开发云部署f404d023-93f3-4b94-a3af-483a01a2f9bc；health200、旧slots404、messages匿名401。无迁移、真实用户正文读取、密钥值输出或额外旧数据删除。按约定单独TODO提交后push origin/main并核对远程SHA。下一轮推进确认前自然语言修订候选与自动恢复，继续朝完整后台制订体验推进。
