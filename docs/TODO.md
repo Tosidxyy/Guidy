@@ -1126,3 +1126,18 @@ Browser plugin not available，Playwright/Edge隔离本地身份实测：原五�
 Browser plugin not available，Playwright/Edge隔离本地身份实际验证：完成稿→自动候选→构造合法过期的受控候选→Reload免费刷新一次→旧稿及旧候选字节保持→再次Reload不重复→明确确认12实例→日历日期详情/回看/已确认恢复→320窄屏无页面溢出，模型/搜索0。截图.cache/guidy-approved-calendar-small.png已view_image检查。QA使用本地开发收件箱，不发送真实邮件；受控测试身份最后精确清理。初次预览SSR约149秒编译导致导航超时，后续登录也超时；检查既有进程/日志后恢复本地预览，最终完整用例通过。首个新增单元的过期夹具位移方向错误后修正为完整合法日期整体平移；首次lint遗漏globalThis.Request已修正；受限环境Wrangler日志EPERM后通过正常提权重跑构建，无审批绕过。最终检查均通过后才提交实现。
 
 开发云部署2dc92474-08ca-41b5-872f-3e71e7436db9完成（Worker与Workflow trigger）；health200、messages匿名401。未调用付费模型，未读取真实用户正文或输出凭据。按约定本记录单独提交后push origin/main并核对远程SHA。下一轮推进确认后的内容/频次版本修订与失败修订上下文恢复。
+
+### 2026-10-15 确认后通过卡片修订内容与投入
+
+- [x] active Goal继续问答/调整未来安排进入统一免费修订卡；提交内容、时长、频次、周期和时间偏好后，复用后台研究/strict生成新草稿。冻结当前批准父版本、原稿、用户要求、真实完成/跳过汇总，旧已确认日历保留直到再次确认。
+- [x] Workflow预留、阶段校验、草稿写入、自动候选均绑定Goal revision与活动父版本；新full_plan_cycle_v1候选避让其他目标，携带原未来scheduled实例完整集合，支持免费日期恢复。后台完成自动读取候选；等待/失败回看始终显示实际已确认版本。
+- [x] 明确确认保存新不可变版本与任务，只supersede父版本未来scheduled；过去、完成、跳过记录不覆盖。批准事务新增逐ID校验，拒绝未来集合数量不变但身份变化的竞态。旧时间调整/免费恢复继续兼容，普通卡片不再限定只能改时段。
+- [ ] 失败修订通过自然语言“按上次要求再试”完整继承要求、剩余旧管理/调试入口精简与最终全流程验收继续推进；真实iPhone前后台/键盘/VoiceOver本轮未验证，整体目标保持未完成。
+
+实现 Commit a6a67ed546fb98470d68879dd8b1ae68564d48db。backend typecheck/lint/format:check/build:cloud通过；content-replan/approval/replan/draft-edit/planning-jobs/candidate-expiry关联33/33通过，补充未来集合竞态后content-replan最终4/4通过（34个不同关联用例均已通过）。mobile最终typecheck/lint、test:ui-state40/40及最终export:ios通过；2文档28本地链接与git diff --check通过。无依赖/迁移/额外真实历史数据删除。
+
+Browser plugin not available，Playwright/Edge沿用已验证存活本地服务，隔离身份实际完成：原五周12实例批准→受控完成/跳过各1→继续问答卡→改内容/15分钟/每周2次/晨间避周二→后台新稿与10候选自动显示→确认前旧版本1且原稿不变→明确确认版本2/新10scheduled/原10future superseded→完成跳过与旧版本字节保持→Reload与320窄屏无页面溢出。截图.cache/guidy-content-replan-small.png已view_image检查；模型0/搜索0，使用本地开发收件箱。修订提交/生成使用实际领域函数+本地D1 CLI facade受控供应商；meta.changes按实际行状态规范化，不单靠该用例宣称事务原子性，事务由Miniflare及云端链路补证。QA身份/开发收件箱按测试邮箱清理。
+
+云端完整部署b902c6e9-3671-44eb-b954-dbc2b0bea331（Worker+Workflow trigger），隔离云身份真实DeepSeek研究判断+strict生成2次、搜索0、邮件0：先批准原2周方案并标记受控完成/跳过各1→卡片修改跟读/15分钟/每周2次/两周/7–8点避周二→4未来候选→旧稿/旧日历未改→同键回放仍仅1新Job→明确批准版本2、新4实例→旧4未来superseded且完成/跳过仍各1，客户端契约通过。verification与QA用户按ID+固定随机测试邮箱精确清理，未输出OTP/Cookie/Key或真实用户正文。health200、messages匿名401。
+
+初始恢复用例错误复用已占用的请求键得到409，改为模拟真实日历版本变化生成新恢复键后通过；保留原请求键冲突校验。检查补齐后台完成后只读刷新消息快照，避免父页面还持有queued时的空候选键；未让GET调度或重试付费调用。最终前端回看进一步区分已批准稿与未批准稿。旧时段专用测试改为直接时段请求，新的主卡片流程由content-replan覆盖，未删除成功/失败/历史断言。按约定本记录单独提交后push origin/main并核对远程SHA；下一轮补齐失败修订要求恢复及入口精简。
