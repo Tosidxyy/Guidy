@@ -1,3 +1,5 @@
+import { approvalResponse } from "../src/scheduling/approval.ts";
+import { checkedPlanning } from "../../apps/mobile/src/goals/planning.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFile, readdir } from "node:fs/promises";
@@ -6,6 +8,7 @@ import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import {
   planningStatements,
   decidePlanning,
+  researchPlanning,
   generatePlanning,
   planningResponse,
 } from "../src/agent/planning-jobs.ts";
@@ -97,8 +100,12 @@ test("direct suggestions avoid clear unavailable weekdays but never turn conditi
     );
   }
 });
-test("continued card questions preserve model questions and freeze user notes for the next plan", async (t) => {
-  const f = await ready(t);
+test("continued card questions before a completed draft preserve model questions and user notes", async (t) => {
+  const f = await setup(t);
+  await f.db
+    .prepare("UPDATE planning_jobs SET status='failed' WHERE id=?")
+    .bind(f.id)
+    .run();
   for (const [i, slot] of [
     "outcome",
     "available_time",
@@ -597,4 +604,332 @@ test("retired window/week/occupancy commands follow Agent cards instead of reope
       0,
     );
   }
+});
+
+async function refinementReady(t) {
+  const f = await setup(t);
+  await decidePlanning(f.db, f.id, {}, f.intent(true));
+  await researchPlanning(f.db, f.id, {}, f.search);
+  await generatePlanning(f.db, f.id, {}, f.model);
+  await f.db
+    .prepare("DELETE FROM agent_runs WHERE goal_id=? AND user_text=?")
+    .bind(f.goal, ASK_AUTO)
+    .run();
+  for (const [i, topic] of [
+    "outcome",
+    "available_time",
+    "constraints",
+  ].entries()) {
+    const id = globalThis.crypto.randomUUID();
+    await f.db
+      .prepare(
+        "INSERT INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,reply_json,created_at,updated_at,lease_until) VALUES(?,?,?,?, '{}',?,0,'fixture','succeeded','qa',?,1,1,1)",
+      )
+      .bind(
+        id,
+        f.goal,
+        f.owner,
+        id,
+        i + 2,
+        JSON.stringify({
+          schema_version: 1,
+          source: "deepseek",
+          kind: "question",
+          question: "核心问题",
+          reason: "了解",
+          requested_slot: topic,
+          stage: "clarifying",
+        }),
+      )
+      .run();
+  }
+  return f;
+}
+const refinedModel = (valid = true) => ({
+  complete: async (input) => {
+    const c = JSON.parse(input);
+    assert.equal(c.previous_plan.tasks[0].duration_minutes, 20);
+    assert.match(c.revision_request, /15分钟/);
+    assert.equal(c.sources.length, 1);
+    assert.equal(c.sources[0].url, undefined);
+    return {
+      content: JSON.stringify({
+        title: "韩语调整草稿",
+        summary: "保留目标，按本次要求减少投入并增加跟读",
+        assumptions: ["时间仍是建议，尚未核实实际空闲"],
+        risks: ["资料尚未核实"],
+        time_preferences: {
+          timezone: "Asia/Shanghai",
+          start_minute: 420,
+          end_minute: valid ? 480 : 400,
+          excluded_weekdays: [2],
+        },
+        stage_weeks: [{ stage: 1, weeks: 2 }],
+        tasks: [
+          {
+            key: "t1",
+            stage: 1,
+            title: "基础练习与跟读",
+            instructions: "跟读基础对话并记录表达",
+            duration_minutes: 15,
+            frequency_per_week: 2,
+            mandatory: true,
+            depends_on: [],
+            evidence_ids: ["E1"],
+          },
+        ],
+      }),
+      inputTokens: 3,
+      outputTokens: 3,
+    };
+  },
+});
+test("refinement card creates a frozen new workflow, reuses sources and automatically previews content/frequency/time changes before explicit approval", async (t) => {
+  const f = await refinementReady(t),
+    old = await f.db
+      .prepare("SELECT draft_json FROM plan_draft_attempts WHERE id=?")
+      .bind(f.id)
+      .first();
+  const question = checkedDialogue(
+    (
+      await (
+        await message(
+          f,
+          "请继续问我一个有助于完善方案的问题。",
+          "refine-more",
+          4,
+        )
+      ).json()
+    ).data,
+  );
+  assert.equal(question.runs.at(-1).reply.stage, "refine_question");
+  assert.equal(question.runs.at(-1).reply.base_attempt_id, f.id);
+  assert.equal(question.clarification_budget.used, 0);
+  const text = "每次改为15分钟、每周2次并增加跟读，早上7点到8点，周二不安排。";
+  const result = checkedDialogue(
+    (await (await message(f, text, "refine-answer", 5)).json()).data,
+  );
+  assert.equal(result.runs.at(-1).reply.stage, "draft_requested");
+  const j = await f.db
+    .prepare(
+      "SELECT * FROM planning_jobs WHERE id!=? ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(f.id)
+    .first();
+  const frozen = JSON.parse(j.context_json);
+  assert.equal(frozen.revision_request, text);
+  assert.equal(frozen.base_attempt_id, f.id);
+  assert.equal(JSON.parse(j.sources_json).length, 1);
+  assert.equal((await message(f, text, "refine-answer", 5)).status, 200);
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM planning_jobs").first()).n,
+    2,
+  );
+  await decidePlanning(
+    f.db,
+    j.id,
+    {},
+    {
+      complete: async (input) => {
+        assert.equal(JSON.parse(input).has_sources, true);
+        return {
+          content: JSON.stringify({ needs_search: false, topic: "korean" }),
+          inputTokens: 1,
+          outputTokens: 1,
+        };
+      },
+    },
+  );
+  await generatePlanning(f.db, j.id, {}, refinedModel());
+  const snapshot = checkedPlanning((await (await f.get()).json()).data, f.goal);
+  assert.equal(snapshot.jobs[0].plan.draft.tasks[0].duration_minutes, 15);
+  assert.equal(snapshot.jobs[0].plan.draft.tasks[0].frequency_per_week, 2);
+  assert.match(snapshot.jobs[0].plan.draft.tasks[0].instructions, /跟读/);
+  const after = checkedDialogue(
+    (
+      await (
+        await dialogueResponse(
+          new globalThis.Request(
+            `http://localhost/api/v1/goals/${f.goal}/messages`,
+          ),
+          f.db,
+          f.owner,
+          "test",
+          {},
+        )
+      ).json()
+    ).data,
+  );
+  assert.equal(after.auto_schedule.window_basis, "agent_proposal_v1");
+  assert.equal(after.auto_schedule.preview.placements.length, 4);
+  for (const p of after.auto_schedule.preview.placements) {
+    const local = new Date(p.start_at + 8 * 3600000);
+    assert.equal(local.getUTCHours(), 7);
+    assert.notEqual(local.getUTCDay(), 2);
+  }
+  assert.equal(
+    (
+      await f.db
+        .prepare("SELECT draft_json FROM plan_draft_attempts WHERE id=?")
+        .bind(f.id)
+        .first()
+    ).draft_json,
+    old.draft_json,
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM plan_versions").first()).n,
+    0,
+  );
+  assert.equal(f.counts().searches, 1);
+  const approved = await approvalResponse(
+    new globalThis.Request(
+      `http://localhost/api/v1/goals/${f.goal}/plan-approval`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "refined-plan-approval",
+        },
+        body: JSON.stringify({
+          schedule_run_id: after.auto_schedule_run_id,
+          expected_goal_revision: 0,
+          expected_calendar_revision: 0,
+        }),
+      },
+    ),
+    f.db,
+    f.owner,
+    "test",
+  );
+  assert.equal(approved.status, 200);
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM scheduled_occurrences").first())
+      .n,
+    4,
+  );
+});
+test("invalid revised output retains original draft and policy prevents unsafe revisions", async (t) => {
+  const f = await refinementReady(t);
+  await message(
+    f,
+    "请继续问我一个有助于完善方案的问题。",
+    "refine-question",
+    4,
+  );
+  await message(f, "改成15分钟", "refine-bad", 5);
+  const j = await f.db
+    .prepare("SELECT id FROM planning_jobs WHERE id!=?")
+    .bind(f.id)
+    .first();
+  await decidePlanning(f.db, j.id, {}, f.intent(false));
+  await generatePlanning(f.db, j.id, {}, refinedModel(false));
+  assert.equal(
+    (
+      await f.db
+        .prepare("SELECT status FROM planning_jobs WHERE id=?")
+        .bind(j.id)
+        .first()
+    ).status,
+    "failed",
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM plan_draft_attempts").first())
+      .n,
+    1,
+  );
+  const chat = (
+    await f.db.prepare("SELECT max(turn_index) n FROM agent_runs").first()
+  ).n;
+  await message(
+    f,
+    "请继续问我一个有助于完善方案的问题。",
+    "refine-risk-question",
+    chat,
+  );
+  const risk = checkedDialogue(
+    (
+      await (
+        await message(
+          f,
+          "我有伤病，请把动作改为15分钟",
+          "refine-risk",
+          chat + 1,
+        )
+      ).json()
+    ).data,
+  );
+  assert.equal(risk.runs.at(-1).reply.source, "policy");
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM planning_jobs").first()).n,
+    2,
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM plan_versions").first()).n,
+    0,
+  );
+});
+
+test("opening the refinement question alone does not invalidate explicit approval of the unchanged current candidate", async (t) => {
+  const f = await refinementReady(t);
+  const preview = checkedDialogue(
+    (await (await message(f, ASK_AUTO, `auto_schedule_${f.id}_0_0`, 4)).json())
+      .data,
+  );
+  await message(f, "请继续问我一个有助于完善方案的问题。", "refine-cancel", 5);
+  const response = await approvalResponse(
+    new globalThis.Request(
+      `http://localhost/api/v1/goals/${f.goal}/plan-approval`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": "keep-original-plan",
+        },
+        body: JSON.stringify({
+          schedule_run_id: preview.auto_schedule_run_id,
+          expected_goal_revision: 0,
+          expected_calendar_revision: 0,
+        }),
+      },
+    ),
+    f.db,
+    f.owner,
+    "test",
+  );
+  assert.equal(response.status, 200);
+});
+
+test("another completed draft invalidates a refinement card bound to the older source", async (t) => {
+  const f = await refinementReady(t);
+  await message(
+    f,
+    "请继续问我一个有助于完善方案的问题。",
+    "refine-old-source",
+    4,
+  );
+  const id = globalThis.crypto.randomUUID(),
+    now = Date.now() + 1000;
+  await f.db.batch([
+    f.db
+      .prepare(
+        "INSERT INTO planning_jobs(id,source_run_id,goal_id,owner_id,goal_revision,status,context_json,created_at,updated_at,lease_until) SELECT ?, (SELECT id FROM agent_runs WHERE goal_id=? AND turn_index=3),goal_id,owner_id,goal_revision,'completed',context_json,?,?,0 FROM planning_jobs WHERE id=?",
+      )
+      .bind(id, f.goal, now, now, f.id),
+    f.db
+      .prepare(
+        "INSERT INTO plan_draft_attempts(id,goal_id,owner_id,goal_revision,request_key,request_payload,context_json,status,draft_json,created_at,lease_until) SELECT ?,goal_id,owner_id,goal_revision,?,'{}',context_json,'succeeded',draft_json,?,0 FROM plan_draft_attempts WHERE id=?",
+      )
+      .bind(id, id, now, f.id),
+  ]);
+  const result = await message(f, "改成15分钟", "refine-stale-answer", 5);
+  assert.equal(result.status, 409);
+  assert.equal((await result.json()).error.code, "CONTEXT_CHANGED");
+  assert.equal(
+    (await f.db.prepare("SELECT max(turn_index) n FROM agent_runs").first()).n,
+    5,
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM planning_jobs").first()).n,
+    2,
+  );
 });

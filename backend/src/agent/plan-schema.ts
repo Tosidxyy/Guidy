@@ -12,6 +12,12 @@ type DraftTask = {
   evidence_ids: string[];
 };
 type ModelDraft = {
+  time_preferences?: {
+    timezone: "Asia/Shanghai" | "UTC";
+    start_minute: number;
+    end_minute: number;
+    excluded_weekdays: number[];
+  };
   stage_weeks?: { stage: number; weeks: number }[];
   title: string;
   summary: string;
@@ -49,11 +55,30 @@ export function checkedPlan(
           "risks",
           "tasks",
           "stage_weeks",
+          "time_preferences",
         ].includes(k),
     )
   )
     fail("PLAN_SCHEMA_FIELDS");
   if (!text(v.title, 80)) fail("PLAN_SCHEMA_TITLE");
+  const p = v.time_preferences;
+  if (
+    p !== undefined &&
+    (!p ||
+      Object.keys(p).sort().join(",") !==
+        "end_minute,excluded_weekdays,start_minute,timezone" ||
+      !["UTC", "Asia/Shanghai"].includes(p.timezone) ||
+      !Number.isInteger(p.start_minute) ||
+      !Number.isInteger(p.end_minute) ||
+      p.start_minute < 0 ||
+      p.end_minute > 1440 ||
+      p.end_minute - p.start_minute < 5 ||
+      !Array.isArray(p.excluded_weekdays) ||
+      p.excluded_weekdays.length > 7 ||
+      new Set(p.excluded_weekdays).size !== p.excluded_weekdays.length ||
+      p.excluded_weekdays.some((n) => !Number.isInteger(n) || n < 0 || n > 6))
+  )
+    fail("PLAN_SCHEMA_FIELDS");
   if (!text(v.summary, 300)) fail("PLAN_SCHEMA_SUMMARY");
   if (!list(v.assumptions)) fail("PLAN_SCHEMA_ASSUMPTIONS");
   if (!list(v.risks)) fail("PLAN_SCHEMA_RISKS");

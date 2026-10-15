@@ -17,6 +17,8 @@ export function AutomaticPlanning({id,owner,calendarRevision,automaticSchedule,a
  useFocusEffect(useCallback(()=>{void chatRevision;void calendarRevision;const generation=++scope.current,c=new AbortController();focusSignal.current=c.signal;active.current=false;if(owner)void read(c.signal,generation);const timer=setInterval(()=>{if(active.current)void read(c.signal,generation);},2500);return()=>{c.abort();focusSignal.current=null;scope.current++;clearInterval(timer);};},[read,owner,chatRevision,calendarRevision]));
  const attempted=useRef<string|null>(null);
  const job=data?.jobs[0];const draft=approved&&approved.attempt_id===job?.id?approved.draft:job?.review?.draft??job?.plan?.draft;
+ const requestWaiting=!!stopped&&(!job||!!stopRunId&&!data?.jobs.some(j=>j.source_run_id===stopRunId));
+ const previousJob=job&&!job.plan&&!planningActive(job)?data?.jobs.find(j=>!!j.plan):undefined;
  const autoKey=job?.plan&&calendarRevision!==undefined?`auto_schedule_${job.id}_${job.review?.revision??0}_${calendarRevision}`:null;
  const pending=!!approved&&automaticSchedule?.replaces_plan_id===approved.id;
  const accepted=approved?.attempt_id===job?.id&&!pending?approved:null;const displayed=accepted?.schedule??automaticSchedule;
@@ -37,11 +39,12 @@ export function AutomaticPlanning({id,owner,calendarRevision,automaticSchedule,a
     <AppText style={{fontSize:24,fontWeight:'600'}}>{draft!.title}</AppText><Caption>{draft!.summary}</Caption>
     {(accepted||matching)&&displayed&&<PlanCalendar approved={!!accepted} schedule={displayed} instructions={taskId=>draft!.tasks.find(t=>t.id===taskId)?.instructions}/>}
     {!!accepted&&<Caption>方案已确认，日历中可查看每日安排。</Caption>}
-    {!accepted&&matching&&<Action label={approving?'正在加入日历…':pending?'确认调整并更新日历':'确认方案并加入日历'} disabled={approving||loading||!!error||!canSchedule||!automaticScheduleRunId||!!automaticSchedule?.preview?.unplaced.length} onPress={()=>{void accept();}}/>}
+    {!accepted&&matching&&!requestWaiting&&<Action label={approving?'正在加入日历…':pending?'确认调整并更新日历':'确认方案并加入日历'} disabled={approving||loading||!!error||!canSchedule||!automaticScheduleRunId||!!automaticSchedule?.preview?.unplaced.length} onPress={()=>{void accept();}}/>}
     {draft!.risks.map((risk,i)=><Caption key={`risk-${i}`}>需留意：{risk}</Caption>)}
     {draft!.assumptions.map((assumption,i)=><Caption key={`assumption-${i}`}>待核对：{assumption}</Caption>)}    {!accepted&&!matching&&<><Caption>建议日程尚未读取完成；默认时间只是草稿假设，你可以继续补充限制。</Caption><Action label="重新准备建议日程" secondary disabled={!canSchedule||loading||!autoKey} onPress={()=>{if(autoKey)onAutoSchedule(autoKey);}}/></>}
 
    </>}
   </View>}
+  {previousJob?.plan&&<Card><AppText style={{fontSize:20,fontWeight:'600'}}>上次方案仍保留 · 仅回看</AppText><AppText>{previousJob.plan.draft!.title}</AppText><Caption>{previousJob.plan.draft!.summary}</Caption>{automaticSchedule?.attempt_id===previousJob.id&&<PlanCalendar schedule={automaticSchedule} instructions={taskId=>previousJob.plan!.draft!.tasks.find(t=>t.id===taskId)?.instructions}/>}</Card>}
  </>;
 }

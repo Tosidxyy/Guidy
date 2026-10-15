@@ -172,3 +172,11 @@ POST goals/:id/plan-approval由已登录用户明确确认具体预览；模型�
 后端 scheduling/chat.ts 只接受内部自动日程请求，保留完整阶段周期展开、占用避让、风险与版本/并发检查；删除手填时段解析、首阶段一次/一周提议和二次试排执行分支。busy-chat.ts、weekly.ts 和仅为旧分流使用的 input-intent.ts 已删除，用户时间偏好不再被旧状态劫持为时段表单。已存 calendar_events 的读取/冲突检查与已确认计划保持不变，无数据迁移或额外删除。
 
 客户端移除对应文本识别和免费操作豁免；自然补充由 Agent 处理，已确认方案的明确委托/刷新等免费动作按 active-replan 规则保留。旧命令文案只在 legacy-schedule.ts 做历史消息只读映射，冻结旧scope仍被响应校验器识别，不具备执行入口。新的自动排程不要求用户提供日期格式或额外点试排。
+
+### 2026-10-15 修订任务与时间建议契约
+
+新增agent/draft-refinement.ts：只在当前owner/Goal/revision的已完成草稿上开启refine_question；三个核心信息必须已分别问过。问题卡固定为harness来源、携带base_attempt_id且不计澄清模型额度；用户回答创建新的clarify-stop运行与planning_jobs，按原生成用量账本预留，queued任务沿用现有Workflow派发/恢复。source、对话版本、活跃任务与风险在D1批次入口检查；相同请求键回放不新建任务；模型不直接操作核心表。
+
+冻结context包括previous_plan（紧凑任务key/依赖、周期和旧建议）、base_attempt_id、完整revision_request与已知条件。来源由服务端从拥有的原稿上下文带入sources_json，研究路由看是否需要新事实；模型输入只含引用编号/标题/正文等必要资料，不含完整URL，8500字符上限；私有冻结上下文保留完整引用，最多18000字符。emit_plan严格输出增加time_preferences（UTC或Asia/Shanghai、0–1440分钟内至少5分钟同日窗口、0–6不重复排除星期），新输出Token上限2400。旧无该字段的冻结草稿仍按披露默认窗口读取。
+
+SchedulingService按该待确认时间建议展开全部阶段并避让已知占用；window_basis=agent_proposal_v1仍是建议，不是用户空闲事实。修订结果经过原字段/引用/依赖/风险与客户端契约校验；旧稿不改，新稿完成后客户端自动显示候选。批准入口仅忽略没有采集新条件的refine-question-v1问题开启操作，任何提交修改仍使旧候选失效；风险记录始终阻断批准。新确认照常原子保存PlanVersion及实例。无迁移或额外数据清理。

@@ -33,7 +33,7 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
     const timer=setInterval(()=>{if(running.current)void load(controller.signal,scope,false);},2000);
     const invalidate=()=>{generation.current++;};return()=>{controller.abort();clearInterval(timer);invalidate();};
   },[load,refresh]));
-  function freeInput(value:string){return value===ASK_AUTO||(data?.goal.status==='active'&&(['我想调整未来的安排。','请重新检查这份调整的日程。','请继续问我一个有助于完善方案的问题。'].includes(value)||/^(你来安排(?:吧)?|你决定(?:吧)?|暂不确定|不确定|不知道)[。！!?？]?$/.test(value)));}
+  function freeInput(value:string){return value===ASK_AUTO||(value==='请继续问我一个有助于完善方案的问题。'&&!!data?.auto_schedule)||(data?.runs.at(-1)?.reply?.stage==='refine_question')||(data?.goal.status==='active'&&(['我想调整未来的安排。','请重新检查这份调整的日程。','请继续问我一个有助于完善方案的问题。'].includes(value)||/^(你来安排(?:吧)?|你决定(?:吧)?|暂不确定|不确定|不知道)[。！!?？]?$/.test(value)));}
   async function send(override?:string, fixedKey?:string){
     if(!data||!owner||busy.current||!['draft','active'].includes(data.goal.status)||data.runs.some(r=>r.status==='running'))return;
     const value=(override??text).trim();if(data.clarification_budget?.allowed===false&&value!=='先到这里，请根据现有信息准备方案草稿。'&&!value.startsWith('根据当前回答开始制订：')&&!freeInput(value)){setError(dialogueError(data.clarification_budget.global_limited?'AI_GLOBAL_LIMIT':'AI_DAILY_LIMIT'));return;}if(!value){setError('请先输入要补充的内容。');return;}

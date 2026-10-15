@@ -47,17 +47,19 @@ export function planningStatements(
   revision: number,
   context: unknown,
   now: number,
+  initialSources: unknown[] = [],
 ) {
   const id = crypto.randomUUID(),
     day = Math.floor(now / 86400000) * 86400000;
   return [
     db
       .prepare(
-        "INSERT OR IGNORE INTO planning_jobs(id,source_run_id,goal_id,owner_id,goal_revision,status,context_json,created_at,updated_at,lease_until) SELECT ?,r.id,r.goal_id,r.owner_id,r.goal_revision,'queued',?,?,?,? FROM agent_runs r JOIN goals g ON g.id=r.goal_id AND g.owner_id=r.owner_id WHERE r.id=? AND r.goal_id=? AND r.owner_id=? AND r.status='succeeded' AND json_extract(r.reply_json,'$.stage')='draft_requested' AND json_extract(r.reply_json,'$.source')='harness' AND r.harness_version='clarify-stop-v1' AND g.status='draft' AND g.revision=? AND g.active_plan_version_id IS NULL AND (SELECT count(*) FROM plan_draft_usage WHERE owner_id=? AND created_at>=?)<3 AND (SELECT count(*) FROM plan_draft_usage WHERE created_at>=?)<10 AND (SELECT count(*) FROM planning_jobs WHERE goal_id=?)<10 AND (SELECT count(*) FROM plan_draft_attempts WHERE goal_id=?)<10 AND NOT EXISTS(SELECT 1 FROM plan_draft_attempts WHERE goal_id=? AND status='submitted') AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' AND json_extract(reply_json,'$.source')='policy')",
+        "INSERT OR IGNORE INTO planning_jobs(id,source_run_id,goal_id,owner_id,goal_revision,status,context_json,sources_json,created_at,updated_at,lease_until) SELECT ?,r.id,r.goal_id,r.owner_id,r.goal_revision,'queued',?,?,?,?,? FROM agent_runs r JOIN goals g ON g.id=r.goal_id AND g.owner_id=r.owner_id WHERE r.id=? AND r.goal_id=? AND r.owner_id=? AND r.status='succeeded' AND json_extract(r.reply_json,'$.stage')='draft_requested' AND json_extract(r.reply_json,'$.source')='harness' AND r.harness_version='clarify-stop-v1' AND g.status='draft' AND g.revision=? AND g.active_plan_version_id IS NULL AND (SELECT count(*) FROM plan_draft_usage WHERE owner_id=? AND created_at>=?)<3 AND (SELECT count(*) FROM plan_draft_usage WHERE created_at>=?)<10 AND (SELECT count(*) FROM planning_jobs WHERE goal_id=?)<10 AND (SELECT count(*) FROM plan_draft_attempts WHERE goal_id=?)<10 AND NOT EXISTS(SELECT 1 FROM plan_draft_attempts WHERE goal_id=? AND status='submitted') AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' AND json_extract(reply_json,'$.source')='policy')",
       )
       .bind(
         id,
         JSON.stringify(context),
+        JSON.stringify(initialSources),
         now,
         now,
         now + 600000,
@@ -165,6 +167,8 @@ export async function decidePlanning(
     const c = JSON.parse(j.context_json);
     const input = JSON.stringify({
       goal: c.goal.description,
+      revision_request: c.revision_request ?? null,
+      has_sources: JSON.parse(j.sources_json).length > 0,
       outcome: c.conditions.find((s: { key: string }) => s.key === "outcome")
         ?.value,
     });
@@ -299,11 +303,30 @@ export async function generatePlanning(
       generation_mode: "chat_auto_v1",
     };
     const text = JSON.stringify(context);
-    if (text.length > 8500) throw new AgentError("PLAN_CONTEXT_TOO_LARGE");
+    const input = JSON.stringify({
+      ...context,
+      sources: context.sources.map(
+        (source: {
+          evidence_ref: string;
+          title: string;
+          content: string;
+          content_kind: string;
+          published_at: string | null;
+        }) => ({
+          evidence_ref: source.evidence_ref,
+          title: source.title,
+          content: source.content,
+          content_kind: source.content_kind,
+          published_at: source.published_at,
+        }),
+      ),
+    });
+    if (input.length > 8500 || text.length > 18000)
+      throw new AgentError("PLAN_CONTEXT_TOO_LARGE");
     const completion = await external(
       (s) =>
         (provider ?? deepseekProvider(env, undefined, "plan")).complete(
-          text,
+          input,
           s,
         ),
       25000,

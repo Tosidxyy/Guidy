@@ -51,7 +51,7 @@ export async function activeReplan(
   const rows = await db.batch([
     db
       .prepare(
-        "INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running',?,?,?,? FROM goals g WHERE id=? AND owner_id=? AND status='active' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=g.id)=? AND ?=(SELECT plan_version_id FROM goal_active_plans WHERE goal_id=g.id AND owner_id=g.owner_id) AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=g.id AND status='running') AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=g.id AND json_extract(reply_json,'$.source')='policy') AND (?=1 OR ((SELECT count(*) FROM agent_runs WHERE owner_id=g.owner_id AND created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1','busy-chat-v1','replan-refresh-v1','replan-question-v1'))<? AND (SELECT count(*) FROM agent_runs WHERE created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1','busy-chat-v1','replan-refresh-v1','replan-question-v1'))<?))",
+        "INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running',?,?,?,? FROM goals g WHERE id=? AND owner_id=? AND status='active' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=g.id)=? AND ?=(SELECT plan_version_id FROM goal_active_plans WHERE goal_id=g.id AND owner_id=g.owner_id) AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=g.id AND status='running') AND NOT EXISTS(SELECT 1 FROM agent_runs WHERE goal_id=g.id AND json_extract(reply_json,'$.source')='policy') AND (?=1 OR ((SELECT count(*) FROM agent_runs WHERE owner_id=g.owner_id AND created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1','busy-chat-v1','replan-refresh-v1','replan-question-v1','refine-question-v1'))<? AND (SELECT count(*) FROM agent_runs WHERE created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1','busy-chat-v1','replan-refresh-v1','replan-question-v1','refine-question-v1'))<?))",
       )
       .bind(
         id,
@@ -164,7 +164,7 @@ export async function activeReplan(
         const recent = (
           await db
             .prepare(
-              "SELECT user_text,reply_json FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' AND harness_version IN ('replan-v1','replan-refresh-v1','replan-question-v1') ORDER BY turn_index DESC LIMIT 3",
+              "SELECT user_text,reply_json FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' AND harness_version IN ('replan-v1','replan-refresh-v1','replan-question-v1','refine-question-v1') ORDER BY turn_index DESC LIMIT 3",
             )
             .bind(goalId, owner)
             .all()

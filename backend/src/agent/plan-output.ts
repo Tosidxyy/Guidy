@@ -44,6 +44,15 @@ export function planOutputTool(context: string) {
         summary: string(300),
         assumptions: array(string(160), "最多5条未知/待确认假设，可为空"),
         risks: array(string(160), "最多5条风险/限制，可为空"),
+        time_preferences: object({
+          timezone: { type: "string", enum: ["Asia/Shanghai", "UTC"] },
+          start_minute: { type: "integer", minimum: 0, maximum: 1439 },
+          end_minute: { type: "integer", minimum: 5, maximum: 1440 },
+          excluded_weekdays: array(
+            { type: "integer", minimum: 0, maximum: 6 },
+            "0为周日到6为周六，不重复；是待确认的建议，不是真实空闲声明",
+          ),
+        }),
         stage_weeks: array(
           object({
             stage: { type: "integer", enum: [1, 2, 3] },

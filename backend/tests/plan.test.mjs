@@ -63,7 +63,7 @@ test("plan provider has distinct JSON prompt/output cap and preserves existing t
     env,
     async (url, options) => {
       const b = JSON.parse(options.body);
-      assert.equal(b.max_tokens, 1800);
+      assert.equal(b.max_tokens, 2400);
       assert.match(b.messages[0].content, /计划草稿/);
       assert.equal(options.redirect, "manual");
       assert.equal(url, "https://api.deepseek.com/beta/chat/completions");
@@ -108,4 +108,37 @@ test("plan provider has distinct JSON prompt/output cap and preserves existing t
     ).outputTokens,
     20,
   );
+});
+
+test("time proposals reject impossible/cross-day windows, unsupported zones and repeated weekdays", () => {
+  const good = {
+    timezone: "UTC",
+    start_minute: 420,
+    end_minute: 480,
+    excluded_weekdays: [2],
+  };
+  assert.deepEqual(
+    checkedPlan(JSON.stringify({ ...modelDraft(), time_preferences: good }), [
+      sourceId,
+    ]).time_preferences,
+    good,
+  );
+  for (const patch of [
+    { start_minute: -1 },
+    { end_minute: 420 },
+    { end_minute: 1441 },
+    { timezone: "Europe/London" },
+    { excluded_weekdays: [2, 2] },
+    { excluded_weekdays: [7] },
+    { extra: "unsafe" },
+  ])
+    assert.throws(() =>
+      checkedPlan(
+        JSON.stringify({
+          ...modelDraft(),
+          time_preferences: { ...good, ...patch },
+        }),
+        [sourceId],
+      ),
+    );
 });

@@ -1,3 +1,4 @@
+import { draftRefinement } from "./draft-refinement.ts";
 import { activeReplan } from "./active-replan.ts";
 import { ASK_AUTO, scheduleChat } from "../scheduling/chat.ts";
 import {
@@ -278,14 +279,15 @@ export async function dialogueResponse(
   const payload = JSON.stringify({ text, chatRevision, goalRevision });
   const previous = await db
     .prepare(
-      "SELECT id,goal_id,request_payload,status FROM agent_runs WHERE owner_id=? AND request_key=?",
+      "SELECT id,goal_id,request_payload,status,harness_version FROM agent_runs WHERE owner_id=? AND request_key=?",
     )
     .bind(owner, key)
     .first();
   if (previous) {
     if (previous.goal_id !== goalId || previous.request_payload !== payload)
       return fail(409, "IDEMPOTENCY_CONFLICT");
-    if (stop) await dispatchForRun(String(previous.id));
+    if (stop || previous.harness_version === "clarify-stop-v1")
+      await dispatchForRun(String(previous.id));
     return ok(await snapshot(), previous.status === "running" ? 202 : 200);
   }
   if (goal.status === "active" && goal.revision === goalRevision) {
@@ -307,6 +309,21 @@ export async function dialogueResponse(
   }
   if (goal.status !== "draft" || goal.revision !== goalRevision)
     return fail(409, "CONTEXT_CHANGED");
+  const refinement = await draftRefinement(
+    db,
+    owner,
+    goalId,
+    text,
+    key,
+    payload,
+    chatRevision,
+    goalRevision,
+    planningBinding,
+  );
+  if (refinement)
+    return refinement.status === 200
+      ? ok(await snapshot())
+      : fail(refinement.status, refinement.code!);
   const schedule = stop
     ? null
     : await scheduleChat(
@@ -336,7 +353,7 @@ export async function dialogueResponse(
   const claimed = await db.batch([
     db
       .prepare(
-        `INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running',?,?,?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=?)=? AND ((?=1 AND (SELECT count(*) FROM agent_runs WHERE goal_id=goals.id AND harness_version='clarify-stop-v1')<10) OR (?=0 AND (SELECT count(*) FROM agent_runs WHERE owner_id=? AND created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1','busy-chat-v1','replan-refresh-v1','replan-question-v1'))<? AND (SELECT count(*) FROM agent_runs WHERE created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1','busy-chat-v1','replan-refresh-v1','replan-question-v1'))<?))`,
+        `INSERT OR IGNORE INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,created_at,updated_at,lease_until) SELECT ?,id,owner_id,?,?,?,revision,?,'running',?,?,?,? FROM goals WHERE id=? AND owner_id=? AND status='draft' AND revision=? AND (SELECT coalesce(max(turn_index),0) FROM agent_runs WHERE goal_id=?)=? AND ((?=1 AND (SELECT count(*) FROM agent_runs WHERE goal_id=goals.id AND harness_version='clarify-stop-v1')<10) OR (?=0 AND (SELECT count(*) FROM agent_runs WHERE owner_id=? AND created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1','busy-chat-v1','replan-refresh-v1','replan-question-v1','refine-question-v1'))<? AND (SELECT count(*) FROM agent_runs WHERE created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1','busy-chat-v1','replan-refresh-v1','replan-question-v1','refine-question-v1'))<?))`,
       )
       .bind(
         id,
@@ -381,7 +398,7 @@ export async function dialogueResponse(
     }
     const counts = await db
       .prepare(
-        "SELECT count(*) AS total,sum(CASE WHEN owner_id=? THEN 1 ELSE 0 END) AS personal FROM agent_runs WHERE created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1','busy-chat-v1','replan-refresh-v1','replan-question-v1')",
+        "SELECT count(*) AS total,sum(CASE WHEN owner_id=? THEN 1 ELSE 0 END) AS personal FROM agent_runs WHERE created_at>=? AND harness_version NOT IN ('clarify-stop-v1','draft-edit-v1','schedule-chat-v1','busy-chat-v1','replan-refresh-v1','replan-question-v1','refine-question-v1')",
       )
       .bind(owner, day)
       .first();

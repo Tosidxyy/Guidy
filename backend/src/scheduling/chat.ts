@@ -72,7 +72,7 @@ export type ScheduleData = {
   stages?: { stage: number; weeks: number; start_at: number; end_at: number }[];
   period_basis?: "agent_draft_v1" | "assumed_one_week_per_stage_v1";
   period?: Interval;
-  window_basis?: "assumed_default_v1";
+  window_basis?: "assumed_default_v1" | "agent_proposal_v1";
   unavailable_from_notes?: Interval[];
   calendar_snapshot?: { revision: number; busy: (Interval & { id: string })[] };
   tasks: TrialTask[];
@@ -131,8 +131,9 @@ export async function scheduleChat(
     const draft = JSON.parse(String(review?.draft_json ?? source.draft_json));
     const revision = Number(review?.revision ?? 0);
 
-    const zone = "Asia/Shanghai",
-      offset = 8 * 3600000,
+    const preference = draft.time_preferences;
+    const zone = preference?.timezone ?? "Asia/Shanghai",
+      offset = zone === "UTC" ? 0 : 8 * 3600000,
       day = Math.floor((now + offset) / 86400000) * 86400000 - offset;
     const windows = Array.from(
       {
@@ -145,8 +146,10 @@ export async function scheduleChat(
           7,
       },
       (_, i) => ({
-        start_at: day + (i + 1) * 86400000 + 20 * 3600000,
-        end_at: day + (i + 1) * 86400000 + 21 * 3600000,
+        start_at:
+          day + (i + 1) * 86400000 + (preference?.start_minute ?? 1200) * 60000,
+        end_at:
+          day + (i + 1) * 86400000 + (preference?.end_minute ?? 1260) * 60000,
       }),
     );
     const expanded = planCycle(draft.tasks, draft.stage_weeks, day + 86400000);
@@ -163,8 +166,10 @@ export async function scheduleChat(
           )
           .map((s: { value: { text: string } }) => s.value.text),
       ];
-      const unavailableDays = new Set<number>();
-      for (const note of notes) {
+      const unavailableDays = new Set<number>(
+        preference?.excluded_weekdays ?? [],
+      );
+      for (const note of preference ? [] : notes) {
         if (
           typeof note !== "string" ||
           /不是|并非|假如|如果|可能|不确定|未必|举例|比如|没说|没有说|不觉得|不认为|但|除|不过|取消|不要|改为|改成/.test(
@@ -198,7 +203,7 @@ export async function scheduleChat(
         windows,
         scope: "full_plan_cycle_v1",
         ...expanded,
-        window_basis: "assumed_default_v1",
+        window_basis: preference ? "agent_proposal_v1" : "assumed_default_v1",
         unavailable_from_notes: unavailable,
         calendar_snapshot: { revision: calendar.revision, busy },
         preview: previewSchedule({
@@ -214,7 +219,7 @@ export async function scheduleChat(
       };
       stage = "schedule_preview";
       question =
-        "我先给出所有阶段的建议日程。暂按北京时间、每天20点至21点作为候选时间；你可以继续补充没空的日期或希望调整的时间。";
+        "我已根据当前草稿的时间建议展开完整周期。你可以继续补充偏好；确认前不会加入日历。";
     } else question = "现有依赖还不能安全展开日程，方案草稿已保留。";
   }
   if (policy) {
