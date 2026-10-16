@@ -31,7 +31,7 @@ iPhone 安装兼容 Expo Go、同一 Wi-Fi、登录同一 Expo 账号，用相�
 
 ## 检查与交付
 
-移动端 typecheck/lint/test:api；后端 typecheck/lint/format:check/test/build。CI 是真实 GitHub job，通过后再记录进度。每轮测试 → 实现 Commit → TODO Commit → Push → 核验远程 SHA。
+移动端 typecheck/lint/test:ui-state；后端 typecheck/lint/format:check/test/build。CI 是真实 GitHub job，通过后再记录进度。每轮测试 → 实现 Commit → TODO Commit → Push → 核验远程 SHA。
 
 ## 品牌、权限与发布
 

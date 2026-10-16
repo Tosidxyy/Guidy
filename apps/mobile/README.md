@@ -1,17 +1,15 @@
-# Guidy mobile · M0
+# Guidy mobile
 
-Expo Router + React Native + TypeScript。当前是基础界面，不是已完成的 V0.1 产品。
+Expo Router + React Native + TypeScript。当前主流程为目标想法 → Guidy 全屏问答卡片 → 后台按需研究与制订 → 方案日历 → 用户确认入历。不是已完成发布的 V0.1 产品。
 
-- 底部仅 `goals` / `calendar` / `me`：目标、日历、我的。
-- 首页与日历采用标注的演示数据；日期切换展示样例或空状态。
-- 外观默认跟随系统，可临时选择浅色/深色；手动选择不跨重启保存。
-- Agent、排程、提醒及反馈尚未接入；未来功能入口明确禁用或作为静态说明。
-- 「我的 → 登录」已接真实 Better Auth/D1 邮箱 OTP，会话恢复和退出；原生 cookie 使用官方 Expo 插件与 SecureStore，恢复会话需要服务端验证。当前验证码仅投递到 Windows 本地开发收件箱，不发送邮件，不再使用固定演示码；详见 [后端登录说明](../../backend/README.md)。
-- 登录页按服务端成功响应区分邮件和本地收件箱，不显示固定码。Resend 发送失败会保留输入并提示；密钥不进入客户端，投递被接受不代表邮件最终到达。邮件设置见 [Cloudflare 收信 / Resend 发信](../../docs/EMAIL_SETUP.md)。
-- 当前 .env.example 默认使用云 HTTPS API；云端 resend-test 只接受配置的 Resend 注册邮箱。本机忽略 .env 与手机预览已切换云地址；本地开发时可另设 Windows LAN origin。真实 iPhone 收信/恢复仍需验收。
-- 「我的 → 连接状态」调用真实 `/health`，显示尚未检查/检查中/可用/失败，支持五秒超时与重试；成功仅代表 API 可连接，不代表已登录或业务数据已同步。
-- 进行中的连接检查在离开「我的」或 App 切后台时取消，显示取消状态并允许重新检查；旧请求不会覆盖新检查结果，不自动在后台轮询。用户已确认本地 Worker 在 iPhone App 显示服务可用；新增切后台行为仍需单独真机验证。
-- 图标和启动屏从项目批准资源复制，未重绘。
+- 底部仅「目标｜日历｜我的」，Agent 位于目标内。
+- 至少问过成果、投入时间、基础/限制三个核心主题后，可以开始制订或继续问答；允许未知或交给 Agent 建议。回答可滑动回看，完整历史另行分页读取。
+- DeepSeek 生成结构化草稿，豆包搜索按需在服务端调用。客户端没有手填条件、手动来源、搜索任务或数值审阅表单。
+- 日历只显示实际激活时段与具体做法；AI 提供每项任务的分步分钟数，系统计算钟点。确认前为候选，明确确认后才写入。旧方案无分步时保留原任务做法。
+- 已确认方案可通过继续问答修改，确认新版本后仅替换未来待执行安排，保留完成/跳过及旧版本。
+- 邮箱 OTP 登录、会话恢复和退出使用 Better Auth/D1。云开发 API 为 https://api.guidy.fun，Resend 发信；本地可使用开发收件箱，见[后端说明](../../backend/README.md)与[邮件设置](../../docs/EMAIL_SETUP.md)。密钥只在服务端。
+- 「我的」提供账号与外观选择，连接调试面板、演示登录和演示日历数据已退役。外观默认跟随系统，手动选择不跨重启保存。
+- 图标沿用批准资源。通知/反馈闭环、原生签名与发布尚未完成；浏览器验证不能替代 iPhone 真机验证。
 
 ## Windows 启动
 
@@ -32,7 +30,7 @@ iPhone 与 Windows 使用同一局域网，通过兼容 Expo Go 扫描二维码�
 ```powershell
 npm run typecheck
 npm run lint
-npm run test:api
+npm run test:ui-state
 npx expo install --check
 npm run export:ios
 npm run export:web

@@ -1,12 +1,12 @@
 import {checkedBusy,type BusyProposal} from './calendar.ts';
 import {checkedSchedule,type ScheduleData} from './schedule.ts';
 import type { AccountGoal } from './api';
-import type { SlotInput } from './clarification';
+type CoreTopic = 'outcome' | 'available_time' | 'constraints';
 export type EditProposal={attempt_id:string;goal_revision:number;review_revision:number;task_id:string;task_title:string;before:{duration_minutes:number;frequency_per_week:number};after:{duration_minutes:number;frequency_per_week:number};weekly_before:number;weekly_after:number};
-export type SlotSuggestion = { key: SlotInput['key']; text: string; evidence: string };
-export type DialogueReply = { schema_version: 1; kind: 'question'|'referral'|'notice'; question: string; reason: string; source: 'deepseek'|'policy'|'harness'; suggestions?: SlotSuggestion[];requested_slot?: SlotInput['key']|null;base_attempt_id?:string;stage?:'refine_question'|'clarifying'|'research_ready'|'needs_information'|'replan_question'|'plans_cleared'|'draft_requested'|'edit_proposed'|'edit_guidance'|'schedule_guidance'|'schedule_proposed'|'schedule_preview'|'busy_guidance'|'busy_proposed'|'busy_saved';busy?:BusyProposal;schedule_help?:{example_text:string};schedule?:ScheduleData;schedule_mode?:'first_stage_week_v1';edit_proposal?:EditProposal;time_proposal?:'weekly_60_v1' };
+export type SlotSuggestion = { key: CoreTopic; text: string; evidence: string };
+export type DialogueReply = { schema_version: 1; kind: 'question'|'referral'|'notice'; question: string; reason: string; source: 'deepseek'|'policy'|'harness'; suggestions?: SlotSuggestion[];requested_slot?: CoreTopic|null;base_attempt_id?:string;stage?:'refine_question'|'clarifying'|'research_ready'|'needs_information'|'replan_question'|'plans_cleared'|'draft_requested'|'edit_proposed'|'edit_guidance'|'schedule_guidance'|'schedule_proposed'|'schedule_preview'|'busy_guidance'|'busy_proposed'|'busy_saved';busy?:BusyProposal;schedule_help?:{example_text:string};schedule?:ScheduleData;schedule_mode?:'first_stage_week_v1';edit_proposal?:EditProposal;time_proposal?:'weekly_60_v1' };
 export type DialogueRun = { id:string;turn_index:number;user_text:string;status:'running'|'succeeded'|'failed';reply:DialogueReply|null;error_code:string|null;goal_revision?:number;edit_receipt_revision?:number|null;edit_proposal_stale?:boolean;schedule_stale?:boolean;busy_proposal_stale?:boolean };
-export type Dialogue = {retry_refinement?:boolean;auto_schedule_key?:string|null;auto_schedule_run_id?:string|null;auto_schedule?:ScheduleData|null; calendar_revision?:number; clarification_budget?:{daily_limit:8|24;used:number;remaining:number;reset_at:number;global_limited:boolean;allowed:boolean};asked_topics?: SlotInput['key'][];goal:AccountGoal;chat_revision:number;runs:DialogueRun[] };
+export type Dialogue = {retry_refinement?:boolean;auto_schedule_key?:string|null;auto_schedule_run_id?:string|null;auto_schedule?:ScheduleData|null; calendar_revision?:number; clarification_budget?:{daily_limit:8|24;used:number;remaining:number;reset_at:number;global_limited:boolean;allowed:boolean};asked_topics?: CoreTopic[];goal:AccountGoal;chat_revision:number;runs:DialogueRun[] };
 export function checkedDialogue(value: Dialogue): Dialogue {
   if(value.retry_refinement!==undefined&&typeof value.retry_refinement!=='boolean')throw new Error('修改恢复状态不正确。');
   if(value.auto_schedule_key!==undefined&&value.auto_schedule_key!==null&&(typeof value.auto_schedule_key!=='string'||value.auto_schedule_key.length>128||!/^auto_schedule_[0-9a-f-]{36}_\d+_\d+_\d+$/.test(value.auto_schedule_key)))throw new Error('日程准备状态不正确。');
@@ -48,11 +48,6 @@ export function checkedDialogue(value: Dialogue): Dialogue {
     }else if(run.reply!==null)throw new Error('对话状态不正确。');
   }
   return value;
-}
-export function reviewSuggestions(dialogue:Dialogue,runId:string,goalRevision:number):SlotSuggestion[]{
-  const run=dialogue.runs.find(r=>r.id===runId);
-  if(dialogue.goal.status!=='draft'||dialogue.goal.revision!==goalRevision||run?.goal_revision!==goalRevision||run.status!=='succeeded'||run.reply?.source!=='deepseek')throw new Error('这条建议对应的目标已改变，请返回对话重新澄清。');
-  return run.reply.suggestions??[];
 }
 export function dialogueError(code:string):string {
   if(code==='REFINEMENT_RETRY_UNAVAILABLE')return '当前没有可重试的失败修改，请继续问答补充新要求。';

@@ -2,7 +2,7 @@
 
 **Guidy** 是面向 iOS 的通用 AI 目标规划与执行产品。用户提出目标，Agent 在短对话中澄清必要条件、自主研究、生成有依据的可执行计划，经过确认后安排到应用内日历，通过提醒、反馈和可审阅的重规划帮助用户推进目标。未来可以将经过执行记录与审核的规划**路径**作为模板复用。
 
-> 当前状态：**M0 基础工程开发中**。Expo 三 Tab、Worker API、D1 本地迁移及 Better Auth 本地 OTP/会话已接入；独立云开发 Worker/D1 已部署。验证码使用开发收件箱，正式邮件、云端登录和通知未实现。基础 CI 配置见 `.github/workflows/ci.yml`。用户已确认 iPhone 预览/本地探活；新认证的完整真机验收未完成。
+> 当前状态（2026-10-16）：已接入真实邮箱登录、Guidy全屏问答卡片、DeepSeek/豆包按需后台制订、确定性候选排程、明确确认入历与自然语言修订。日历按日期展示激活时段和具体做法。旧手填条件/来源/数值审阅入口已退役；通知/反馈完整闭环、签名发布与最新全流程iPhone验收尚未完成。实际检查与边界见[改造验收](docs/REDESIGN_ACCEPTANCE.md)及[TODO](docs/TODO.md)。
 
 ## 产品与技术决策
 
@@ -24,6 +24,7 @@
 | [docs/UI_DESIGN.md](docs/UI_DESIGN.md) | iOS 页面、导航、交互与基础视觉 |
 | [docs/DATABASE.md](docs/DATABASE.md) | 概念数据结构、对象授权与原子批次策略 |
 | [docs/TODO.md](docs/TODO.md) | M0–M4 里程碑和逐项任务 |
+| [docs/REDESIGN_ACCEPTANCE.md](docs/REDESIGN_ACCEPTANCE.md) | 当前卡片/日历改造的逐项证据与未验证项 |
 | [docs/BRAND_GUIDE.md](docs/BRAND_GUIDE.md) | Guidy 黑白标识和 UI 视觉 Token |
 | [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) | Windows + iPhone 初始化与图标接入步骤 |
 | [docs/IPHONE_PREVIEW.md](docs/IPHONE_PREVIEW.md) | iPhone Expo Go 与本地 Worker 联通及排查 |

@@ -1,7 +1,6 @@
 import {checkedHistory,type QuestionHistory} from './question-history';
 import {checkedApproval,checkedUpcoming,type ApprovalSnapshot,type UpcomingCalendar} from './approval';
 import {requestTimeout,PLANNING_READ_INTERRUPTED} from './request-policy';
-import {checkedCalendar,type CalendarSnapshot} from './calendar';
 import {checkedPlanning,type PlanningSnapshot} from './planning';
 import { Platform } from 'react-native';
 import { apiOrigin, authClient } from '../auth/client';
@@ -81,7 +80,6 @@ export async function sendDialogue(id:string,body:{text:string;expected_chat_rev
 export async function getPlanning(id:string,signal?:AbortSignal):Promise<PlanningSnapshot>{return checkedPlanning(await request('GET',undefined,undefined,signal,`/${id}/planning-runs`),id);}
 export async function resumePlanning(id:string,jobId:string):Promise<PlanningSnapshot>{return checkedPlanning(await request('POST',{job_id:jobId},undefined,undefined,`/${id}/planning-runs`),id);}
 
-export async function getCalendar(from:number,to:number,signal:AbortSignal):Promise<CalendarSnapshot>{return checkedCalendar(await request('GET',undefined,undefined,signal,'/api/v1/calendar/fixed-events?from='+from+'&to='+to),from,to);}
 
 export async function getApproval(id:string,signal?:AbortSignal):Promise<ApprovalSnapshot>{return checkedApproval(await request('GET',undefined,undefined,signal,`/${id}/plan-approval`),id);}
 export async function approvePlan(id:string,body:{schedule_run_id:string;expected_goal_revision:number;expected_calendar_revision:number},key:string):Promise<ApprovalSnapshot>{return checkedApproval(await request('POST',body,key,undefined,`/${id}/plan-approval`),id);}

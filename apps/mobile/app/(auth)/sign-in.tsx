@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Platform, TextInput } from 'react-native';
 import { authClient, authMessage } from '../../src/auth/client';
-import { normalizeDemoCode } from '../../src/auth/demoInput';
+import { normalizeOtpCode } from '../../src/auth/otp-input';
 import { Action, AppText, Badge, Caption, Card, Screen } from '../../src/components/ui';
 import { useTheme } from '../../src/theme/ThemeProvider';
 
@@ -51,7 +51,7 @@ export default function SignInScreen() {
         <TextInput ref={emailInput} accessibilityLabel="邮箱" value={email} onChangeText={value => { setEmail(value); setError(''); }} editable={!busy && stage === 'email'} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} maxLength={254} placeholder="you@example.com" placeholderTextColor={colors.secondary} style={inputStyle} returnKeyType="next" onSubmitEditing={() => { void submit(); }} />
         {stage === 'code' ? <>
           <AppText>验证码</AppText>
-          <TextInput ref={codeInput} accessibilityLabel="验证码" accessibilityHint={error || '输入六位登录验证码。'} value={code} onChangeText={value => { setCode(normalizeDemoCode(value)); setError(''); }} editable={!busy} keyboardType="number-pad" autoFocus autoComplete="one-time-code" maxLength={32} placeholder="6 位数字" placeholderTextColor={colors.secondary} style={inputStyle} onSubmitEditing={() => { void submit(); }} />
+          <TextInput ref={codeInput} accessibilityLabel="验证码" accessibilityHint={error || '输入六位登录验证码。'} value={code} onChangeText={value => { setCode(normalizeOtpCode(value)); setError(''); }} editable={!busy} keyboardType="number-pad" autoFocus autoComplete="one-time-code" maxLength={32} placeholder="6 位数字" placeholderTextColor={colors.secondary} style={inputStyle} onSubmitEditing={() => { void submit(); }} />
           <Caption>{delivery === 'email' ? '验证码已提交发送，请检查邮箱及垃圾邮件。有效期 5 分钟。' : '在 Windows 后端目录运行 npm run auth:inbox -- 你的邮箱 获取验证码，有效期 5 分钟。'}</Caption>
         </> : null}
         {error ? <AppText accessibilityRole="alert" accessibilityLiveRegion="polite">{error}</AppText> : null}

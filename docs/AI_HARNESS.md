@@ -38,7 +38,7 @@ phase 为 needs_confirmation / needs_review / research_preparation / paused / re
 
 目标详情显示三项确认进度、所缺基础条件和下一步说明。研究尚未实现时只显示研究准备，不提供无效启动按钮。可继续补充可选条件或聊天，不强制无限问答。
 
-`backend/evals/clarification-readiness.json` 包含学习、健身、护肤等10个合成样例，由确定性规则测试重复运行；包括缺项、可选未知、专业判断提示、暂停与非草稿。它验证状态规则，不评估真实 DeepSeek 输出质量。
+旧手填条件readiness模块及对应合成夹具已于2026-10-16移除，旧slots入口已退役；当前三主题问答、中止、未知/委托回答和policy边界由chat-capture.test.mjs及harness.test.mjs验证，不能用旧就绪规则代表当前流程。
 
 ## 测试限额与恢复
 
@@ -110,3 +110,8 @@ GET/POST messages的clarification_budget返回本人daily_limit/used/remaining/r
 活跃目标继续使用问题卡片收集用户补充，不要求填星期/日期slot。schedule_change Provider按[DeepSeek JSON输出](https://api-docs.deepseek.com/guides/json_mode/)给出结构化偏好，由harness校验字段、原文回显、日期/星期/同日时段边界；模型不执行数据库动作。当前范围为原周期内未来任务的星期避让、具体日期排除与时段调整，频次/任务内容、时区不明或跨日请求需进一步核对，不能声称已经修改。
 
 委托“你来安排吧”及明确未知沿用原偏好作为待确认建议，不重复付费追问。明确修改调用一次模型；同键重放不重复，既有偏好的冲突刷新不调用模型。Goal/生效父版本/聊天序号、policy与预算控制领取，45秒租约、25秒模型等待；失败保留请求和原日历，不自动付费重跑。已确认/未确认偏好都只是方案输入，不写用户固定占用或把未知变成空闲事实。
+
+
+### 2026-10-16 清除旧客户端协议模块
+
+删除无页面/工作流引用的手填readiness、手动来源/搜索响应、数值review表单、旧排程文案及演示挑战计时模块；同时移除其专用测试和CI旧health客户端检查。现行方案引用校验、用户事实来源、自动研究/排程、owner与幂等边界仍保留并测试。服务端/health路由保留，只有已删除连接面板的客户端辅助函数退役；真实OTP输入规范化更名otp-input，不改变规则。未删D1迁移、不可变版本、历史数据或当前后台流程。
