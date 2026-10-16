@@ -33,6 +33,17 @@ export function nextChatSlot(
     if (!conditions.some((s) => s.key === key)) return key;
   return null;
 }
+export function nextCoreQuestion(
+  asked: readonly string[],
+  conditions: ChatCondition[],
+  revisitUnknown = false,
+): CaptureKey | null {
+  return (
+    (["outcome", "available_time", "constraints"] as const).find(
+      (key) => !asked.includes(key),
+    ) ?? (revisitUnknown ? nextChatSlot(conditions, true) : null)
+  );
+}
 export function safeChatAnswer(text: string): boolean {
   return (
     !!text.trim() &&

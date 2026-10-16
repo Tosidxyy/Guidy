@@ -19,10 +19,9 @@ import {
 } from "./provider.ts";
 
 import {
-  delegatesTime,
   chatCapture,
   captureStatements,
-  nextChatSlot,
+  nextCoreQuestion,
   type CaptureKey,
   type ChatCondition,
 } from "./chat-capture.ts";
@@ -413,7 +412,7 @@ export async function dialogueResponse(
         payload,
         chatRevision + 1,
         text,
-        stop ? "clarify-stop-v1" : "clarify-v3.1",
+        stop ? "clarify-stop-v1" : "clarify-v3.2",
         now,
         now,
         now + 45000,
@@ -516,6 +515,7 @@ export async function dialogueResponse(
           time_proposal: lastReply.time_proposal,
         }
       : null;
+    const topicsAlreadyAsked = await askedTopics();
     const context = JSON.stringify({
       goal: {
         description: contextGoal.description || contextGoal.title,
@@ -540,7 +540,11 @@ export async function dialogueResponse(
         preceding?.goal_revision === goalRevision
           ? (preceding.requested_slot ?? null)
           : null,
-      next_missing_slot: nextChatSlot(conditions),
+      next_missing_slot: nextCoreQuestion(
+        topicsAlreadyAsked,
+        conditions,
+        text === "请继续澄清仍未明确的条件。",
+      ),
       capture_protocol: "chat-capture-v1",
       user_message: text,
     });
@@ -604,11 +608,7 @@ export async function dialogueResponse(
         reply.requested_slot = null;
         reply.stage = "clarifying";
         reply.suggestions = undefined;
-      } else if (
-        reply.requested_slot !== undefined ||
-        preceding?.time_proposal === "weekly_60_v1" ||
-        (preceding?.requested_slot === "available_time" && delegatesTime(text))
-      ) {
+      } else {
         capture = chatCapture(
           text,
           reply.suggestions ?? [],
@@ -622,7 +622,11 @@ export async function dialogueResponse(
               { key: capture.key, value: capture.value },
             ]
           : conditions;
-        let target = nextChatSlot(after, text === "请继续澄清仍未明确的条件。");
+        const target = nextCoreQuestion(
+          topicsAlreadyAsked,
+          after,
+          text === "请继续澄清仍未明确的条件。",
+        );
         const basicReady =
           after.some(
             (s) => s.key === "outcome" && s.value.state === "confirmed",
@@ -649,18 +653,7 @@ export async function dialogueResponse(
             : "基本信息已收集，还有其他希望补充的内容吗？";
           reply.reason = "根据你的回答继续补齐必要信息，暂不安排日历。";
         }
-        const delegate =
-          preceding?.goal_revision === goalRevision &&
-          preceding.requested_slot === "available_time" &&
-          delegatesTime(text);
-        if (delegate && preceding?.time_proposal !== "weekly_60_v1") {
-          target = "available_time";
-          reply.time_proposal = "weekly_60_v1";
-          reply.question =
-            "那先建议每周3次、每次20分钟，共60分钟做入门尝试，你愿意先按这个投入试试吗？";
-          reply.reason =
-            "这只是建议，不代表已知道你的空闲时段；同意后才记录尝试投入。";
-        } else if (
+        if (
           preceding?.time_proposal === "weekly_60_v1" &&
           !capture?.value.text
         ) {

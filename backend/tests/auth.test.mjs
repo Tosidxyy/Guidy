@@ -290,7 +290,7 @@ test("harness claims once, recovers history, isolates owners and leaves core con
   assert.equal(result.chat_revision, 2);
   assert.equal(result.runs.length, 2);
   assert.equal(result.runs[1].reply.source, "deepseek");
-  assert.equal(result.runs[1].harness_version, "clarify-v3.1");
+  assert.equal(result.runs[1].harness_version, "clarify-v3.2");
   assert.deepEqual(result.runs[1].reply.suggestions, [
     { key: "available_time", text: "每周三次", evidence: "每周三次" },
   ]);

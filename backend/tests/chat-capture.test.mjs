@@ -244,7 +244,7 @@ test("chat answers atomically save private conditions with evidence, current sna
   );
 });
 
-test("partial or wrong-key suggestions never confirm facts; unknown mandatory answers defer to other questions", async (t) => {
+test("partial or wrong-key suggestions never confirm facts while unknown answers advance to unasked topics", async (t) => {
   const f = await setup(t);
   await f.post("开始", "capture-start");
   const bad = {
@@ -265,12 +265,16 @@ test("partial or wrong-key suggestions never confirm facts; unknown mandatory an
   assert.equal(result.status, 200);
   const b = (await result.json()).data;
   assert.equal(b.goal.revision, 0);
-  assert.equal(b.runs[1].reply.requested_slot, "outcome");
+  assert.equal(b.runs[1].reply.requested_slot, "available_time");
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM goal_slots").first()).n,
+    0,
+  );
   assert.equal((await f.post("暂不确定", "capture-unknown", 2, 0)).status, 200);
   const latest = (await (await f.get()).json()).data;
   assert.equal(latest.goal.revision, 1);
   assert.equal(latest.runs[2].reply.stage, "clarifying");
-  assert.equal(latest.runs[2].reply.requested_slot, "available_time");
+  assert.equal(latest.runs[2].reply.requested_slot, "constraints");
   assert.equal(
     (await f.post("大概能交流", "capture-ambiguous", 3, 1)).status,
     200,
@@ -387,7 +391,7 @@ test("a failed provenance insert rolls back condition and goal changes together 
   );
 });
 
-test("delegated time becomes a bounded proposal, never guessed availability; acceptance is explicit and replayable", async (t) => {
+test("delegated time advances to the third core topic without an extra confirmation and can stop after three questions", async (t) => {
   const f = await setup(t);
   await f.post("开始", "delegate-start");
   await f.post("学会基础韩语交流", "delegate-outcome", 1, 0);
@@ -395,8 +399,10 @@ test("delegated time becomes a bounded proposal, never guessed availability; acc
   assert.equal(r.status, 200);
   const b = (await r.json()).data;
   assert.equal(b.goal.revision, 2);
-  assert.equal(b.runs.at(-1).reply.time_proposal, "weekly_60_v1");
-  assert.match(b.runs.at(-1).reply.question, /60分钟/);
+  assert.equal(b.runs.at(-1).reply.requested_slot, "constraints");
+  assert.equal(b.runs.at(-1).reply.time_proposal, undefined);
+  assert.equal(b.asked_topics.length, 3);
+  assert.doesNotMatch(b.runs.at(-1).reply.question, /60分钟|愿意先按/);
   const value = JSON.parse(
     (
       await f.db
@@ -405,40 +411,39 @@ test("delegated time becomes a bounded proposal, never guessed availability; acc
     ).value_json,
   );
   assert.equal(value.state, "unknown");
-  const accepted = await f.post("可以", "delegate-accept", 3, 2);
-  assert.equal(accepted.status, 200);
-  const a = (await accepted.json()).data;
-  assert.equal(a.goal.revision, 3);
-  assert.equal(a.runs.at(-1).reply.requested_slot, "constraints");
-  const saved = JSON.parse(
-    (
-      await f.db
-        .prepare("SELECT value_json FROM goal_slots WHERE key='available_time'")
-        .first()
-    ).value_json,
+  assert.equal((await f.post("你来安排吧", "delegate-time", 2, 1)).status, 200);
+  const stopped = await f.post(
+    "先到这里，请根据现有信息准备方案草稿。",
+    "delegate-stop",
+    3,
+    2,
   );
-  assert.equal(saved.state, "confirmed");
-  assert.match(saved.text, /具体可用时段尚未确认/);
-  assert.equal((await f.post("可以", "delegate-accept", 3, 2)).status, 200);
-  assert.equal(f.calls(), 4);
+  assert.equal(stopped.status, 200);
   assert.equal(
-    (await f.db.prepare("SELECT active_plan_version_id FROM goals").first())
-      .active_plan_version_id,
-    null,
+    (await stopped.json()).data.runs.at(-1).reply.stage,
+    "draft_requested",
+  );
+  assert.equal(f.calls(), 3);
+  const job = await f.db
+    .prepare("SELECT context_json FROM planning_jobs")
+    .first();
+  assert.ok(JSON.parse(job.context_json).dialogue_notes.includes("你来安排吧"));
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM plan_versions").first()).n,
+    0,
   );
 });
-test("declining a proposal and unknown answers do not force a repeated time question", async (t) => {
+
+test("unknown answers advance once and only an explicit revisit can ask about time again", async (t) => {
   const f = await setup(t);
-  await f.post("开始", "decline-start");
-  await f.post("学会基础韩语交流", "decline-outcome", 1, 0);
-  await f.post("你来安排吧", "decline-time", 2, 1);
-  const declined = await f.post("先不决定", "decline-proposal", 3, 2);
-  assert.equal(declined.status, 200);
+  await f.post("开始", "unknown-start");
+  await f.post("学会基础韩语交流", "unknown-outcome", 1, 0);
+  const third = await f.post("暂不确定", "unknown-time", 2, 1);
   assert.equal(
-    (await declined.json()).data.runs.at(-1).reply.requested_slot,
+    (await third.json()).data.runs.at(-1).reply.requested_slot,
     "constraints",
   );
-  const end = await f.post("暂不确定", "decline-constraints", 4, 2);
+  const end = await f.post("暂不确定", "unknown-constraints", 3, 2);
   assert.equal(end.status, 200);
   const b = (await end.json()).data;
   assert.equal(b.runs.at(-1).reply.requested_slot, null);
@@ -446,8 +451,8 @@ test("declining a proposal and unknown answers do not force a repeated time ques
   assert.equal(b.goal.revision, 3);
   const resume = await f.post(
     "请继续澄清仍未明确的条件。",
-    "decline-resume",
-    5,
+    "unknown-resume",
+    4,
     3,
   );
   assert.equal(resume.status, 200);
@@ -456,6 +461,63 @@ test("declining a proposal and unknown answers do not force a repeated time ques
     "available_time",
   );
 });
+
+test("unclassified answers and repeated model topic suggestions cannot prevent the three-card draft option", async (t) => {
+  const f = await setup(t);
+  const p = {
+    complete: async () => ({
+      content: JSON.stringify({
+        question: "你希望达到什么结果？",
+        reason: "了解目标",
+        requested_slot: "outcome",
+        suggestions: [],
+      }),
+      inputTokens: 1,
+      outputTokens: 1,
+    }),
+  };
+  const first = await f.post("开始", "unclassified-start", 0, 0, p);
+  assert.equal(
+    (await first.json()).data.runs.at(-1).reply.requested_slot,
+    "outcome",
+  );
+  const second = await f.post("之后再看看", "unclassified-outcome", 1, 0, p);
+  assert.equal(
+    (await second.json()).data.runs.at(-1).reply.requested_slot,
+    "available_time",
+  );
+  const third = await f.post("你帮我定吧", "unclassified-time", 2, 0, p);
+  const state = (await third.json()).data;
+  assert.equal(state.runs.at(-1).reply.requested_slot, "constraints");
+  assert.equal(state.asked_topics.length, 3);
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM goal_slots").first()).n,
+    0,
+  );
+  const stopped = await f.post(
+    "根据当前回答开始制订：暂时只有手机，基础未知。",
+    "unclassified-stop",
+    3,
+    0,
+    {
+      complete: () => {
+        throw Error("Stop must not call the model");
+      },
+    },
+  );
+  assert.equal(stopped.status, 200);
+  assert.equal(
+    (await stopped.json()).data.runs.at(-1).reply.stage,
+    "draft_requested",
+  );
+  const context = JSON.parse(
+    (await f.db.prepare("SELECT context_json FROM planning_jobs").first())
+      .context_json,
+  );
+  assert.ok(context.conditions.every((s) => s.value.state === "unknown"));
+  assert.ok(context.dialogue_notes.includes("暂时只有手机，基础未知。"));
+});
+
 test("stop requires three distinct core questions, works without a model at paid quota, and remains policy gated", async (t) => {
   const f = await setup(t),
     message = "先到这里，请根据现有信息准备方案草稿。";
