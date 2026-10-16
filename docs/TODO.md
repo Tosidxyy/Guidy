@@ -1156,3 +1156,18 @@ Browser plugin not available，Playwright/Edge复用已确认存活服务，隔�
 个人页已登录320窄屏无调试按钮/旧演示提示，另以匿名393/320实测三个Tab、主题选择与无页面溢出。截图检查发现网页符号字体缺字后补线条图标，最终profile-icons-qa通过浅色/深色；.cache/guidy-profile-icons.png已view_image核对黑白排版和三图标。新增TabIcon初始color:string与导航ColorValue类型不匹配，改为官方ColorValue后最终检查通过；原生分支沿用既有SymbolView，未声称真机图标已测试。
 
 云端完整部署60b7e246-edba-4b12-ab50-0ed6c0538bcd（Worker+Workflow trigger）。隔离云身份先批准原稿并保留受控完成/跳过，种入一条有真实字段结构的受控失败请求/用量记录（不是一次实际付费模型失败），经正式POST明确重试→真实Workflow/DeepSeek研究判断+strict生成2次/搜索0/邮件0→冻结revision_request完全继承并关联原失败Job→4候选→明确确认版本2→旧完成/跳过/未来替换正确，同键回放仍仅1新恢复Job。verification与QA用户按ID+固定随机测试邮箱精确清理；未输出OTP/Cookie/Key或读取真实用户正文。health200/messages匿名401。按约定本记录单独提交后push origin/main核对远程SHA；下一轮收敛旧目标管理表单并开展整体需求验收。
+
+### 2026-10-16 每日具体时段卡片与目标入口精简
+
+- [x] 新AI方案每个任务输出1–3个具体步骤，校验标题/做法/整数分钟及总时长；strict输出必须包含segments。模型输出上限4200，系统按排程起点累计生成准确起止钟点，不另付费调用解析、不让模型写核心日历。
+- [x] 方案日历及日历Tab共用每日卡片，展示HH:mm起止时间、任务归属、步骤与做法；点击日期自动滚动到当天卡片，仅展示实际激活安排，不铺空白24小时。已确认视图读取当前活动版本scheduled实例，完成/跳过/失效版本不混入，历史记录保留。
+- [x] 删除目标管理的旧描述/期望时间表单、保存/放弃编辑状态；PATCH仅支持未批准目标draft/paused切换，保留owner、版本、幂等与回执事务，问答/原始目标不丢失。移除已退役手填slots/evidence接口的旧测试，404隔离与当前harness覆盖仍保留。
+- [ ] 既有无segments方案按原任务完整时间与做法展示；通过继续问答明确重新制订才能获得AI细分，不悄悄覆盖已确认版本。真实iPhone点击日期/键盘/VoiceOver尚未验证；剩余无用模块清理与整体需求逐项验收尚未结束，整体目标未完成。
+
+实现 Commit 0067bbf。backend最终typecheck/lint/format:check、build:cloud通过；node --experimental-strip-types --test --test-concurrency=2 tests/*.test.mjs全量116/116通过。mobile最终typecheck/lint、test:ui-state42/42与export:ios通过；3文档35本地链接与git diff --check通过。无新依赖/迁移/额外真实历史数据删除。全量检查发现旧夹具非UUID生成auto_schedule_key，增加非法源ID返回null边界后全量通过；保留原数据重置与新方案恢复断言。
+
+Browser plugin not available，Playwright/Edge隔离本地身份实际验证：新草稿→自动候选→选日期展示20:00–20:05听音/20:05–20:20跟读及具体做法→明确确认12实例→Reload恢复→日历Tab当天卡片→回看/查看方案→320窄屏无页面溢出。加强可见性校验：两段时刻标签均在视口内，.cache/guidy-daily-blocks.png经view_image核对。另一路实际验证目标摘要0输入框、暂停/恢复问答、原描述与回答保留；模型/搜索0，QA身份和开发收件箱精确清理。加强脚本首次遇到Metro约125秒编译导致导航超时，确认既有服务存活/编译结束后重跑完整通过，未假称首次通过。
+
+隔离云端真实Workflow/DeepSeek两次调用（研究判断+strict生成），搜索/邮件0：15分钟任务输出听音5+跟读10，累计07:00–07:05/07:05–07:15；明确确认版本2后新4scheduled，旧未来4superseded、完成/跳过及原稿字节保留，同键仅1新Job。API分段来自不可变版本，当前活动版本过滤正确。云QA身份按ID/随机测试邮箱精确清理，无凭据或真实用户正文输出。最终Worker/Workflow部署70f4106b-bf30-4ee6-8ce7-c1e3f1c93d36完成，health200/messages匿名401；真实模型QA在此前相同分段实现部署完成，最终仅补非法UUID元数据边界，未重复付费调用。
+
+旧数据清理只读审计：固定截止2026-10-14T11:47:50Z之前old_planning_jobs/plans/reviews/search_results/source_jobs/sources/embedded_plans均0，未重复删除后来方案。初次状态用例残留旧编辑字段422、ScrollView.measure类型错误、effect同步重置lint及structuredClone环境lint均修正后检查通过；native View测量/按请求键异步快照用于滚动和读取。按约定本记录单独提交后push origin/main并核对远程SHA；下一轮先完成剩余运行模块引用审计及完整产品验收。
