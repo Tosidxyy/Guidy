@@ -1214,3 +1214,15 @@ Browser plugin not available，Playwright/Edge隔离本地身份实际验证：�
 实现 Commit dc91aa7。backend typecheck/lint/format:check及build:cloud通过；node --experimental-strip-types --test --test-concurrency=2 tests/retired-routes.test.mjs tests/draft-edit.test.mjs tests/approval.test.mjs tests/replan.test.mjs共24/24通过，涵盖现行日历成功/失败、明确确认、冲突/事务/历史与重规划。4文档57本地链接、diff检查通过；运行源码/客户端不再引用fixed-events及已删专用服务。未更改前端，未重复iOS构建/浏览器或付费模型。无依赖/迁移/额外真实数据清理。
 
 云Worker/Workflow部署8dfd50b3-d18a-4e5e-ae33-235c296e4e27完成；实际health200、旧fixed-events404、现行events匿名401。上述GitHub成功对应本轮之前的1f1e740，不冒称本轮尚未推送代码已远程通过。按约定单独TODO提交后push origin/main核对远程SHA；新CI结果须另读真实run。文档措辞检查在错误cwd首次ENOENT未改文件，改为根目录完成检查；部署仅依赖已通过的代码测试，未以该错误作为成功证据。
+
+
+### 2026-10-16 三题委托修正与卡片/日历范围验收完成
+
+- [x] clarify-v3.2按尚未询问主题推进三个核心问题；“你来安排吧”、未知、模型未提取建议均不反复追问旧主题，不再插入每周60分钟接受确认。问过三个主题即可携第三题直接制订；原话/未知与已确认事实保持区分，只有主动重访未知条件才重问。旧time_proposal只兼容历史回答，不产生新额外确认。
+- [x] 收到用户iPhone实际反馈“全程正常，时段与做法可见”，对应新目标→三题→制订→确认→日历日期及输入无遮挡；此前等待真机的历史记录现由此反馈补齐。REDESIGN_ACCEPTANCE已更新。本次卡片/美化、自动工作流、每日具体时段、旧模块退役及固定截止旧生成数据清理达到限定范围验收，不标记完整V0.1或发布完成。
+
+实现 Commit 48d7674。backend typecheck/lint/format:check与build:cloud通过；node --experimental-strip-types --test --test-concurrency=2 tests/*.test.mjs共116/116通过，包含委托后第三题、未知后仅主动重访、重复模型主题且无suggestions时仍三题可停止、原子性/来源/policy/额度/版本回归。初次针对测试37/39，失败是旧harness版本断言及旧重复主题预期，更新为新约定并保留零事实写入断言后全量通过，未跳过用例。4文档40本地链接及git diff --check通过。前端本轮无改动，沿用上一轮30/30与iOS导出及本次人类真机结果，未重复构建。
+
+Worker/Workflow部署e76d22ca-dcf0-406d-80bc-426e19255323完成。真实云端隔离新目标UI：时间回答“你来安排吧”后直接第三主题，最终三题→自动豆包/DeepSeek→分段草稿→明确确认→重载日历日期→320窄屏完整通过，无额外时间确认；第三题末尾周三限制完整冻结且未排周三。最终该次5次模型调用、1次搜索、0明确重试、0真实邮件，44次API请求，隔离身份精确清理。使用测试传输桥，不冒充部署CORS/原生会话证明；用户真机结论独立来自实际反馈。首次本机页面加载60秒超时无模型调用；第二次首问题卡等待超时未计为通过；补充脱敏状态与截图定位后最终全链路通过，不以最终5次代表此前所有尝试的账单总量。最终guidy-real-approved-calendar.png已view_image核对具体20:00–20:10/20:10–20:20及做法卡片。
+
+基线f7177db的GitHub CI38903359499已实际completed/success，mobile/backend全部步骤通过；这不是新提交远程CI的声明。无新依赖/迁移/额外真实计划删除，沿用上一轮固定截止前七类数据均0的只读审计，保留后来方案。原生VoiceOver/大字体、历史滑动专项与前后台恢复仍未完整验证，属于后续专项，不伪报通过。按约定文档单独提交后push origin/main并核对SHA；下一步可进入提醒/执行反馈闭环。
