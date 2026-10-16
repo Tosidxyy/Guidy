@@ -74,6 +74,18 @@ async function setup(t) {
             stage: 1,
             title: "韩语练习",
             instructions: "朗读并记录表达",
+            segments: [
+              {
+                title: "听音",
+                instructions: "听三句并标记发音",
+                duration_minutes: 5,
+              },
+              {
+                title: "跟读",
+                instructions: "逐句跟读并录音对照",
+                duration_minutes: 15,
+              },
+            ],
             duration_minutes: 20,
             frequency_per_week: 3,
             mandatory: true,
@@ -241,6 +253,7 @@ test("explicit approval atomically persists immutable plan/tasks/calendar, repla
   assert.equal(data.events.length, 3);
   assert.equal(data.events[0].instructions, "朗读并记录表达");
   assert.equal(data.events[0].source, "plan");
+  assert.deepEqual(data.events[0].segments, g.draft.tasks[0].segments);
   assert.equal(
     (await planningCalendarSnapshot(f.db, f.owner, g.schedule.period)).events
       .length,
@@ -261,6 +274,36 @@ test("explicit approval atomically persists immutable plan/tasks/calendar, repla
       })
     ).status,
     401,
+  );
+  await f.db.batch([
+    f.db
+      .prepare("UPDATE scheduled_occurrences SET status='completed' WHERE id=?")
+      .bind(data.events[0].id),
+    f.db
+      .prepare("UPDATE scheduled_occurrences SET status='skipped' WHERE id=?")
+      .bind(data.events[1].id),
+  ]);
+  const activeOnly = await upcomingCalendarResponse(
+    new globalThis.Request(
+      `http://localhost/api/v1/calendar/events?from=${from}&to=${to}`,
+    ),
+    f.db,
+    f.owner,
+    "test",
+  );
+  const activeData = (await activeOnly.json()).data;
+  checkedUpcoming(activeData, from, to);
+  assert.equal(activeData.events.length, 1);
+  assert.equal(activeData.events[0].status, "scheduled");
+  assert.equal(
+    (
+      await f.db
+        .prepare(
+          "SELECT count(*) n FROM scheduled_occurrences WHERE status IN ('completed','skipped')",
+        )
+        .first()
+    ).n,
+    2,
   );
   await f.db.prepare('DELETE FROM "user" WHERE id=?').bind(f.owner).run();
   assert.equal(

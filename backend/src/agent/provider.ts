@@ -65,7 +65,7 @@ export function deepseekProvider(
               stream: false,
               max_tokens:
                 purpose === "plan"
-                  ? 2400
+                  ? 4200
                   : purpose === "schedule_change"
                     ? 1200
                     : 650,

@@ -47,7 +47,7 @@ export function AutomaticPlanning({id,owner,calendarRevision,automaticScheduleKe
    {job.plan&&draft&&<>
     <AppText style={{fontSize:24,fontWeight:'600'}}>{draft!.title}</AppText><Caption>{draft!.summary}</Caption>
     {pending&&matching&&<Caption>确认后只替换未来尚未执行的安排，已完成、跳过和过去的记录仍保留。</Caption>}
-    {(accepted||matching)&&displayed&&<PlanCalendar approved={!!accepted} schedule={displayed} instructions={taskId=>draft!.tasks.find(t=>t.id===taskId)?.instructions}/>}
+    {(accepted||matching)&&displayed&&<PlanCalendar approved={!!accepted} planVersionId={accepted?.id} segments={taskId=>draft!.tasks.find(t=>t.id===taskId)?.segments} schedule={displayed} instructions={taskId=>draft!.tasks.find(t=>t.id===taskId)?.instructions}/>}
     {!!accepted&&<Caption>方案已确认，日历中可查看每日安排。</Caption>}
     {!accepted&&matching&&!requestWaiting&&<Action label={approving?'正在加入日历…':pending?'确认调整并更新日历':'确认方案并加入日历'} disabled={approving||loading||!!error||!canSchedule||!automaticScheduleRunId||!!automaticSchedule?.preview?.unplaced.length} onPress={()=>{void accept();}}/>}
     {draft!.risks.map((risk,i)=><Caption key={`risk-${i}`}>需留意：{risk}</Caption>)}
@@ -55,6 +55,6 @@ export function AutomaticPlanning({id,owner,calendarRevision,automaticScheduleKe
 
    </>}
   </View>}
-  {previousJob?.plan&&<Card><AppText style={{fontSize:20,fontWeight:'600'}}>{approved?'当前已确认方案仍保留':'上次方案仍保留 · 仅回看'}</AppText><AppText>{(approved?.draft??previousJob.plan.draft!).title}</AppText><Caption>{(approved?.draft??previousJob.plan.draft!).summary}</Caption>{(!!approved||automaticSchedule?.attempt_id===previousJob.id)&&<PlanCalendar approved={!!approved} schedule={(approved?.schedule??automaticSchedule)!} instructions={taskId=>(approved?.draft??previousJob.plan!.draft!).tasks.find(t=>t.id===taskId)?.instructions}/>}</Card>}
+  {previousJob?.plan&&<Card><AppText style={{fontSize:20,fontWeight:'600'}}>{approved?'当前已确认方案仍保留':'上次方案仍保留 · 仅回看'}</AppText><AppText>{(approved?.draft??previousJob.plan.draft!).title}</AppText><Caption>{(approved?.draft??previousJob.plan.draft!).summary}</Caption>{(!!approved||automaticSchedule?.attempt_id===previousJob.id)&&<PlanCalendar approved={!!approved} planVersionId={approved?.id} segments={taskId=>(approved?.draft??previousJob.plan!.draft!).tasks.find(t=>t.id===taskId)?.segments} schedule={(approved?.schedule??automaticSchedule)!} instructions={taskId=>(approved?.draft??previousJob.plan!.draft!).tasks.find(t=>t.id===taskId)?.instructions}/>}</Card>}
  </>;
 }

@@ -66,6 +66,14 @@ export function planOutputTool(context: string) {
             stage: { type: "integer", enum: [1, 2, 3] },
             title: string(80),
             instructions: string(400),
+            segments: array(
+              object({
+                title: string(40),
+                instructions: string(120),
+                duration_minutes: { type: "integer", minimum: 1, maximum: 120 },
+              }),
+              "每次任务按先后拆成1到3段可执行做法，各段分钟数之和必须等于本任务duration_minutes；通常2到3段，做法简洁",
+            ),
             duration_minutes: { type: "integer", minimum: 5, maximum: 120 },
             frequency_per_week: { type: "integer", minimum: 1, maximum: 7 },
             mandatory: { type: "boolean" },

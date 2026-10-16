@@ -1,6 +1,6 @@
 # Guidy AI harness · 澄清测试链路
 
-> **2026-10-11 目标交互更新**：Slot与研究/生成步骤是后台能力，正式主流程为聊天采集→方案草稿（含拟安排）→一次批准自动入历。下文已有手工确认/搜索/审阅协议是实现现状，不作为最终必经UI；受控保存用户事实与一次批准合同见[对话主流程](CHAT_FIRST_FLOW.md)。改造尚未实现，模型不直接写核心表。
+> **当前主流程**：聊天卡片采集 → 后台按需研究/结构化草稿 → 确定性日程候选 → 用户确认入历。手工条件/来源/审阅接口已退役；下文旧阶段说明保留作演进记录，不能作为当前必经UI或有效路由。最新实现见文末日期说明与 [TODO](TODO.md)。
 
 用户于 2026-10-10 指定先使用自己的 DeepSeek API，主要开发 harness。当前 Provider 为 DeepSeek 的 `deepseek-flash`，使用 [官方 Chat Completions 接口](https://api-docs.deepseek.com/api/create-chat-completion/)，非流式、thinking disabled、JSON object；Provider 可替换，业务控制不交给模型。
 
@@ -60,7 +60,7 @@ npx wrangler secret put DEEPSEEK_API_KEY --config wrangler.cloud.json
 
 ### 首批计划生成隔离
 
-PlanDraft使用独立计划system提示/2400输出Token，与原澄清提示/650 Token分开。模型输入最多8500字符（私有冻结上下文最多18000字符，完整URL不进入模型），最多3份900字符来源，条件和证据先冻结，引用/任务依赖/范围验证后保存。规则失败不自动修订或重试付费调用；草稿只待用户审阅，时间匹配与排程未校验。API、额度及限制见[PLAN_DRAFT](PLAN_DRAFT.md)，不是完整M1/领域安全验收。
+PlanDraft使用独立计划system提示/4200输出Token，与原澄清提示/650 Token分开。模型输入最多8500字符（私有冻结上下文最多18000字符，完整URL不进入模型），最多3份900字符来源，条件和证据先冻结，引用/任务依赖/范围验证后保存。规则失败不自动修订或重试付费调用；草稿只待用户审阅，随后由SchedulingService检查候选时间，明确确认后才写入生效日历。API、额度及限制见[PLAN_DRAFT](PLAN_DRAFT.md)，不是完整M1/领域安全验收。
 
 草稿真机校验失败后补充结构/任务/引用/依赖/安全内容固定错误码；不保存原始模型错误内容。evidence_ref E1/E2/E3由后端限定映射为本人目标冻结UUID，重复同源引用去重、未知引用拒绝。明确否定效果承诺不误识别为肯定承诺，部分风险词规则仍不是完整语义安全门槛；不自动再次调用模型，详细边界见[PLAN_DRAFT](PLAN_DRAFT.md)。
 

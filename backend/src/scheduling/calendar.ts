@@ -168,7 +168,7 @@ export async function upcomingCalendarResponse(
       .bind(owner, to, from),
     db
       .prepare(
-        "SELECT o.id,t.title,t.instructions,o.start_at,o.end_at,o.timezone,o.status,'plan' source,o.goal_id,o.plan_version_id FROM scheduled_occurrences o JOIN tasks t ON t.id=o.task_id AND t.plan_version_id=o.plan_version_id AND t.goal_id=o.goal_id AND t.owner_id=o.owner_id WHERE o.owner_id=? AND o.status IN ('scheduled','completed','skipped') AND o.start_at<? AND o.end_at>? ORDER BY o.start_at,o.id LIMIT 2001",
+        "SELECT o.id,t.title,t.instructions,(SELECT json_extract(value,'$.segments') FROM json_each(v.draft_json,'$.tasks') WHERE json_extract(value,'$.id')=t.id) segments_json,o.start_at,o.end_at,o.timezone,o.status,'plan' source,o.goal_id,o.plan_version_id FROM scheduled_occurrences o JOIN tasks t ON t.id=o.task_id AND t.plan_version_id=o.plan_version_id AND t.goal_id=o.goal_id AND t.owner_id=o.owner_id JOIN plan_versions v ON v.id=o.plan_version_id AND v.owner_id=o.owner_id JOIN goal_active_plans a ON a.plan_version_id=o.plan_version_id AND a.goal_id=o.goal_id AND a.owner_id=o.owner_id WHERE o.owner_id=? AND o.status='scheduled' AND o.start_at<? AND o.end_at>? ORDER BY o.start_at,o.id LIMIT 2001",
       )
       .bind(owner, to, from),
   ]);
@@ -180,7 +180,16 @@ export async function upcomingCalendarResponse(
       from,
       to,
       revision: Number(rows[0].results[0]?.revision ?? 0),
-      events: [...rows[1].results, ...rows[2].results].sort(
+      events: [
+        ...rows[1].results,
+        ...rows[2].results.map<Record<string, unknown>>((r) => ({
+          ...r,
+          segments: r.segments_json
+            ? JSON.parse(String(r.segments_json))
+            : undefined,
+          segments_json: undefined,
+        })),
+      ].sort(
         (a, b) =>
           Number(a.start_at) - Number(b.start_at) ||
           String(a.id).localeCompare(String(b.id)),

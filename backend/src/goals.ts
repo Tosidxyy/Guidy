@@ -93,18 +93,12 @@ export async function goalsResponse(
       (k) =>
         !(
           isUpdate
-            ? ["description", "timeframe", "status", "expected_revision"]
+            ? ["status", "expected_revision"]
             : ["description", "timeframe"]
         ).includes(k),
-    ) ||
-    typeof body.description !== "string" ||
-    typeof body.timeframe !== "string"
+    )
   )
     return fail(422, "INVALID_BODY", "目标格式不正确。");
-  const description = body.description.trim();
-  const timeframe = body.timeframe.trim();
-  if (!description || description.length > 300 || timeframe.length > 80)
-    return fail(422, "INVALID_BODY", "目标为 1–300 字，期望时间最多 80 字。");
   if (isUpdate) {
     if (
       !Number.isSafeInteger(body.expected_revision) ||
@@ -119,8 +113,6 @@ export async function goalsResponse(
       .first();
     if (!existing) return fail(404, "NOT_FOUND", "目标不存在。");
     const payload = JSON.stringify({
-      description,
-      timeframe,
       status: body.status,
       expected_revision: body.expected_revision,
     });
@@ -128,12 +120,9 @@ export async function goalsResponse(
     await db.batch([
       db
         .prepare(
-          `UPDATE goals SET title=?,description=?,timeframe_note=?,status=?,revision=revision+1,updated_at=max(updated_at,?),last_mutation_key=? WHERE id=? AND owner_id=? AND revision=? AND status IN ('draft','paused') AND active_plan_version_id IS NULL AND NOT EXISTS(SELECT 1 FROM goal_mutations WHERE owner_id=? AND request_key=?)`,
+          `UPDATE goals SET status=?,revision=revision+1,updated_at=max(updated_at,?),last_mutation_key=? WHERE id=? AND owner_id=? AND revision=? AND status IN ('draft','paused') AND active_plan_version_id IS NULL AND NOT EXISTS(SELECT 1 FROM goal_active_plans WHERE goal_id=goals.id AND owner_id=goals.owner_id) AND NOT EXISTS(SELECT 1 FROM goal_mutations WHERE owner_id=? AND request_key=?)`,
         )
         .bind(
-          description.slice(0, 200),
-          description,
-          timeframe,
           body.status,
           now,
           key,
@@ -178,6 +167,15 @@ export async function goalsResponse(
       "目标已改变或当前状态不可编辑，请重新读取。",
     );
   }
+  if (
+    typeof body.description !== "string" ||
+    typeof body.timeframe !== "string"
+  )
+    return fail(422, "INVALID_BODY", "目标格式不正确。");
+  const description = body.description.trim(),
+    timeframe = body.timeframe.trim();
+  if (!description || description.length > 300 || timeframe.length > 80)
+    return fail(422, "INVALID_BODY", "目标为1–300字，期望时间最多80字。");
   const id = crypto.randomUUID();
   const now = Date.now();
   const inserted = await db

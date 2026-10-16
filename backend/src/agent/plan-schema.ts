@@ -1,6 +1,11 @@
 import { AgentError } from "./provider.ts";
 
 type DraftTask = {
+  segments?: {
+    title: string;
+    instructions: string;
+    duration_minutes: number;
+  }[];
   key: string;
   stage: number;
   title: string;
@@ -96,6 +101,7 @@ export function checkedPlan(
             "stage",
             "title",
             "instructions",
+            "segments",
             "duration_minutes",
             "frequency_per_week",
             "mandatory",
@@ -122,6 +128,25 @@ export function checkedPlan(
       !Array.isArray(t.evidence_ids) ||
       t.evidence_ids.length > 3 ||
       new Set(t.evidence_ids).size !== t.evidence_ids.length
+    )
+      fail("PLAN_INVALID_TASK");
+    if (
+      t.segments !== undefined &&
+      (!Array.isArray(t.segments) ||
+        t.segments.length < 1 ||
+        t.segments.length > 3 ||
+        t.segments.some(
+          (s) =>
+            !s ||
+            Object.keys(s).sort().join(",") !==
+              "duration_minutes,instructions,title" ||
+            !text(s.title, 40) ||
+            !text(s.instructions, 120) ||
+            !Number.isInteger(s.duration_minutes) ||
+            s.duration_minutes < 1,
+        ) ||
+        t.segments.reduce((n, s) => n + s.duration_minutes, 0) !==
+          t.duration_minutes)
     )
       fail("PLAN_INVALID_TASK");
     if (t.depends_on.some((k) => k === t.key || !keys.has(k)))

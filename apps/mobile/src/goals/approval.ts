@@ -1,4 +1,4 @@
-import {checkedPlans,type PlanDraft,type PlanContext} from './plans.ts';
+import {checkedPlans,type PlanDraft,type PlanContext,type PlanSegment} from './plans.ts';
 import {checkedSchedule,type ScheduleData} from './schedule.ts';
 export type ApprovedPlan={id:string;attempt_id:string;goal_revision:number;version:number;accepted_at:number;calendar_revision:number;context:PlanContext;draft:PlanDraft;schedule:ScheduleData};
 export type ApprovalSnapshot={schema_version:1;approval:ApprovedPlan|null};
@@ -13,9 +13,10 @@ export function checkedApproval(value:ApprovalSnapshot,goalId:string){
  return value;
 }
 
-export type CalendarEntry={status?:'fixed'|'scheduled'|'completed'|'skipped';id:string;title:string;instructions:string;start_at:number;end_at:number;timezone:'UTC'|'Asia/Shanghai';source:'user'|'plan';goal_id:string|null;plan_version_id:string|null};
+export type CalendarEntry={segments?:PlanSegment[];status?:'fixed'|'scheduled'|'completed'|'skipped';id:string;title:string;instructions:string;start_at:number;end_at:number;timezone:'UTC'|'Asia/Shanghai';source:'user'|'plan';goal_id:string|null;plan_version_id:string|null};
 export type UpcomingCalendar={schema_version:1;from:number;to:number;revision:number;events:CalendarEntry[]};
 export function checkedUpcoming(v:UpcomingCalendar,from:number,to:number){
  if(v?.schema_version!==1||v.from!==from||v.to!==to||!Number.isSafeInteger(v.revision)||v.revision<0||!Array.isArray(v.events)||v.events.length>2500||new Set(v.events.map(e=>e.id)).size!==v.events.length||v.events.some(e=>!e||!uuid(e.id)||typeof e.title!=='string'||!e.title.trim()||e.title.length>80||typeof e.instructions!=='string'||e.instructions.length>400||![e.start_at,e.end_at].every(Number.isSafeInteger)||e.end_at<=e.start_at||e.start_at>=to||e.end_at<=from||!['UTC','Asia/Shanghai'].includes(e.timezone)||(e.status!==undefined&&(e.source==='plan'?!['scheduled','completed','skipped'].includes(e.status):e.status!=='fixed'))||(e.source==='plan'?!uuid(e.goal_id)||!uuid(e.plan_version_id)||!e.instructions.trim():e.source!=='user'||e.goal_id!==null||e.plan_version_id!==null||e.instructions!=='')))throw new Error('日历数据未通过校验。');
+ for(const e of v.events)if(e.segments!==undefined&&(!Array.isArray(e.segments)||e.segments.length<1||e.segments.length>3||e.segments.some(s=>!s||typeof s.title!=='string'||!s.title.trim()||s.title.length>40||typeof s.instructions!=='string'||!s.instructions.trim()||s.instructions.length>120||!Number.isInteger(s.duration_minutes)||s.duration_minutes<1)||e.segments.reduce((n,s)=>n+s.duration_minutes*60000,0)!==e.end_at-e.start_at))throw new Error('日历步骤不正确。');
  return v;
 }

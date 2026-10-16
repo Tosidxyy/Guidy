@@ -26,7 +26,11 @@ export async function automaticScheduleRequest(
     )
     .bind(goal, owner)
     .first();
-  if (!row?.draft_json || row.goal_revision !== row.current_revision)
+  if (
+    !row?.draft_json ||
+    row.goal_revision !== row.current_revision ||
+    !/^[0-9a-f-]{36}$/.test(String(row.id))
+  )
     return null;
   if (
     row.status === "active" &&

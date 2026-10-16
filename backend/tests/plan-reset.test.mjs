@@ -271,6 +271,7 @@ test("reset clears generated copies, preserves answers/facts/budgets and never r
   );
   const snapshot = checkedDialogue((await r.json()).data);
   assert.equal(snapshot.auto_schedule, null);
+  assert.equal(snapshot.auto_schedule_key, null); // Legacy fixture IDs cannot become executable request keys.
   assert.equal(snapshot.asked_topics.length, 3);
   let calls = 0;
   const provider = {

@@ -63,7 +63,7 @@ export async function getGoal(id: string, signal: AbortSignal): Promise<AccountG
   if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('目标地址不正确。');
   return checkedGoal(await request('GET', undefined, undefined, signal, `/${id}`));
 }
-export async function updateGoal(id: string, body: { description: string; timeframe: string; status: 'draft' | 'paused'; expected_revision: number }, key: string): Promise<AccountGoal> {
+export async function setGoalStatus(id: string, body: { status: 'draft' | 'paused'; expected_revision: number }, key: string): Promise<AccountGoal> {
   if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('目标地址不正确。');
   return checkedGoal(await request('PATCH', body, key, undefined, `/${id}`));
 }

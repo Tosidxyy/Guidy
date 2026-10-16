@@ -1,6 +1,6 @@
 # Guidy｜Cloudflare TypeScript 架构
 
-> **2026-10-11 目标交互更新**：Slot与研究/生成步骤是后台能力，正式主流程为聊天采集→方案草稿（含拟安排）→一次批准自动入历。下文已有手工确认/搜索/审阅协议是实现现状，不作为最终必经UI；受控保存用户事实与一次批准合同见[对话主流程](CHAT_FIRST_FLOW.md)。改造尚未实现，模型不直接写核心表。
+> **当前主流程**：聊天卡片采集 → 后台按需研究/结构化草稿 → 确定性日程候选 → 用户确认入历。手工条件/来源/审阅接口已退役；下文旧阶段说明保留作演进记录，不能作为当前必经UI或有效路由。最新实现见文末日期说明与 [TODO](TODO.md)。
 
 > 2026-10-09 用户确认改用 Cloudflare 并将后端语言改为 TypeScript。本文件替代此前 Python/FastAPI/Supabase 方案；旧文档仅见 [历史快照](../archive/architecture-before-cloudflare/ARCHITECTURE.md)，不能作为当前实现依据。
 
@@ -177,7 +177,7 @@ POST goals/:id/plan-approval由已登录用户明确确认具体预览；模型�
 
 新增agent/draft-refinement.ts：只在当前owner/Goal/revision的已完成草稿上开启refine_question；三个核心信息必须已分别问过。问题卡固定为harness来源、携带base_attempt_id且不计澄清模型额度；用户回答创建新的clarify-stop运行与planning_jobs，按原生成用量账本预留，queued任务沿用现有Workflow派发/恢复。source、对话版本、活跃任务与风险在D1批次入口检查；相同请求键回放不新建任务；模型不直接操作核心表。
 
-冻结context包括previous_plan（紧凑任务key/依赖、周期和旧建议）、base_attempt_id、完整revision_request与已知条件。来源由服务端从拥有的原稿上下文带入sources_json，研究路由看是否需要新事实；模型输入只含引用编号/标题/正文等必要资料，不含完整URL，8500字符上限；私有冻结上下文保留完整引用，最多18000字符。emit_plan严格输出增加time_preferences（UTC或Asia/Shanghai、0–1440分钟内至少5分钟同日窗口、0–6不重复排除星期），新输出Token上限2400。旧无该字段的冻结草稿仍按披露默认窗口读取。
+冻结context包括previous_plan（紧凑任务key/依赖、周期和旧建议）、base_attempt_id、完整revision_request与已知条件。来源由服务端从拥有的原稿上下文带入sources_json，研究路由看是否需要新事实；模型输入只含引用编号/标题/正文等必要资料，不含完整URL，8500字符上限；私有冻结上下文保留完整引用，最多18000字符。emit_plan严格输出增加time_preferences（UTC或Asia/Shanghai、0–1440分钟内至少5分钟同日窗口、0–6不重复排除星期），新输出Token上限4200。旧无该字段的冻结草稿仍按披露默认窗口读取。
 
 SchedulingService按该待确认时间建议展开全部阶段并避让已知占用；window_basis=agent_proposal_v1仍是建议，不是用户空闲事实。修订结果经过原字段/引用/依赖/风险与客户端契约校验；旧稿不改，新稿完成后客户端自动显示候选。批准入口仅忽略没有采集新条件的refine-question-v1问题开启操作，任何提交修改仍使旧候选失效；风险记录始终阻断批准。新确认照常原子保存PlanVersion及实例。无迁移或额外数据清理。
 
@@ -200,3 +200,11 @@ planning_jobs预留、各阶段有效性及最终草稿写入均绑定当前Goal
 最新clarify-stop修订请求保存base_attempt_id和完整revision_request回执；已存在的失败Job优先读其冻结上下文，较旧且未预留Job的记录可由紧邻的refine_question及原提交还原。只考虑最新方案请求，不搜索更早失败修改。messages与planning-runs只读提供retry_refinement状态，后台失败后前端无需重开页面即可呈现恢复动作；读取不预留任务或重复模型调用。
 
 用户明确“按上次要求再试”或在未启动提示中明确重新提交时，沿用原要求，而不是把重试文字当新要求。校验Goal revision、原稿、活动父版本、活跃任务与策略记录，再创建新请求和新Job；保留retry_of_run_id/job_id关联。失败/unknown均不自动重发；明确重试继续沿用现有每日生成额度，同请求键只创建一次，额度仍满时只保存可继续恢复的请求。成功/正在执行或过期上下文不能误用旧失败要求。
+
+### 2026-10-16 方案分段与有效日历
+
+新emit_plan每项任务包含1–3个segments（标题/具体做法/整数分钟），服务端与客户端验证总时长严格等于任务时长；模型不生成钟点。输出上限4200 Token，既有输入/每日调用上限不变。SchedulingService先安排任务，显示层按顺序累计每段分钟数，准确填满任务时间，段之间无空隙/重叠。不新增付费解析调用或未经确认的核心写入；既有无segments版本按原完整任务展示，不编造细分。
+
+日历接口从不可变PlanVersion读取任务segments，仅投影当前活动版本中scheduled的实例；completed/skipped/superseded/cancelled不作为激活时间段展示，历史数据保留。方案内已确认日历也读取该接口，候选则使用已校验的草稿与拟排程。日期选择自动定位到日详情，展示明确起止时间、任务、分步做法的卡片。
+
+目标管理只读显示原始想法，补充条件回到Agent；PATCH仅接收status/expected_revision，保留幂等/owner/事务回执，禁止手工改描述或期望时间。只允许未批准draft/paused状态，活动计划另由确认版本协议维护。

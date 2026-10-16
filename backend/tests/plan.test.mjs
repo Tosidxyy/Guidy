@@ -63,7 +63,7 @@ test("plan provider has distinct JSON prompt/output cap and preserves existing t
     env,
     async (url, options) => {
       const b = JSON.parse(options.body);
-      assert.equal(b.max_tokens, 2400);
+      assert.equal(b.max_tokens, 4200);
       assert.match(b.messages[0].content, /计划草稿/);
       assert.equal(options.redirect, "manual");
       assert.equal(url, "https://api.deepseek.com/beta/chat/completions");
@@ -141,4 +141,26 @@ test("time proposals reject impossible/cross-day windows, unsupported zones and 
         [sourceId],
       ),
     );
+});
+
+test("AI segments must exactly fill their session and cannot contain invalid steps", () => {
+  const d = modelDraft();
+  d.tasks[0].segments = [
+    { title: "听音", instructions: "听三句", duration_minutes: 5 },
+    { title: "跟读", instructions: "逐句模仿", duration_minutes: 15 },
+  ];
+  assert.equal(
+    checkedPlan(JSON.stringify(d), [sourceId]).tasks[0].segments.length,
+    2,
+  );
+  for (const mutate of [
+    (x) => (x.tasks[0].segments[1].duration_minutes = 16),
+    (x) => (x.tasks[0].segments[0].duration_minutes = 0),
+    (x) => (x.tasks[0].segments[0].instructions = ""),
+    (x) => (x.tasks[0].segments[0].start_at = 1),
+  ]) {
+    const bad = globalThis.structuredClone(d);
+    mutate(bad);
+    assert.throws(() => checkedPlan(JSON.stringify(bad), [sourceId]));
+  }
 });

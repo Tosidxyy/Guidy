@@ -1,6 +1,7 @@
 import type { PropsWithChildren, ReactNode } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, type TextProps, type ViewStyle } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View, type TextProps, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {AgendaScroll} from './AgendaScroll';
 import { spacing, typography, useTheme } from '../theme/ThemeProvider';
 
 export function AppText({ style, ...props }: TextProps) {
@@ -11,13 +12,13 @@ export function Screen({ title, children, bottomInset = false, footer }: PropsWi
   const { colors } = useTheme();
   return (
     <SafeAreaView edges={bottomInset ? ['top', 'left', 'right', 'bottom'] : ['top', 'left', 'right']} style={{ flex: 1, backgroundColor: colors.background }}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+      <AgendaScroll style={{ flex: 1 }} contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <View style={styles.brand}>
           <Image source={require('../../assets/images/icon.png')} style={styles.logo} accessibilityLabel="Guidy 标识" />
           <AppText accessibilityRole="header" style={styles.title}>{title}</AppText>
         </View>
         {children}
-      </ScrollView>
+      </AgendaScroll>
       {footer && <View style={[styles.footer, { borderTopColor: colors.divider }]}>{footer}</View>}
     </SafeAreaView>
   );
