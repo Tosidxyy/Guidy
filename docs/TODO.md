@@ -1185,3 +1185,21 @@ Browser plugin not available，Playwright/Edge隔离本地身份实际验证：�
 继续应用frontend-testing-debugging技能。Browser plugin not available，Playwright/Edge复用本轮重新确认存活的localhost:8090和本地Worker8787，隔离本地账号实际OTP登录→只读目标摘要0输入框→暂停/恢复与原描述/问答保留→受控草稿自动候选→两段20:00–20:05/20:05–20:20卡片及具体做法在视口可见→明确确认12实例→Reload→日历日期→回看/查看方案→320窄屏无页面溢出。最终脚本完整通过、无相关控制台error/warn；.cache/guidy-daily-blocks.png经view_image核对黑白卡片。受控草稿/问答用于浏览器夹具，不冒充实际模型生成或完整从头三题质量验收；模型/搜索/真实邮件0，测试身份与本地收件箱精确清理。
 
 本轮只删除后端不可达模块，Worker/Workflow运行路径未变，未重新部署云端或重复付费模型测试；云端保持前轮70f4106b-bf30-4ee6-8ce7-c1e3f1c93d36。无依赖/迁移、无额外真实数据删除；既定截止前旧生成数据为0的云只读证据沿用前轮，后来方案不删除。按约定单独进度提交后push origin/main核对远程SHA；下一轮依据验收清单继续补齐最终证据和实际缺口。
+
+### 2026-10-16 从新目标真实贯通与回答恢复
+
+- [x] 新想法页在账号恢复/本机草稿未就绪时不开放编辑、保存或提交，防止匿名→已登录表单重建清空刚输入内容。真实本地会话人为延迟验证：恢复前不可编辑/不可提交、恢复后原草稿保留且可正常输入。
+- [x] 开始制订的当前回答完整进入私有dialogue_notes；最近8条各保留到600字符，后续卡片修订同样保留，不再200/160字符截断。生成输入由8500限到11000字符以容纳完整回答和既有3份900字符来源；快照18000/输出4200/每日额度不变，超限在模型调用前失败。用户原话不强行提升为confirmed slot。
+- [x] 模型不合规/超时等失败后保留原问题卡及可编辑回答，重开页面从失败run恢复原文；再次失败仍可编辑，内部控制命令不回填，running/成功通知后不开放旧输入。明确重试箭头才提交新尝试，读取/重载不自动付费调用；沿用现有幂等/版本协议。
+- [x] 从未预置问答/草稿的新目标实际走通浏览器→真实云端三题→第三题含200字符之后的“周三没空”直接制订→真实豆包搜索→严格草稿/分时卡片→明确确认→重载/日历日期详情；验证所有原回答进入冻结上下文且没有周三排程。
+- [ ] 最新iPhone完整流程仍待用户反馈，已准备局域网预览并发出一次集中验证请求；没有用浏览器桥或iOS导出冒充真机、原生Cookie或云端CORS验收。整体目标保持未完成，后续按真实反馈处理缺口。
+
+实现 Commit f37ce8d。backend最终typecheck/lint/format:check、build:cloud通过；draft-edit/planning-jobs针对19/19通过，全量node --experimental-strip-types --test --test-concurrency=2 tests/*.test.mjs共115/115通过；补齐修订备注保留后draft-edit/content-replan最终18/18通过。新增用例验证长回答/旧备注尾部、完整输入超过旧8500仍正常、超过11000在模型调用前拒绝，以及重规划版本/历史保持。mobile最终typecheck/lint、test:ui-state30/30及export:ios通过；新增恢复用例覆盖连续失败、running/成功通知/内部命令不回填。5文档64本地链接与git diff --check通过。无依赖/迁移/业务历史额外清理。
+
+继续应用frontend-testing-debugging与React规范，Browser plugin not available，Playwright/Edge在localhost:8090、393×852/320×480验证。延迟会话QA和本地真实D1受控失败QA均完整通过；失败QA实际点击一次重试、持久化再次失败后Reload仍恢复文本，没有自动模型调用。截图.cache/guidy-goal-session-ready.png及guidy-answer-recovery.png经view_image核对。QA身份/开发收件箱精确清理，模型/真实邮件0。
+
+最终隔离云端新目标UI完整QA通过：测试用传输桥将本地App API请求送往真实api.guidy.fun，保留会话于测试进程，不更改部署CORS/不向浏览器输出Cookie；从新建目标实际发起全部领域请求，无预置核心问题、资料或草稿。3次真实DeepSeek问题+研究/strict生成2次=5次模型调用、豆包1次、邮件0、明确重试0；第三题长回答末尾限制进入冻结上下文并避开周三，确认前核心0，明确确认后日历和Reload正常，320无页面溢出。最终截图guidy-real-third-question/approved-calendar已view_image。verification和隔离身份按随机邮箱/ID精确清理，不读取真实用户正文或输出凭据。
+
+最初完整QA发现账号恢复竞态；修正后一次流程已走到确认/重载，但末尾错误断言“必须3条confirmed slots”得到2，修正为检查完整原文在冻结上下文中（第三题保持notes/unknown是有意设计，不放宽schema）。再次真实验证遇到一次AI_INVALID_RESPONSE并揭示问题输入框消失，随后修复恢复UI；未放宽输出校验、未自动重试。最后完整新目标流程在最终代码上通过。早期本地延迟脚本变量重名在运行前SyntaxError，改名后通过；未虚报这些初次结果为成功。
+
+最终Worker/Workflow部署bff42771-631f-4de4-b741-cc5d41587f7d完成，health200/messages匿名401。只读云审计复核固定截止2026-10-14T11:47:50Z前old_planning_jobs/plans/reviews/search_results/source_jobs/sources/embedded_plans仍全部0，未重复删除后来方案。手机预览以EXPO_PUBLIC_API_URL=https://api.guidy.fun启动，8089进程存活，localhost/127.0.0.1/192.168.10.222均返回packager-status:running；普通沙箱首次fetch失败后用正常授权只读核对成功，未重启存活进程。exp://192.168.10.222:8089已提供给用户；同Wi-Fi实际打开与完整手机体验等待反馈。按约定单独TODO提交后push origin/main并核验远程SHA。
