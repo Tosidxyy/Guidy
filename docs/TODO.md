@@ -1203,3 +1203,14 @@ Browser plugin not available，Playwright/Edge隔离本地身份实际验证：�
 最初完整QA发现账号恢复竞态；修正后一次流程已走到确认/重载，但末尾错误断言“必须3条confirmed slots”得到2，修正为检查完整原文在冻结上下文中（第三题保持notes/unknown是有意设计，不放宽schema）。再次真实验证遇到一次AI_INVALID_RESPONSE并揭示问题输入框消失，随后修复恢复UI；未放宽输出校验、未自动重试。最后完整新目标流程在最终代码上通过。早期本地延迟脚本变量重名在运行前SyntaxError，改名后通过；未虚报这些初次结果为成功。
 
 最终Worker/Workflow部署bff42771-631f-4de4-b741-cc5d41587f7d完成，health200/messages匿名401。只读云审计复核固定截止2026-10-14T11:47:50Z前old_planning_jobs/plans/reviews/search_results/source_jobs/sources/embedded_plans仍全部0，未重复删除后来方案。手机预览以EXPO_PUBLIC_API_URL=https://api.guidy.fun启动，8089进程存活，localhost/127.0.0.1/192.168.10.222均返回packager-status:running；普通沙箱首次fetch失败后用正常授权只读核对成功，未重启存活进程。exp://192.168.10.222:8089已提供给用户；同Wi-Fi实际打开与完整手机体验等待反馈。按约定单独TODO提交后push origin/main并核验远程SHA。
+
+### 2026-10-16 远程CI证据与剩余占用接口退役
+
+- [x] 通过GitHub API只读确认提交1f1e740121ab5fab08caf629bf0e8ff2540f0f93的[Guidy CI 38902195124](https://github.com/Tosidxyy/Guidy/actions/runs/38902195124)最终completed/success；mobile与backend均success，包括实际远程安装、类型/lint、当前UI状态测试、后端格式/schema/迁移/功能测试/build。先观察真实in_progress，再等待同一run结束，未重启或重跑存活任务，凭据仅在进程内使用未输出。
+- [x] 进一步按导出/路由引用检查，删除前轮已无客户端getCalendar调用的calendar/fixed-events路由及calendarResponse/calendarSnapshot/BusyEvent专用读取实现；旧GET/POST/PATCH返回404。现行calendar/events及planningCalendarSnapshot保留，实际固定事项、活动计划与历史不删除，冲突检查继续有界读取所有有效占用。
+- [x] 原日历范围/owner额外参数拒绝、匿名鉴权和日志用例迁到现行calendar/events，未简单删除当前安全断言；退役用例补旧占用地址。CALENDAR_OCCUPANCY标明历史操作不可再用，DATABASE按用户当前要求修正为仅投影活动版本scheduled、历史保留，与架构/验收一致。
+- [ ] 最新iPhone完整流程反馈仍未到达；没有再次催测或把未回复当通过。原集中验证请求与8089预览沿用，整体目标仍未完成。本轮是接口引用清理，非新的UI/功能扩张。
+
+实现 Commit dc91aa7。backend typecheck/lint/format:check及build:cloud通过；node --experimental-strip-types --test --test-concurrency=2 tests/retired-routes.test.mjs tests/draft-edit.test.mjs tests/approval.test.mjs tests/replan.test.mjs共24/24通过，涵盖现行日历成功/失败、明确确认、冲突/事务/历史与重规划。4文档57本地链接、diff检查通过；运行源码/客户端不再引用fixed-events及已删专用服务。未更改前端，未重复iOS构建/浏览器或付费模型。无依赖/迁移/额外真实数据清理。
+
+云Worker/Workflow部署8dfd50b3-d18a-4e5e-ae33-235c296e4e27完成；实际health200、旧fixed-events404、现行events匿名401。上述GitHub成功对应本轮之前的1f1e740，不冒称本轮尚未推送代码已远程通过。按约定单独TODO提交后push origin/main核对远程SHA；新CI结果须另读真实run。文档措辞检查在错误cwd首次ENOENT未改文件，改为根目录完成检查；部署仅依赖已通过的代码测试，未以该错误作为成功证据。
