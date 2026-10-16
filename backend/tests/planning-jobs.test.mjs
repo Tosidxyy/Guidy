@@ -240,6 +240,76 @@ test("automatic search and generation freeze evidence, retain unknowns, checkpoi
     1,
   );
 });
+test("full recent answers reach generation without losing tail constraints, while oversized context fails before model work", async (t) => {
+  for (const oversized of [false, true]) {
+    const f = await setup(t);
+    await decidePlanning(f.db, f.id, {}, f.intent(false));
+    const notes = Array.from(
+      { length: 8 },
+      (_, i) =>
+        "补".repeat(oversized ? 1500 : 580) +
+        `第${i}项：周三没空，不购买课程。`,
+    );
+    const context = {
+      ...f.context,
+      goal: { description: "目".repeat(300), timeframe_note: "" },
+      conditions: f.context.conditions.map((s) => ({
+        ...s,
+        confirmed_at: 1,
+        value: {
+          schema_version: 1,
+          state: "confirmed",
+          text: "条".repeat(300),
+        },
+      })),
+      dialogue_notes: notes,
+    };
+    const sources = Array.from({ length: 3 }, (_, i) => ({
+      source_id: globalThis.crypto.randomUUID(),
+      search_id: globalThis.crypto.randomUUID(),
+      evidence_ref: `E${i + 1}`,
+      title: "题".repeat(160),
+      url: "https://example.org/",
+      snippet: "摘要",
+      content: "文".repeat(900),
+      content_kind: "provider_content",
+      published_at: null,
+      verification_status: "unverified",
+      searched_at: 123,
+      provider_request_id: "test",
+    }));
+    await f.db
+      .prepare(
+        "UPDATE planning_jobs SET context_json=?,sources_json=? WHERE id=?",
+      )
+      .bind(JSON.stringify(context), JSON.stringify(sources), f.id)
+      .run();
+    let calls = 0;
+    await generatePlanning(
+      f.db,
+      f.id,
+      {},
+      {
+        complete: async (input) => {
+          calls++;
+          assert.ok(input.length > 8500 && input.length <= 11000);
+          assert.deepEqual(JSON.parse(input).dialogue_notes, notes);
+          return f.model.complete(input);
+        },
+      },
+    );
+    const row = await f.row();
+    assert.equal(calls, oversized ? 0 : 1);
+    assert.equal(row.status, oversized ? "failed" : "completed");
+    if (oversized) assert.equal(row.error_code, "PLAN_CONTEXT_TOO_LARGE");
+    else
+      assert.deepEqual(
+        (await (await f.get()).json()).data.jobs[0].plan.context.dialogue_notes,
+        notes,
+      );
+  }
+});
+
 test("no-search personal drafts cannot fabricate citations and remain unverified with explicit assumptions", async (t) => {
   const f = await setup(t);
   await decidePlanning(f.db, f.id, {}, f.intent(false));

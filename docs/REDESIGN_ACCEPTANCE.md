@@ -6,8 +6,8 @@
 
 | 用户要求 | 当前实现与可核验来源 | 验证范围与边界 |
 | --- | --- | --- |
-| 点击Guidy！进入整页Agent问题卡，输入后箭头下一题 | [GuidyCards](../apps/mobile/src/components/GuidyCards.tsx)、[新目标](../apps/mobile/app/goal/new.tsx) | 当前源码存在；完整最新iPhone端到端体验尚未验证 |
-| 至少询问三个不同核心信息，允许中止或继续问答 | [chat-capture测试](../backend/tests/chat-capture.test.mjs)的stop/unknown/delegated用例；卡片按asked_topics解锁开始制订 | 不把重复提问次数当主题数；达到模型额度后停止仍可持久执行，policy边界保留 |
+| 点击Guidy！进入整页Agent问题卡，输入后箭头下一题 | [GuidyCards](../apps/mobile/src/components/GuidyCards.tsx)、[新目标](../apps/mobile/app/goal/new.tsx) | 已从新建目标真实走完三题与制订的浏览器/云端链路；最新iPhone端到端体验尚未验证 |
+| 至少询问三个不同核心信息，允许中止或继续问答 | [chat-capture测试](../backend/tests/chat-capture.test.mjs)的stop/unknown/delegated用例；卡片按asked_topics解锁开始制订 | 真实三题后可携第三题回答直接制订；不把主题数当调用额度，停止/未知/policy边界另有测试 |
 | 不强迫用户手填slots/具体日期，让Agent顺着安排 | [自动排程](../backend/src/scheduling/chat.ts)、[卡片](../apps/mobile/src/components/GuidyCards.tsx) | 未知时间采用披露假设的候选，确定性避让已有占用；确认前不入历 |
 | 回看自己的回答并滑动卡片 | [QuestionHistory](../apps/mobile/src/components/QuestionHistory.tsx)、[历史测试](../backend/tests/question-history.test.mjs) | 分页遍历超过30轮、owner隔离、未回答与失败输入有覆盖；原生滑动/VoiceOver待验 |
 | 搜索/研究/生成自动后台工作流，普通用户不见来源操作按钮 | [planning-jobs测试](../backend/tests/planning-jobs.test.mjs)、[Workflow](../backend/src/research/workflow.ts) | 自动研究判断/豆包搜索/冻结上下文/输出校验/恢复；unknown不自动重复付费 |
@@ -24,3 +24,10 @@
 - 原型中的部分历史管理工作台已被用户明确指定的新卡片流程取代；品牌/三Tab保持。完整V0.1通知/反馈闭环及App Store发布不在本页完成声明之内。
 
 每轮真实测试数量、命令、截图验证、云端版本、未验证项及提交在[任务清单](TODO.md)中记录。该清单用于找到证据，不以文档自述代替运行结果。
+
+
+## 2026-10-16 从头实际验证与修复
+
+使用393×852浏览器前端，经测试用传输桥连接真实开发云API（不更改部署CORS、不向浏览器暴露会话Cookie），从新建旅行韩语目标开始：真实DeepSeek三个问题→第三题含200字之后的“周三没空”限制直接开始制订→真实豆包搜索1次→真实研究判断/严格方案生成→具体时间卡片→明确确认→Reload→日历Tab日期详情→320窄屏。最终完整脚本通过，澄清3次+研究/生成2次，共5次模型调用，无真实邮件；隔离身份精确清理。该桥验证真实前后端合同及交互，不等于原生Cookie、iPhone或部署CORS验证。
+
+这轮发现并修正：冷启动账号恢复时输入可被表单重建清空；回答/后续修订原备注截断到200/160字符；模型失败记录使原问题输入框消失。延迟真实本地会话验证恢复前不可编辑/提交、恢复后草稿保留；真实本地D1受控失败记录验证重新打开恢复原回答、再次失败仍可编辑、只明确点击时重试。模型非法输出仍被拒绝，未放宽事实来源或执行边界。最新iPhone结果待用户反馈，未据浏览器通过宣称真机完成。

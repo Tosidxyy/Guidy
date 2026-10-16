@@ -8,6 +8,7 @@ import { Action, AppText, Screen } from '../../../src/components/ui';
 import { useAccount } from '../../../src/auth/AuthProvider';
 import { getDialogue, sendDialogue } from '../../../src/goals/api';
 import { dialogueError, type Dialogue } from '../../../src/goals/dialogue';
+import {failedQuestionAnswer} from '../../../src/goals/question-recovery';
 
 export default function GoalChat(){
   const {id}=useLocalSearchParams<{id:string}>();const {user}=useAccount();
@@ -23,7 +24,7 @@ function GoalChatBody({id,owner}:{id:string;owner:string|undefined}){
   const load=useCallback(async(signal:AbortSignal,scope:number,visible:boolean)=>{
     if(!owner||getting.current===scope)return;
     getting.current=scope;if(visible)setLoading(true);
-    try{const result=await getDialogue(id,signal);if(signal.aborted||scope!==generation.current)return;running.current=result.runs.some(r=>r.status==='running');setRecord({owner,data:result});}
+    try{const result=await getDialogue(id,signal);if(signal.aborted||scope!==generation.current)return;running.current=result.runs.some(r=>r.status==='running');setRecord({owner,data:result});setText(previous=>previous||failedQuestionAnswer(result));}
     catch(err){if(!signal.aborted&&scope===generation.current)setError(err instanceof Error?err.message:'读取对话失败。');}
     finally{if(getting.current===scope)getting.current=null;if(scope===generation.current)setLoading(false);}
   },[id,owner]);

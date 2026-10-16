@@ -322,7 +322,7 @@ export async function generatePlanning(
         }),
       ),
     });
-    if (input.length > 8500 || text.length > 18000)
+    if (input.length > 11000 || text.length > 18000)
       throw new AgentError("PLAN_CONTEXT_TOO_LARGE");
     const completion = await external(
       (s) =>

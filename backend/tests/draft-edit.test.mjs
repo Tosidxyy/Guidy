@@ -19,6 +19,7 @@ import { calendarResponse } from "../src/scheduling/calendar.ts";
 import { createApp } from "../src/index.ts";
 test("begin from a filled third card includes that answer without paying for another question", async (t) => {
   const f = await ready(t);
+  const earlierAnswer = "之前的补充".repeat(70) + "只有周末才能使用电脑。";
   for (const [i, slot] of [
     "outcome",
     "available_time",
@@ -27,7 +28,7 @@ test("begin from a filled third card includes that answer without paying for ano
     const id = globalThis.crypto.randomUUID();
     await f.db
       .prepare(
-        "INSERT INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,reply_json,created_at,updated_at,lease_until) VALUES(?,?,?,?, '{}',?,0,'fixture','succeeded','qa',?,1,1,1)",
+        "INSERT INTO agent_runs(id,goal_id,owner_id,request_key,request_payload,turn_index,goal_revision,user_text,status,harness_version,reply_json,created_at,updated_at,lease_until) VALUES(?,?,?,?, '{}',?,0,?,'succeeded','qa',?,1,1,1)",
       )
       .bind(
         id,
@@ -35,6 +36,7 @@ test("begin from a filled third card includes that answer without paying for ano
         f.owner,
         id,
         i + 2,
+        i === 1 ? earlierAnswer : "fixture",
         JSON.stringify({
           schema_version: 1,
           kind: "question",
@@ -47,9 +49,10 @@ test("begin from a filled third card includes that answer without paying for ano
       )
       .run();
   }
+  const answer = "补充我的学习情况。".repeat(45) + "周三没空，不购买课程。";
   const r = await message(
     f,
-    "根据当前回答开始制订：周三没空",
+    "根据当前回答开始制订：" + answer,
     "card-answer-start",
     4,
   );
@@ -60,7 +63,9 @@ test("begin from a filled third card includes that answer without paying for ano
     )
     .bind(f.goal)
     .first();
-  assert.ok(JSON.parse(job.context_json).dialogue_notes.includes("周三没空"));
+  const notes = JSON.parse(job.context_json).dialogue_notes;
+  assert.ok(notes.includes(answer));
+  assert.ok(notes.includes(earlierAnswer));
   assert.equal((await r.json()).data.clarification_budget.used, 0);
 });
 test("direct suggestions avoid clear unavailable weekdays but never turn conditional examples into facts", async (t) => {
@@ -690,6 +695,23 @@ test("refinement card creates a frozen new workflow, reuses sources and automati
       .prepare("SELECT draft_json FROM plan_draft_attempts WHERE id=?")
       .bind(f.id)
       .first();
+  const originalContext = JSON.parse(
+    (
+      await f.db
+        .prepare("SELECT context_json FROM plan_draft_attempts WHERE id=?")
+        .bind(f.id)
+        .first()
+    ).context_json,
+  );
+  const originalNotes = Array.from(
+    { length: 4 },
+    (_, i) => `回答${i}：` + "我的学习安排。".repeat(40) + "周三没空。",
+  );
+  originalContext.dialogue_notes = originalNotes;
+  await f.db
+    .prepare("UPDATE plan_draft_attempts SET context_json=? WHERE id=?")
+    .bind(JSON.stringify(originalContext), f.id)
+    .run();
   const question = checkedDialogue(
     (
       await (
@@ -719,6 +741,7 @@ test("refinement card creates a frozen new workflow, reuses sources and automati
   const frozen = JSON.parse(j.context_json);
   assert.equal(frozen.revision_request, text);
   assert.equal(frozen.base_attempt_id, f.id);
+  assert.deepEqual(frozen.dialogue_notes, originalNotes);
   assert.equal(JSON.parse(j.sources_json).length, 1);
   assert.equal((await message(f, text, "refine-answer", 5)).status, 200);
   assert.equal(

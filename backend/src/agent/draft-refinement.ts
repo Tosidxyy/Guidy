@@ -213,8 +213,8 @@ export async function draftRefinement(
     goal: context.goal,
     conditions: context.conditions,
     dialogue_notes: (context.dialogue_notes ?? [])
-      .slice(-3)
-      .map((s: string) => s.slice(0, 160)),
+      .slice(-8)
+      .map((s: string) => s.slice(0, 600)),
     base_attempt_id: source.id,
     previous_plan: compact,
     revision_request: request,

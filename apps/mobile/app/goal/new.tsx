@@ -9,10 +9,10 @@ import { useAccount } from '../../src/auth/AuthProvider';
 import { deleteDraft, readDraft, saveDraft } from '../../src/goals/storage';
 
 export default function NewGoalScreen() {
-  const { user } = useAccount();
-  return <NewGoalBody key={user?.id ?? 'anonymous'} signedIn={!!user} />;
+  const { user, pending } = useAccount();
+  return <NewGoalBody key={user?.id ?? 'anonymous'} signedIn={!!user} accountPending={pending} />;
 }
-function NewGoalBody({ signedIn }: { signedIn: boolean }) {
+function NewGoalBody({ signedIn, accountPending }: { signedIn: boolean; accountPending: boolean }) {
   const { colors } = useTheme();
   const [description, setDescription] = useState('');
   const [ready, setReady] = useState(false);
@@ -35,7 +35,7 @@ function NewGoalBody({ signedIn }: { signedIn: boolean }) {
   }, []);
 
   async function continueGoal(start: boolean) {
-    if (!ready || busy.current) return;
+    if (!ready || accountPending || busy.current) return;
     let draft: GoalDraft;
     try {
       // Retain a previously saved timeframe without asking for another field.
@@ -69,7 +69,7 @@ function NewGoalBody({ signedIn }: { signedIn: boolean }) {
 
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <Screen title="新想法" bottomInset footer={<>
-      <Action label={saving ? '正在准备…' : signedIn ? 'Guidy！' : '保存想法并登录'} disabled={!ready || saving || !description.trim()} onPress={() => void continueGoal(true)} />
+      <Action label={accountPending ? '正在恢复账号…' : saving ? '正在准备…' : signedIn ? 'Guidy！' : '保存想法并登录'} disabled={!ready || accountPending || saving || !description.trim()} onPress={() => void continueGoal(true)} />
       <Caption>先聊三个重要问题，再由 Guidy 制订方案。</Caption>
     </>}>
       <Pressable accessibilityRole="button" disabled={saving} onPress={() => router.replace('/(tabs)/goals')} style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
@@ -80,11 +80,11 @@ function NewGoalBody({ signedIn }: { signedIn: boolean }) {
         <Caption>一句想法就够了。时间、基础和限制，我们一起聊。</Caption>
       </View>
       <Card>
-        <TextInput accessibilityLabel="我的目标" placeholder="我想学韩语，旅行时能和当地人交流…" placeholderTextColor={colors.secondary} multiline maxLength={300} editable={ready && !saving} value={description} onChangeText={setDescription} style={{ color: colors.text, fontSize: 20, lineHeight: 30, minHeight: 200, textAlignVertical: 'top' }} />
+        <TextInput accessibilityLabel="我的目标" placeholder="我想学韩语，旅行时能和当地人交流…" placeholderTextColor={colors.secondary} multiline maxLength={300} editable={ready && !accountPending && !saving} value={description} onChangeText={setDescription} style={{ color: colors.text, fontSize: 20, lineHeight: 30, minHeight: 200, textAlignVertical: 'top' }} />
         <Caption>{description.length} / 300</Caption>
       </Card>
       {!!error && <AppText accessibilityRole="alert" accessibilityLiveRegion="polite">{error}</AppText>}
-      {!!description.trim() && <Pressable accessibilityRole="button" disabled={!ready || saving} onPress={() => void continueGoal(false)} style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
+      {!!description.trim() && <Pressable accessibilityRole="button" disabled={!ready || accountPending || saving} onPress={() => void continueGoal(false)} style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
         <AppText style={{ color: colors.secondary }}>先保存想法，稍后继续 →</AppText>
       </Pressable>}
     </Screen>

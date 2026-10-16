@@ -727,10 +727,10 @@ export async function dialogueResponse(
               ].includes(t),
           )
           .reverse()
-          .map((t) => t.slice(0, 200))
+          .map((t) => t.slice(0, 600))
       : [];
     if (text.startsWith(answerStopPrefix))
-      planningNotes.push(text.slice(answerStopPrefix.length).slice(0, 200));
+      planningNotes.push(text.slice(answerStopPrefix.length));
     while (planningNotes.length > 8) planningNotes.shift();
     const completed = Date.now();
     await db.batch([
