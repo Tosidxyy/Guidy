@@ -1,7 +1,7 @@
 # Guidy｜独立开发任务清单与里程碑
 
 > **版本**：v0.1 开发计划草案（2026-10-09）  
-> **状态**：M0 基础工程开发中；本地真实 OTP 与云开发 Worker/D1 已就绪，正式邮件/云端认证/新认证真机验收未完成  
+> **状态**：邮箱云登录、卡片问答、自动研究/制订、确认日历与方案修订已接通；旧手工流程已退役，最新完整iPhone验收和V0.1通知/反馈闭环仍未完成。逐轮真实证据见文末及[改造验收](REDESIGN_ACCEPTANCE.md)。
 > **人员与环境**：个人开发者；Windows + iPhone；Expo / React Native + Cloudflare Workers / TypeScript  
 > **关联**：[PRD.md](./PRD.md) · [ARCHITECTURE.md](./ARCHITECTURE.md) · [UI_DESIGN.md](./UI_DESIGN.md) · [DATABASE.md](./DATABASE.md)
 
@@ -1171,3 +1171,17 @@ Browser plugin not available，Playwright/Edge隔离本地身份实际验证：�
 隔离云端真实Workflow/DeepSeek两次调用（研究判断+strict生成），搜索/邮件0：15分钟任务输出听音5+跟读10，累计07:00–07:05/07:05–07:15；明确确认版本2后新4scheduled，旧未来4superseded、完成/跳过及原稿字节保留，同键仅1新Job。API分段来自不可变版本，当前活动版本过滤正确。云QA身份按ID/随机测试邮箱精确清理，无凭据或真实用户正文输出。最终Worker/Workflow部署70f4106b-bf30-4ee6-8ce7-c1e3f1c93d36完成，health200/messages匿名401；真实模型QA在此前相同分段实现部署完成，最终仅补非法UUID元数据边界，未重复付费调用。
 
 旧数据清理只读审计：固定截止2026-10-14T11:47:50Z之前old_planning_jobs/plans/reviews/search_results/source_jobs/sources/embedded_plans均0，未重复删除后来方案。初次状态用例残留旧编辑字段422、ScrollView.measure类型错误、effect同步重置lint及structuredClone环境lint均修正后检查通过；native View测量/按请求键异步快照用于滚动和读取。按约定本记录单独提交后push origin/main并核对远程SHA；下一轮先完成剩余运行模块引用审计及完整产品验收。
+
+
+### 2026-10-16 退役模块引用清理与现行体验说明
+
+- [x] 从Worker入口与全部mobile app路由递归检查本地TS/TSX引用，清理9个无现行页面/工作流使用的运行模块：手填readiness（两端）、手动来源/搜索结果、旧排程文案及常量、手填条件客户端、演示挑战计时、已删除连接面板的health客户端。删除未调用的数值review/建议手填辅助与fixed-events读取函数；内部事实/引用/草稿/排程校验仍保留。
+- [x] 真实OTP输入规范化更名otp-input，行为不变；删除退役模块专用测试/夹具、移除CI的退役test:api客户端命令，保留后端health/API及当前全部边界测试。现行方案测试从混合research文件移到plans.test.mjs；无未通过测试被绕过。
+- [x] 更新根README、mobile说明、iPhone预览与测试入口；删除手机指南中已不存在的条件/来源/审阅操作，新增按明确需求逐项映射代码/测试的REDESIGN_ACCEPTANCE.md。后端30个src模块、mobile27个src模块的入口可达性检查通过（含类型引用），没有缺失本地引用；这不是证明每个导出都必需的完整静态分析。
+- [ ] 最新完整iPhone上的键盘、日期定位、滑动、前后台、VoiceOver/大字体仍未验证；全目标最终验收尚不能宣称完成。既有无segments方案保持原做法，细分需明确重新制订。后续先解决真实验收发现的问题，不以增加手填表单替代Agent流程。
+
+实现 Commit 78f9257。backend typecheck/lint/format:check及build:cloud dry-run通过；node --experimental-strip-types --test --test-concurrency=2 tests/*.test.mjs全量114/114通过（删除退役readiness的2项；现行harness、自动研究、确认/重规划、原子性、历史和reset均通过）。mobile最终typecheck/lint、test:ui-state28/28及export:ios通过；原42项中删除14项退役模块专用用例，当前OTP输入、方案/引用、对话/来源、三主题/额度、日程、完整历史、过期恢复与每日分段校验仍覆盖。6文档74本地链接、脚本文件路径与git diff --check通过。CI配置命令核对通过；未把本地通过说成GitHub远程job已通过。
+
+继续应用frontend-testing-debugging技能。Browser plugin not available，Playwright/Edge复用本轮重新确认存活的localhost:8090和本地Worker8787，隔离本地账号实际OTP登录→只读目标摘要0输入框→暂停/恢复与原描述/问答保留→受控草稿自动候选→两段20:00–20:05/20:05–20:20卡片及具体做法在视口可见→明确确认12实例→Reload→日历日期→回看/查看方案→320窄屏无页面溢出。最终脚本完整通过、无相关控制台error/warn；.cache/guidy-daily-blocks.png经view_image核对黑白卡片。受控草稿/问答用于浏览器夹具，不冒充实际模型生成或完整从头三题质量验收；模型/搜索/真实邮件0，测试身份与本地收件箱精确清理。
+
+本轮只删除后端不可达模块，Worker/Workflow运行路径未变，未重新部署云端或重复付费模型测试；云端保持前轮70f4106b-bf30-4ee6-8ce7-c1e3f1c93d36。无依赖/迁移、无额外真实数据删除；既定截止前旧生成数据为0的云只读证据沿用前轮，后来方案不删除。按约定单独进度提交后push origin/main核对远程SHA；下一轮依据验收清单继续补齐最终证据和实际缺口。
