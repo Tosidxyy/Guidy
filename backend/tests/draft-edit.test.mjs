@@ -15,7 +15,7 @@ import {
 import { ASK_AUTO } from "../src/scheduling/chat.ts";
 import { checkedDialogue } from "../../apps/mobile/src/goals/dialogue.ts";
 import { dialogueResponse } from "../src/agent/harness.ts";
-import { calendarResponse } from "../src/scheduling/calendar.ts";
+import { upcomingCalendarResponse } from "../src/scheduling/calendar.ts";
 import { createApp } from "../src/index.ts";
 test("begin from a filled third card includes that answer without paying for another question", async (t) => {
   const f = await ready(t);
@@ -436,19 +436,19 @@ test("calendar reader bounds and authenticated router are registered without log
   for (const method of ["GET", "POST"]) {
     const r = await app.fetch(
       new globalThis.Request(
-        "http://localhost/api/v1/calendar/fixed-events?from=1&to=2",
+        "http://localhost/api/v1/calendar/events?from=1&to=2",
         { method },
       ),
       env,
     );
     assert.equal(r.status, 401);
   }
-  assert.ok(logs.every((l) => l.route === "/api/v1/calendar/fixed-events"));
+  assert.ok(logs.every((l) => l.route === "/api/v1/calendar/events"));
   assert.equal(
     (
-      await calendarResponse(
+      await upcomingCalendarResponse(
         new globalThis.Request(
-          "http://localhost/api/v1/calendar/fixed-events?from=1&to=2&owner=other",
+          "http://localhost/api/v1/calendar/events?from=1&to=2&owner=other",
         ),
         f.db,
         f.owner,
@@ -459,9 +459,9 @@ test("calendar reader bounds and authenticated router are registered without log
   );
   assert.equal(
     (
-      await calendarResponse(
+      await upcomingCalendarResponse(
         new globalThis.Request(
-          "http://localhost/api/v1/calendar/fixed-events?from=0&to=99999999999999",
+          "http://localhost/api/v1/calendar/events?from=0&to=99999999999999",
         ),
         f.db,
         f.owner,

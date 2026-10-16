@@ -6,10 +6,7 @@ import type { WorkflowBinding } from "./agent/workflow-binding.ts";
 import { questionHistoryResponse } from "./agent/question-history.ts";
 import { dialogueResponse } from "./agent/harness.ts";
 import { approvalResponse } from "./scheduling/approval.ts";
-import {
-  upcomingCalendarResponse,
-  calendarResponse,
-} from "./scheduling/calendar.ts";
+import { upcomingCalendarResponse } from "./scheduling/calendar.ts";
 import type { AgentEnv } from "./agent/provider.ts";
 
 export interface Env extends AuthEnv, AgentEnv, SearchEnv {
@@ -64,7 +61,6 @@ async function authResponse(
   const path = new URL(request.url).pathname;
   if (
     path === "/api/v1/calendar/events" ||
-    path === "/api/v1/calendar/fixed-events" ||
     path === "/api/v1/goals" ||
     /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|question-history|planning-runs|plan-approval))?$/.test(
       path,
@@ -83,8 +79,6 @@ async function authResponse(
       return upcomingCalendarResponse(request, env.DB!, session.user.id, id);
     if (path.endsWith("/plan-approval"))
       return approvalResponse(request, env.DB!, session.user.id, id);
-    if (path === "/api/v1/calendar/fixed-events")
-      return calendarResponse(request, env.DB!, session.user.id, id);
     if (path.endsWith("/planning-runs"))
       return planningResponse(
         request,
@@ -324,7 +318,6 @@ export function createApp({
       const path = new URL(request.url).pathname;
       const isGoals =
         path === "/api/v1/calendar/events" ||
-        path === "/api/v1/calendar/fixed-events" ||
         path === "/api/v1/goals" ||
         /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|question-history|planning-runs|plan-approval))?$/.test(
           path,

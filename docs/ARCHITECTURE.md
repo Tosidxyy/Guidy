@@ -208,3 +208,8 @@ planning_jobs预留、各阶段有效性及最终草稿写入均绑定当前Goal
 日历接口从不可变PlanVersion读取任务segments，仅投影当前活动版本中scheduled的实例；completed/skipped/superseded/cancelled不作为激活时间段展示，历史数据保留。方案内已确认日历也读取该接口，候选则使用已校验的草稿与拟排程。日期选择自动定位到日详情，展示明确起止时间、任务、分步做法的卡片。
 
 目标管理只读显示原始想法，补充条件回到Agent；PATCH仅接收status/expected_revision，保留幂等/owner/事务回执，禁止手工改描述或期望时间。只允许未批准draft/paused状态，活动计划另由确认版本协议维护。
+
+
+### 2026-10-16 日历读取入口收敛
+
+删除无现行客户端调用的calendar/fixed-events路由与calendarResponse/calendarSnapshot专用读取实现；GET/POST/PATCH等旧地址统一404。现行calendar/events仍做owner过滤、31天范围/额外参数校验，返回当前激活计划时间段与本人固定事项。planningCalendarSnapshot继续读取实际有效占用，保留确定性冲突检查；没有删除calendar_events或执行历史，也不新增手填入口。

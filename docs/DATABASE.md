@@ -268,4 +268,4 @@ calendar_states按owner保存revision/提交run标记；calendar_events首批只
 
 remaining_plan_v1快照绑定replaces_plan_id、原未来实例ID集合、曾完成的依赖来源与日期偏好。旧确认版本、已发生/已完成/跳过实例不删除；只有再次确认成功，同一事务写新版本与新未来实例，将旧父版本仍未开始的scheduled实例标为superseded。准入再查父关联、Goal/日历/最新聊天、未来实例集合数量、已完成依赖状态和实际冲突，不能由旧提案覆盖别的版本。
 
-calendar/events读取仍有效的scheduled/completed/skipped记录，过去版本也可显示，不只连接当前指针；排程读取所有有效scheduled记录避免漏掉正在发生的旧安排。调整本目标时仅排除其父版本未来待替代实例，固定事项与其他目标仍避让。原重复顺序的过去节点可越过；未记录完成的跨任务前置不猜成完成，保留未安排状态等待核对。
+2026-10-16按用户“只展示激活时间段”要求，calendar/events只投影goal_active_plans指向版本中的scheduled实例及本人固定事项，completed/skipped/superseded/cancelled和旧版本不混入当前日详情；历史仍保存在原表，不因隐藏而删除。排程继续读取所有有效scheduled占用，避免漏掉正在发生的旧安排。调整本目标时仅排除其父版本未来待替代实例，固定事项与其他目标仍避让。原重复顺序的过去节点可越过；未记录完成的跨任务前置不猜成完成，保留未安排状态等待核对。

@@ -27,6 +27,16 @@ test("retired manual routes cannot read or mutate data, including old deep links
       assert.equal(response.status, 404, `${route} ${method}`);
     }
   }
+  for (const method of ["GET", "POST", "PATCH"]) {
+    const response = await app.fetch(
+      new globalThis.Request(
+        "https://api.guidy.fun/api/v1/calendar/fixed-events?from=1&to=2&owner=other",
+        { method },
+      ),
+      {},
+    );
+    assert.equal(response.status, 404, `fixed-events ${method}`);
+  }
 });
 
 test("bounded body reader measures bytes and cancels excessive streamed input", async () => {
