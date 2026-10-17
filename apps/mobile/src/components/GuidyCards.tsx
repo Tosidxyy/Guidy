@@ -1,48 +1,64 @@
+import {useEffect,useRef,useState} from 'react';
+import {ActivityIndicator,Keyboard,KeyboardAvoidingView,Modal,Platform,Pressable,ScrollView,TextInput,View} from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import {AgendaScroll} from './AgendaScroll';
 import {QuestionHistory} from './QuestionHistory';
-import {useEffect,useRef,useState} from 'react';
-import {Keyboard,KeyboardAvoidingView,Modal,Platform,Pressable,ScrollView,TextInput,useWindowDimensions,View} from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
 import {Action,AppText,Caption,Card} from './ui';
 import {useTheme} from '../theme/ThemeProvider';
 import type {Dialogue} from '../goals/dialogue';
 import {ASK_AUTO} from '../goals/schedule';
 import {shouldShowPlan} from '../goals/plan-presentation';
-import {currentQuestion} from '../goals/question-recovery';
+import {createCalendarEvent,discuss,getDiscussion,type DiscussionTurn} from '../goals/api';
 export const MORE_QUESTIONS='请继续问我一个有助于完善方案的问题。';
-export function GuidyCards({data,text,onText,onSend,onBack,error,busy,reload,result}:{data:Dialogue;text:string;onText:(s:string)=>void;onSend:(s?:string)=>Promise<void>;onBack:()=>void;error:string;busy:boolean;reload:()=>void;result:React.ReactNode}){
- const [historyOpen,setHistoryOpen]=useState(false);
- const [discard,setDiscard]=useState(false),[questionStartRunId,setQuestionStartRunId]=useState('');
- const {colors}=useTheme(),{width}=useWindowDimensions(),viewport=Math.min(width,600);
- const started=useRef(false);useEffect(()=>{if(!started.current&&!busy&&data.runs.length===0&&data.goal.status==='draft'){started.current=true;void onSend('请根据我的目标和已确认条件，提出一个必要的澄清问题。');}},[busy,data.runs.length,data.goal.status,onSend]);
- const [pagerHeight,setPagerHeight]=useState(0);
- const questions=data.runs.filter(r=>r.reply?.kind==='question'||r.reply?.kind==='referral');
- const [keyboardOpen,setKeyboardOpen]=useState(false);useEffect(()=>{const a=Keyboard.addListener("keyboardDidShow",()=>setKeyboardOpen(true)),b=Keyboard.addListener("keyboardDidHide",()=>setKeyboardOpen(false));return()=>{a.remove();b.remove();};},[]);
- const [selection,setSelection]=useState({count:questions.length,index:Math.max(0,questions.length-1)}),[showPlan,setShowPlan]=useState(false),[forceQuestions,setForceQuestions]=useState(false);
- const scroll=useRef<ScrollView|null>(null);useEffect(()=>{scroll.current?.scrollTo({x:Math.max(0,questions.length-1)*viewport,animated:true});},[questions.length,viewport]);
- const index=selection.count===questions.length?selection.index:Math.max(0,questions.length-1);
- const last=data.runs.at(-1),ready=(data.asked_topics?.length??0)>=3,enabled=['draft','active'].includes(data.goal.status);
- const editableQuestion=currentQuestion(data),retrying=last?.status==='failed';
- const blocked=data.runs.some(r=>r.reply?.source==='policy');
- const autoResult=['draft_requested','schedule_preview'].includes(last?.reply?.stage??'')&&last?.id!==questionStartRunId;
- const plan=shouldShowPlan(data,showPlan||autoResult,autoResult?false:forceQuestions);
- function openHistory(){Keyboard.dismiss();setHistoryOpen(true);}
- async function begin(){setShowPlan(true);setForceQuestions(false);await onSend(text.trim()?'根据当前回答开始制订：'+text.trim():'先到这里，请根据现有信息准备方案草稿。');}
- async function more(){setQuestionStartRunId(last?.id??'');setShowPlan(false);setForceQuestions(true);await onSend(text.trim()&&editableQuestion?undefined:MORE_QUESTIONS);}
- return <KeyboardAvoidingView style={{flex:1,backgroundColor:colors.background}} behavior={Platform.OS==='ios'?'padding':undefined}><SafeAreaView style={{flex:1}} edges={['top','bottom','left','right']}>
- <View style={{padding:20,flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}><Pressable accessibilityRole="button" accessibilityLabel="返回目标" onPress={()=>text.trim()?setDiscard(true):onBack()} style={{minWidth:44,minHeight:44,alignItems:'center',justifyContent:'center'}}><AppText style={{fontSize:28}}>‹</AppText></Pressable><AppText style={{fontSize:22,fontWeight:'700',flex:1,textAlign:'center'}}>Guidy!</AppText><Pressable accessibilityRole="button" accessibilityLabel="回看全部回答" disabled={busy||data.chat_revision===0} onPress={openHistory} style={{minWidth:56,minHeight:44,alignItems:'flex-end',justifyContent:'center'}}><Caption>{plan||data.goal.status==='active'?'回看':Math.min(data.asked_topics?.length??0,3)+' / 3 · 回看'}</Caption></Pressable></View>
- {!!error&&<View style={{paddingHorizontal:20,gap:8}}><AppText accessibilityRole="alert">{error}</AppText><Action label="重新读取" secondary disabled={busy} onPress={reload}/></View>}
- {plan?<AgendaScroll contentContainerStyle={{padding:20,gap:16}} keyboardShouldPersistTaps="handled">{result}{<Action label="回看回答" secondary disabled={busy} onPress={openHistory}/>}{enabled&&<Action label="继续问答" disabled={busy||!enabled} onPress={()=>{void more();}}/>}</AgendaScroll>:<>
- {data.goal.status==='draft'&&<View style={{marginHorizontal:20,height:4,borderRadius:2,backgroundColor:colors.divider,marginBottom:20}}><View style={{height:4,borderRadius:2,width:`${Math.min(data.asked_topics?.length??0,3)/3*100}%`,backgroundColor:colors.action}}/></View>}
- {!questions.length?<View style={{flex:1,padding:20,justifyContent:'center',gap:24}}><AppText style={{fontSize:28,fontWeight:'600'}}>把想做的事，交给Guidy。</AppText><Caption>{data.goal.description||data.goal.title}</Caption><Action label={busy?'正在准备…':'Guidy！'} disabled={busy||!enabled} onPress={()=>{void onSend('请根据我的目标和已确认条件，提出一个必要的澄清问题。');}}/></View>:<ScrollView ref={scroll} onLayout={e=>setPagerHeight(e.nativeEvent.layout.height)} horizontal pagingEnabled contentContainerStyle={{height:"100%"}} showsHorizontalScrollIndicator={false} onMomentumScrollEnd={e=>setSelection({count:questions.length,index:Math.round(e.nativeEvent.contentOffset.x/viewport)})} style={{flex:1}} keyboardShouldPersistTaps="handled">
- {questions.map((q,i)=>{const position=data.runs.findIndex(r=>r.id===q.id),next=data.runs[position+1],answer=next&&![ASK_AUTO,MORE_QUESTIONS,'请根据我的目标和已确认条件，提出一个必要的澄清问题。'].includes(next.user_text)&&next.user_text!=='先到这里，请根据现有信息准备方案草稿。'?next.user_text.replace(/^根据当前回答开始制订：/,''):undefined;const current=i===questions.length-1&&editableQuestion?.id===q.id&&q.reply?.kind==='question';return <View key={q.id} style={{width:viewport,height:pagerHeight||undefined,paddingHorizontal:20,paddingBottom:16}}><Card style={{flex:1,padding:24}}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{gap:20,flexGrow:1}}><Caption>问题 {i+1} · 左右滑动回看</Caption><AppText style={{fontSize:24,lineHeight:32,fontWeight:'600'}}>{q.reply?.question}</AppText>{current?<TextInput accessibilityLabel="回答Agent的问题" multiline maxLength={500} value={text} onChangeText={onText} editable={!busy&&enabled} placeholder="写下你的回答…" placeholderTextColor={colors.secondary} style={{flex:1,minHeight:130,padding:16,fontSize:18,color:colors.text,backgroundColor:colors.subtle,borderRadius:16,textAlignVertical:'top'}}/>:<AppText>{answer??'尚未回答'}</AppText>}{current&&retrying&&<Caption>回答已保留。点击箭头重试会重新调用 AI。</Caption>}{current&&q.reply?.stage==='refine_question'&&<Caption>提交后会重新制订，原方案仍保留。</Caption>}{current&&<Pressable accessibilityRole="button" accessibilityLabel={retrying?'重试回答并继续':q.reply?.stage==='refine_question'?'提交修改并重新制订':'发送回答并继续'} disabled={busy||!text.trim()||!enabled} onPress={()=>{Keyboard.dismiss();void onSend();}} style={{backgroundColor:colors.action,opacity:busy||!text.trim()?0.5:1,width:64,height:64,borderRadius:32,alignItems:'center',justifyContent:'center',alignSelf:'center'}}><AppText style={{color:colors.onAction,fontSize:28}}>→</AppText></Pressable>}</ScrollView></Card></View>;})}
- </ScrollView>}
- {questions.length>0&&<Caption>　{index+1} / {questions.length} 张问答卡片</Caption>}
- {data.goal.status==='draft'&&ready&&!keyboardOpen&&last?.reply?.stage!=='refine_question'&&<View style={{padding:20,gap:10}}><Action label={busy?'正在处理…':'开始制订'} disabled={busy||!enabled||blocked} onPress={()=>{void begin();}}/><Action label="继续问答" secondary disabled={busy||!enabled} onPress={()=>{void more();}}/></View>}
- </>}
- {!plan&&last?.reply?.stage==='refine_question'&&<View style={{padding:20}}><Action label="保留当前方案" secondary onPress={()=>{setShowPlan(true);setForceQuestions(false);}}/></View>}
- {!plan&&data.goal.status==='active'&&questions.length>0&&<View style={{padding:20}}><Action label="返回方案" onPress={()=>{setShowPlan(true);setForceQuestions(false);}}/></View>}
- {historyOpen&&<QuestionHistory key={data.goal.id} goalId={data.goal.id} onClose={()=>setHistoryOpen(false)}/>}
- <Modal transparent visible={discard} onRequestClose={()=>setDiscard(false)}><View style={{flex:1,backgroundColor:"rgba(0,0,0,0.3)",justifyContent:"center",padding:24}}><Card><AppText>当前回答尚未发送，离开后会丢失。</AppText><Action label="继续回答" onPress={()=>setDiscard(false)}/><Action label="放弃并离开" secondary onPress={()=>{setDiscard(false);onBack();}}/></Card></View></Modal>
+const START='请根据我的目标和已确认条件，提出一个必要的澄清问题。';
+const controls=new Set([START,ASK_AUTO,MORE_QUESTIONS,'先到这里，请根据现有信息准备方案草稿。','制订21天策略。']);
+function visibleText(text:string){return controls.has(text)?'':text.replace(/^(根据当前回答(?:开始制订|制订21天策略)：|按讨论修改策略：)/,'');}
+export function GuidyCards({data,text,onText,onSend,onBack,error,busy,reload,result,openChat=false}:{openChat?:boolean;data:Dialogue;text:string;onText:(s:string)=>void;onSend:(s?:string)=>Promise<void>;onBack:()=>void;error:string;busy:boolean;reload:()=>void;result:React.ReactNode}){
+ const {colors}=useTheme(),scroll=useRef<ScrollView>(null),started=useRef(false),lock=useRef(false);
+ const [historyOpen,setHistoryOpen]=useState(false),[discard,setDiscard]=useState(false),[view,setView]=useState<'chat'|'plan'|null>(openChat?'chat':null);
+ const [turns,setTurns]=useState<DiscussionTurn[]>([]),[discussing,setDiscussing]=useState(false),[localError,setLocalError]=useState(''),[saved,setSaved]=useState<string[]>([]);
+ const operation=useRef<{text:string;key:string}|null>(null);
+ const hasStrategy=!!data.auto_schedule||data.goal.status==='active';
+ const plan=view==='plan'||view===null&&shouldShowPlan(data);
+ const enabled=['draft','active'].includes(data.goal.status),blocked=data.runs.some(r=>r.reply?.source==='policy');
+ const answers=data.runs.filter(r=>r.status==='succeeded'&&r.reply?.source==='deepseek'&&visibleText(r.user_text)).length;
+ const ready=(data.asked_topics?.length??0)>=3&&(answers>=3||answers>=2&&!!text.trim());
+ useEffect(()=>{if(!started.current&&!busy&&data.runs.length===0&&data.goal.status==='draft'){started.current=true;void onSend(START);}},[busy,data.runs.length,data.goal.status,onSend]);
+ useEffect(()=>{const c=new AbortController();void getDiscussion(data.goal.id,c.signal).then(setTurns).catch(()=>{if(!c.signal.aborted)setLocalError('讨论记录暂未读取，请重新打开。');});return()=>c.abort();},[data.goal.id]);
+ const pendingDiscussion=turns.some(t=>t.status==='running');
+ useEffect(()=>{if(!pendingDiscussion)return;const c=new AbortController();let timer:ReturnType<typeof setTimeout>;const poll=async()=>{try{const next=await getDiscussion(data.goal.id,c.signal);if(!c.signal.aborted)setTurns(next);}catch{/* A read failure must never trigger another model call. */}if(!c.signal.aborted)timer=setTimeout(()=>void poll(),3000);};timer=setTimeout(()=>void poll(),3000);return()=>{c.abort();clearTimeout(timer);};},[data.goal.id,pendingDiscussion]);
+ async function send(){if(lock.current)return;if(!hasStrategy){await onSend();return;}lock.current=true;setDiscussing(true);setLocalError('');const value=text.trim();if(operation.current?.text!==value)operation.current={text:value,key:'discussion_'+Date.now()+'_'+Math.random().toString(36).slice(2)};try{const next=await discuss(data.goal.id,value,data.goal.revision,operation.current.key);setTurns(next);if(next.at(-1)?.status==='succeeded')onText('');else setLocalError('这次回复暂未完成，输入已保留。');if(next.at(-1)?.status!=='running')operation.current=null;}catch(e){setLocalError(e instanceof Error?e.message:'消息未发送。');try{const next=await getDiscussion(data.goal.id);setTurns(next);if(next.at(-1)?.status==='failed')operation.current=null;}catch{/* Preserve messages and input. */}}finally{lock.current=false;setDiscussing(false);}}
+ async function add(turn:DiscussionTurn){if(lock.current||!turn.reply?.event)return;lock.current=true;setDiscussing(true);setLocalError('');try{await createCalendarEvent(turn.reply.event,data.calendar_revision??0,'discussion_event_'+turn.id,turn.id);setSaved(v=>[...v,turn.id]);reload();}catch(e){setLocalError(e instanceof Error?e.message:'日程未添加。');}finally{lock.current=false;setDiscussing(false);}}
+ async function begin(){Keyboard.dismiss();setView('plan');await onSend(text.trim()?'根据当前回答制订21天策略：'+text.trim():'制订21天策略。');}
+ const working=busy||discussing||pendingDiscussion;
+ return <KeyboardAvoidingView style={{flex:1,backgroundColor:colors.background}} behavior={Platform.OS==='ios'?'padding':undefined}><SafeAreaView edges={['top','bottom','left','right']} style={{flex:1,width:'100%',maxWidth:600,alignSelf:'center'}}>
+  <View style={{paddingHorizontal:16,paddingVertical:8,flexDirection:'row',alignItems:'center',gap:12}}>
+   <Pressable accessibilityRole="button" accessibilityLabel="返回目标" onPress={()=>text.trim()?setDiscard(true):onBack()} style={{minWidth:44,minHeight:44,justifyContent:'center'}}><AppText style={{fontSize:28}}>‹</AppText></Pressable>
+   <View style={{flex:1}}><AppText numberOfLines={1} style={{fontWeight:'600',fontSize:17}}>{data.goal.title}</AppText><Caption>Guidy · 一起把想法变成行动</Caption></View>
+   <Pressable accessibilityRole="button" accessibilityLabel="回看全部回答" onPress={()=>{Keyboard.dismiss();setHistoryOpen(true);}} style={{minHeight:44,justifyContent:'center'}}><Caption>回看</Caption></Pressable>
+  </View>
+  {hasStrategy&&<View style={{flexDirection:'row',paddingHorizontal:24,gap:24,paddingBottom:8}}>{(['chat','plan'] as const).map(v=><Pressable key={v} accessibilityRole="button" accessibilityState={{selected:(plan?'plan':'chat')===v}} onPress={()=>{Keyboard.dismiss();setView(v);}} style={{paddingVertical:12,borderBottomWidth:(plan?'plan':'chat')===v?2:0,borderBottomColor:colors.text}}><AppText style={{fontSize:14,color:(plan?'plan':'chat')===v?colors.text:colors.secondary}}>{v==='chat'?'一起聊聊':'方案策略'}</AppText></Pressable>)}</View>}
+  {!!(error||localError)&&<View style={{paddingHorizontal:24,paddingVertical:8}}><AppText accessibilityRole="alert" style={{fontSize:14}}>{localError||error}</AppText><Pressable accessibilityRole="button" onPress={reload} style={{minHeight:44,justifyContent:'center'}}><Caption>重新读取</Caption></Pressable></View>}
+  {plan?<AgendaScroll contentContainerStyle={{padding:24,gap:24}}>{result}<Action label="继续聊聊" secondary onPress={()=>setView('chat')}/></AgendaScroll>:<>
+   <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" onContentSizeChange={()=>scroll.current?.scrollToEnd({animated:false})} contentContainerStyle={{padding:24,gap:24,paddingBottom:32}}>
+    <View style={{alignSelf:'flex-start',gap:6}}><Caption>Guidy</Caption><AppText style={{fontSize:18,lineHeight:28}}>这次，你想制订什么计划？</AppText></View>
+    <Bubble>{data.goal.description||data.goal.title}</Bubble>
+    {!hasStrategy&&!data.runs.some(r=>r.reply?.kind==='question')&&data.runs.some(r=>r.status==='failed')&&<Action label="重新开始提问" secondary disabled={working} onPress={()=>void onSend(START)}/>}
+    {data.runs.map(r=><View key={r.id} style={{gap:24}}>{!!visibleText(r.user_text)&&<Bubble>{visibleText(r.user_text)}</Bubble>}{r.reply?.kind==='question'||r.reply?.kind==='referral'?<View style={{gap:6,paddingRight:20}}><Caption>Guidy</Caption><AppText style={{fontSize:17,lineHeight:27}}>{r.reply.question}</AppText></View>:null}</View>)}
+    {turns.map(t=><View key={t.id} style={{gap:20}}><Bubble>{t.user_text}</Bubble>{t.reply&&<View style={{gap:12,paddingRight:8}}><Caption>Guidy</Caption><AppText style={{fontSize:17,lineHeight:27}}>{t.reply.message}</AppText>{t.reply.event&&<Card><AppText style={{fontWeight:'600'}}>{t.reply.event.title}</AppText><Caption>{new Date(t.reply.event.start_at).toLocaleString('zh-CN',{timeZone:t.reply.event.timezone})} — {new Date(t.reply.event.end_at).toLocaleTimeString('zh-CN',{timeZone:t.reply.event.timezone,hour:'2-digit',minute:'2-digit'})}</Caption><Action label={(saved.includes(t.id)||!!t.saved_event_id)?'已加入日历':'确认新增事件'} disabled={working||(saved.includes(t.id)||!!t.saved_event_id)||t.goal_revision!==data.goal.revision} onPress={()=>void add(t)}/></Card>}{t.reply.revision&&<Action label="按这个方向修改策略" secondary disabled={working||t.goal_revision!==data.goal.revision} onPress={()=>{setView('plan');void onSend('按讨论修改策略：'+t.reply!.revision);}}/>}</View>}{t.status==='failed'&&<Caption>这条消息暂未得到回复，可以重新发送。</Caption>}</View>)}
+    {working&&<View style={{flexDirection:'row',gap:8,alignItems:'center'}}><ActivityIndicator size="small" color={colors.secondary}/><Caption>Guidy 正在想…</Caption></View>}
+   </ScrollView>
+   <View style={{paddingHorizontal:20,paddingBottom:12,paddingTop:8,gap:10}}>
+    {!hasStrategy&&<Caption>{Math.min(answers,3)<3?`已聊 ${Math.min(answers,3)} 轮 · 三轮后开始制订`:'已经了解你的想法，可以制订策略了'}</Caption>}
+    <View style={{flexDirection:'row',alignItems:'flex-end',gap:8,padding:8,paddingLeft:16,backgroundColor:colors.surface,borderRadius:24,borderWidth:1,borderColor:colors.divider}}>
+     <TextInput accessibilityLabel="回答Agent的问题" placeholder={hasStrategy?'讨论方案，或告诉我想添加的日程…':'和 Guidy 聊聊…'} placeholderTextColor={colors.secondary} multiline maxLength={500} value={text} onChangeText={onText} editable={!working&&enabled&&!blocked} style={{flex:1,minHeight:40,maxHeight:132,paddingVertical:10,color:colors.text,fontSize:16,lineHeight:23}}/>
+     <Pressable accessibilityRole="button" accessibilityLabel="发送回答并继续" disabled={working||!text.trim()||!enabled||blocked} onPress={()=>void send()} style={({pressed})=>({width:44,height:44,borderRadius:22,alignItems:'center',justifyContent:'center',backgroundColor:colors.action,opacity:working||!text.trim().length?0.35:pressed?0.75:1})}><AppText style={{color:colors.onAction,fontSize:25,lineHeight:30}}>↑</AppText></Pressable>
+    </View>
+    {!hasStrategy&&<Action label="制订21天策略" disabled={!ready||working||blocked||!enabled} onPress={()=>void begin()}/>}
+   </View>
+  </>}
+  {historyOpen&&<QuestionHistory goalId={data.goal.id} onClose={()=>setHistoryOpen(false)}/>}
+  <Modal transparent visible={discard} onRequestClose={()=>setDiscard(false)}><View style={{flex:1,backgroundColor:'rgba(0,0,0,0.3)',justifyContent:'center',padding:24}}><Card><AppText>还有一条未发送的消息。</AppText><Action label="继续聊天" onPress={()=>setDiscard(false)}/><Action label="放弃并离开" secondary onPress={onBack}/></Card></View></Modal>
  </SafeAreaView></KeyboardAvoidingView>;
 }
+function Bubble({children}:{children:React.ReactNode}){const {colors}=useTheme();return <View style={{alignSelf:'flex-end',maxWidth:'88%',backgroundColor:colors.divider,borderRadius:18,borderBottomRightRadius:5,paddingHorizontal:16,paddingVertical:12}}><AppText style={{fontSize:16,lineHeight:25}}>{children}</AppText></View>;}

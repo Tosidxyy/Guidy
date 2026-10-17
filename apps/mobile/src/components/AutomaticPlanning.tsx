@@ -1,3 +1,4 @@
+import {StrategyOverview} from './StrategyOverview';
 import type {ApprovedPlan} from '../goals/approval';
 import {View,AppState} from 'react-native';
 import {candidateExpired,candidateKeyCurrent,planningDay} from '../goals/candidate-expiry';
@@ -45,11 +46,12 @@ export function AutomaticPlanning({id,owner,calendarRevision,automaticScheduleKe
    {job.status==='queued'&&job.dispatched===0&&<Action label={busy?'正在恢复…':'恢复本次后台任务'} secondary disabled={busy} onPress={()=>{void resume();}}/>}
    {planningActive(job)&&<Caption>可以离开，重进后恢复后台进度。不会写入日历。</Caption>}
    {job.plan&&draft&&<>
-    <AppText style={{fontSize:24,fontWeight:'600'}}>{draft!.title}</AppText><Caption>{draft!.summary}</Caption>
+    <StrategyOverview draft={draft!}/>
     {pending&&matching&&<Caption>确认后只替换未来尚未执行的安排，已完成、跳过和过去的记录仍保留。</Caption>}
-    {(accepted||matching)&&displayed&&<PlanCalendar approved={!!accepted} planVersionId={accepted?.id} segments={taskId=>draft!.tasks.find(t=>t.id===taskId)?.segments} schedule={displayed} instructions={taskId=>draft!.tasks.find(t=>t.id===taskId)?.instructions}/>}
+    {accepted&&displayed&&<PlanCalendar approved={!!accepted} planVersionId={accepted?.id} segments={taskId=>draft!.tasks.find(t=>t.id===taskId)?.segments} schedule={displayed} instructions={taskId=>draft!.tasks.find(t=>t.id===taskId)?.instructions}/>}
     {!!accepted&&<Caption>方案已确认，日历中可查看每日安排。</Caption>}
-    {!accepted&&matching&&!requestWaiting&&<Action label={approving?'正在加入日历…':pending?'确认调整并更新日历':'确认方案并加入日历'} disabled={approving||loading||!!error||!canSchedule||!automaticScheduleRunId||!!automaticSchedule?.preview?.unplaced.length} onPress={()=>{void accept();}}/>}
+    {!accepted&&matching&&!requestWaiting&&<Action label={approving?'正在加入日历…':pending?'确认调整并更新日历':'接受策略并安排'} disabled={approving||loading||!!error||!canSchedule||!automaticScheduleRunId||!!automaticSchedule?.preview?.unplaced.length} onPress={()=>{void accept();}}/>}
+    {!accepted&&matching&&!!displayed?.preview?.unplaced.length&&<Caption>有些任务暂时排不下，请继续聊聊调整投入或时间。</Caption>}
     {draft!.risks.map((risk,i)=><Caption key={`risk-${i}`}>需留意：{risk}</Caption>)}
     {draft!.assumptions.map((assumption,i)=><Caption key={`assumption-${i}`}>待核对：{assumption}</Caption>)}    {!accepted&&!matching&&<><Caption>{expired?'正在更新已过期的日期建议，原方案保留；不会调用 AI。':'正在准备日历建议；你也可以继续补充偏好。'}</Caption><Action label="重新准备建议日程" secondary disabled={!canSchedule||loading||(!pending&&!autoKey)||(expired&&!pending&&!!autoKey&&!candidateKeyCurrent(autoKey,candidateTimezone,now))} onPress={()=>{if(pending&&automaticSchedule?.scope==='remaining_plan_v1')onAutoSchedule('refresh_replan_'+automaticScheduleRunId+'_'+planningDay(automaticSchedule?.timezone??'Asia/Shanghai',now));else if(autoKey)onAutoSchedule(autoKey);}}/></>}
 

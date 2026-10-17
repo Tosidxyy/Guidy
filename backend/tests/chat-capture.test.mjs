@@ -718,3 +718,52 @@ test("development global limit blocks model work without exposing other account 
   assert.equal((await response.json()).error.code, "AI_GLOBAL_LIMIT");
   assert.equal(f.calls(), 0);
 });
+
+test("21-day planning requires three answered rounds and freezes its contract without an extra model call", async (t) => {
+  const f = await setup(t);
+  let r = await f.post(
+    "请根据我的目标和已确认条件，提出一个必要的澄清问题。",
+    "strategy-start",
+  );
+  let d = (await r.json()).data;
+  for (const [i, text] of ["能独立完成旅行交流", "你来安排吧"].entries()) {
+    r = await f.post(
+      text,
+      "strategy-answer-" + i,
+      d.chat_revision,
+      d.goal.revision,
+    );
+    assert.equal(r.status, 200);
+    d = (await r.json()).data;
+  }
+  assert.equal(
+    (
+      await f.post(
+        "制订21天策略。",
+        "strategy-too-early",
+        d.chat_revision,
+        d.goal.revision,
+      )
+    ).status,
+    422,
+  );
+  r = await f.post(
+    "根据当前回答制订21天策略：完全零基础，只用免费资源。",
+    "strategy-ready",
+    d.chat_revision,
+    d.goal.revision,
+  );
+  assert.equal(r.status, 200);
+  assert.equal(f.calls(), 3);
+  const row = await f.db
+    .prepare("SELECT context_json FROM planning_jobs WHERE goal_id=?")
+    .bind(f.goal)
+    .first();
+  const c = JSON.parse(row.context_json);
+  assert.equal(c.planning_contract, "strategy_21_v1");
+  assert.ok(c.dialogue_notes.includes("完全零基础，只用免费资源。"));
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM plan_versions").first()).n,
+    0,
+  );
+});

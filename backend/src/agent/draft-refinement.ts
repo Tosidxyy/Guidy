@@ -23,6 +23,7 @@ export async function draftRefinement(
     )
   )
     return null;
+  const directRevision = text.startsWith("按讨论修改策略：");
   const more = [
     "请继续问我一个有助于完善方案的问题。",
     "我想调整未来的安排。",
@@ -50,7 +51,12 @@ export async function draftRefinement(
   if (explicitRetry && (!saved || !saved.available))
     return { status: 409, code: "REFINEMENT_RETRY_UNAVAILABLE" };
   const retry = saved?.available ? saved : null;
-  if (!more && !retry && previous?.stage !== "refine_question") {
+  if (
+    !directRevision &&
+    !more &&
+    !retry &&
+    previous?.stage !== "refine_question"
+  ) {
     const replay = await db
       .prepare(
         "SELECT request_payload FROM agent_runs WHERE goal_id=? AND owner_id=? AND request_key=?",
@@ -93,7 +99,12 @@ export async function draftRefinement(
       (retry.parentId ?? "") !== (parent?.id ?? ""))
   )
     return { status: 409, code: "CONTEXT_CHANGED" };
-  if (!more && !retry && previous.base_attempt_id !== source.id)
+  if (
+    !directRevision &&
+    !more &&
+    !retry &&
+    previous.base_attempt_id !== source.id
+  )
     return { status: 409, code: "CONTEXT_CHANGED" };
   const core = await db
     .prepare(
@@ -103,7 +114,9 @@ export async function draftRefinement(
     .first();
   if (!parent && Number(core?.n ?? 0) < 3)
     return { status: 422, code: "CLARIFICATION_MINIMUM_NOT_MET" };
-  const request = retry?.request ?? text.replace(/^根据当前回答开始制订：/, "");
+  const request =
+    retry?.request ??
+    text.replace(/^(根据当前回答开始制订：|按讨论修改策略：)/, "");
   if (request.length > 500) return { status: 422, code: "INVALID_BODY" };
   const original = JSON.parse(String(source.draft_json)),
     context = JSON.parse(String(source.context_json));
@@ -208,6 +221,9 @@ export async function draftRefinement(
     ),
   };
   const frozen = {
+    ...(context.planning_contract
+      ? { planning_contract: context.planning_contract }
+      : {}),
     schema_version: 1,
     generation_mode: "chat_auto_v1",
     goal: context.goal,

@@ -32,7 +32,7 @@ export function planOutputTool(context: string) {
     items,
     description,
   });
-  return {
+  const tool = {
     type: "function",
     function: {
       name: "emit_plan",
@@ -56,9 +56,15 @@ export function planOutputTool(context: string) {
         stage_weeks: array(
           object({
             stage: { type: "integer", enum: [1, 2, 3] },
-            weeks: { type: "integer", minimum: 1, maximum: 12 },
+            weeks: {
+              type: "integer",
+              minimum: 1,
+              maximum: data.planning_contract === "strategy_21_v1" ? 1 : 12,
+            },
           }),
-          "按阶段升序列出每个实际任务阶段的周数，总计最多12周；结合用户目标和期望周期，不确定时在假设里说明",
+          data.planning_contract === "strategy_21_v1"
+            ? "恰好三个阶段1,2,3，每阶段weeks=1，总计21天"
+            : "按阶段升序列出每个实际任务阶段的周数，总计最多12周",
         ),
         tasks: array(
           object({
@@ -79,7 +85,9 @@ export function planOutputTool(context: string) {
             mandatory: { type: "boolean" },
             depends_on: array(
               { type: "string", enum: ["t1", "t2", "t3", "t4", "t5", "t6"] },
-              "最多5项前置任务key，不可自依赖/成环",
+              data.planning_contract === "strategy_21_v1"
+                ? "只允许更早阶段的前置任务key，同阶段必须独立；每次的先后步骤放segments"
+                : "最多5项前置任务key，不可自依赖/成环",
             ),
             evidence_ids: array(
               refs.length
@@ -93,4 +101,60 @@ export function planOutputTool(context: string) {
       }),
     },
   };
+  if (data.planning_contract === "strategy_21_v1") {
+    const properties = tool.function.parameters.properties;
+    const task = properties.tasks as {
+      items: { properties: Record<string, unknown> };
+    };
+    const {
+      key: _key,
+      stage: _stage,
+      depends_on: _deps,
+      ...content
+    } = task.items.properties;
+    void _key;
+    void _stage;
+    void _deps;
+    // The application owns the 3 x 7-day structure. The model fills one
+    // practice unit per week; ordered actions belong to its segments.
+    properties.tasks = object({
+      week1: object(content),
+      week2: object(content),
+      week3: object(content),
+    });
+    delete properties.stage_weeks;
+    tool.function.parameters.required = Object.keys(properties);
+  }
+  return tool;
+}
+
+export function normalizePlanOutput(content: string, context: string): string {
+  if (JSON.parse(context).planning_contract !== "strategy_21_v1")
+    return content;
+  const value = JSON.parse(content);
+  if (
+    !value ||
+    Object.keys(value).sort().join(",") !==
+      "assumptions,risks,summary,tasks,time_preferences,title" ||
+    !value.tasks ||
+    Object.keys(value.tasks).sort().join(",") !== "week1,week2,week3"
+  )
+    throw new Error("Invalid strategy carrier");
+  for (const unit of Object.values(value.tasks))
+    if (
+      !unit ||
+      Object.keys(unit).sort().join(",") !==
+        "duration_minutes,evidence_ids,frequency_per_week,instructions,mandatory,segments,title"
+    )
+      throw new Error("Invalid strategy unit");
+  return JSON.stringify({
+    ...value,
+    stage_weeks: [1, 2, 3].map((stage) => ({ stage, weeks: 1 })),
+    tasks: [1, 2, 3].map((stage) => ({
+      ...value.tasks[`week${stage}`],
+      key: `t${stage}`,
+      stage,
+      depends_on: [],
+    })),
+  });
 }

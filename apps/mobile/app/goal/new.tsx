@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
-import { Action, AppText, Caption, Card, Screen, styles } from '../../src/components/ui';
+import { Action, AppText, Caption, Card, Screen } from '../../src/components/ui';
 import { useTheme } from '../../src/theme/ThemeProvider';
 import { createDraft, type GoalDraft } from '../../src/goals/draft';
 import { createGoal } from '../../src/goals/api';
@@ -69,18 +69,18 @@ function NewGoalBody({ signedIn, accountPending }: { signedIn: boolean; accountP
 
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <Screen title="新想法" bottomInset footer={<>
-      <Action label={accountPending ? '正在恢复账号…' : saving ? '正在准备…' : signedIn ? 'Guidy！' : '保存想法并登录'} disabled={!ready || accountPending || saving || !description.trim()} onPress={() => void continueGoal(true)} />
-      <Caption>先聊三个重要问题，再由 Guidy 制订方案。</Caption>
+      <Action label={accountPending ? '正在恢复账号…' : saving ? '正在准备…' : signedIn ? '开始聊天' : '保存想法并登录'} disabled={!ready || accountPending || saving || !description.trim()} onPress={() => void continueGoal(true)} />
+      <Caption>聊三轮，制订你的21天策略。</Caption>
     </>}>
       <Pressable accessibilityRole="button" disabled={saving} onPress={() => router.replace('/(tabs)/goals')} style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
         <AppText>‹ 返回目标</AppText>
       </Pressable>
       <View style={{ marginVertical: 16, gap: 12 }}>
-        <AppText accessibilityRole="header" style={styles.hero}>你想做成什么？</AppText>
+        <AppText accessibilityRole="header" style={{fontSize:24,lineHeight:34,fontWeight:"500"}}>这次，你想制订什么计划？</AppText>
         <Caption>一句想法就够了。时间、基础和限制，我们一起聊。</Caption>
       </View>
       <Card>
-        <TextInput accessibilityLabel="我的目标" placeholder="我想学韩语，旅行时能和当地人交流…" placeholderTextColor={colors.secondary} multiline maxLength={300} editable={ready && !accountPending && !saving} value={description} onChangeText={setDescription} style={{ color: colors.text, fontSize: 20, lineHeight: 30, minHeight: 200, textAlignVertical: 'top' }} />
+        <TextInput accessibilityLabel="我的目标" placeholder="我想学韩语，旅行时能和当地人交流…" placeholderTextColor={colors.secondary} multiline maxLength={300} editable={ready && !accountPending && !saving} value={description} onChangeText={setDescription} style={{ color: colors.text, fontSize: 17, lineHeight: 26, minHeight: 100, textAlignVertical: 'top' }} />
         <Caption>{description.length} / 300</Caption>
       </Card>
       {!!error && <AppText accessibilityRole="alert" accessibilityLiveRegion="polite">{error}</AppText>}

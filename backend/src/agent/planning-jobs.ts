@@ -1,3 +1,4 @@
+import { validateStrategy } from "./strategy-contract.ts";
 import { refinementRetryAvailable } from "./refinement-retry.ts";
 import type { D1Database } from "@cloudflare/workers-types";
 import { ensureAutomaticSchedule } from "../scheduling/chat.ts";
@@ -341,6 +342,7 @@ export async function generatePlanning(
       [...ids, ...refs],
       ids.length === 0,
     );
+    validateStrategy(draft, context.planning_contract);
     draft.tasks = draft.tasks.map((t) => ({
       ...t,
       evidence_ids: [

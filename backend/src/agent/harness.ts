@@ -294,8 +294,13 @@ export async function dialogueResponse(
   } catch {
     return fail(422, "INVALID_BODY");
   }
-  const answerStopPrefix = "根据当前回答开始制订：";
+  const strategy21 =
+    text === "制订21天策略。" || text.startsWith("根据当前回答制订21天策略：");
+  const answerStopPrefix = strategy21
+    ? "根据当前回答制订21天策略："
+    : "根据当前回答开始制订：";
   const stop =
+    strategy21 ||
     text === "先到这里，请根据现有信息准备方案草稿。" ||
     text.startsWith(answerStopPrefix);
   const payload = JSON.stringify({ text, chatRevision, goalRevision });
@@ -391,6 +396,29 @@ export async function dialogueResponse(
     return schedule.status === 200
       ? ok(await snapshot())
       : fail(schedule.status, schedule.code!);
+  if (strategy21) {
+    const answered = await db
+      .prepare(
+        "SELECT count(*) n FROM agent_runs WHERE goal_id=? AND owner_id=? AND status='succeeded' AND json_extract(reply_json,'$.source')='deepseek' AND user_text NOT IN (?,?,?)",
+      )
+      .bind(
+        goalId,
+        owner,
+        "请根据我的目标和已确认条件，提出一个必要的澄清问题。",
+        "请继续问我一个有助于完善方案的问题。",
+        "请继续澄清仍未明确的条件。",
+      )
+      .first();
+    if (
+      Number(answered?.n ?? 0) +
+        (text.startsWith(answerStopPrefix) &&
+        text.slice(answerStopPrefix.length).trim()
+          ? 1
+          : 0) <
+      3
+    )
+      return fail(422, "CLARIFICATION_MINIMUM_NOT_MET");
+  }
   if (stop && (await askedTopics()).length < 3)
     return fail(422, "CLARIFICATION_MINIMUM_NOT_MET");
   let model: AgentProvider | undefined;
@@ -754,6 +782,7 @@ export async function dialogueResponse(
             {
               schema_version: 1,
               generation_mode: "chat_auto_v1",
+              ...(strategy21 ? { planning_contract: "strategy_21_v1" } : {}),
               goal: {
                 description: String(
                   contextGoal.description || contextGoal.title,

@@ -1,3 +1,5 @@
+import { conversationResponse } from "./agent/conversation.ts";
+import { createEventResponse } from "./scheduling/events.ts";
 import { planningResponse } from "./agent/planning-jobs.ts";
 import { createAuth, isLocalHost, type AuthEnv } from "./auth.ts";
 import { goalsResponse } from "./goals.ts";
@@ -62,7 +64,7 @@ async function authResponse(
   if (
     path === "/api/v1/calendar/events" ||
     path === "/api/v1/goals" ||
-    /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|question-history|planning-runs|plan-approval))?$/.test(
+    /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|conversation|question-history|planning-runs|plan-approval))?$/.test(
       path,
     )
   ) {
@@ -76,7 +78,11 @@ async function authResponse(
     const session = await auth.api.getSession({ headers: request.headers });
     if (!session) return error(id, 401, "UNAUTHORIZED", "请重新登录。");
     if (path === "/api/v1/calendar/events")
-      return upcomingCalendarResponse(request, env.DB!, session.user.id, id);
+      return request.method === "POST"
+        ? createEventResponse(request, env.DB!, session.user.id, id)
+        : upcomingCalendarResponse(request, env.DB!, session.user.id, id);
+    if (path.endsWith("/conversation"))
+      return conversationResponse(request, env.DB!, session.user.id, id, env);
     if (path.endsWith("/plan-approval"))
       return approvalResponse(request, env.DB!, session.user.id, id);
     if (path.endsWith("/planning-runs"))
@@ -319,7 +325,7 @@ export function createApp({
       const isGoals =
         path === "/api/v1/calendar/events" ||
         path === "/api/v1/goals" ||
-        /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|question-history|planning-runs|plan-approval))?$/.test(
+        /^\/api\/v1\/goals\/[0-9a-f-]{36}(?:\/(?:messages|conversation|question-history|planning-runs|plan-approval))?$/.test(
           path,
         );
       const isAuth =
@@ -331,15 +337,17 @@ export function createApp({
                 ? path
                 : path === "/api/v1/goals"
                   ? path
-                  : path.endsWith("/plan-approval")
-                    ? "/api/v1/goals/:id/plan-approval"
-                    : path.endsWith("/planning-runs")
-                      ? "/api/v1/goals/:id/planning-runs"
-                      : path.endsWith("/question-history")
-                        ? "/api/v1/goals/:id/question-history"
-                        : path.endsWith("/messages")
-                          ? "/api/v1/goals/:id/messages"
-                          : "/api/v1/goals/:id?"
+                  : path.endsWith("/conversation")
+                    ? "/api/v1/goals/:id/conversation"
+                    : path.endsWith("/plan-approval")
+                      ? "/api/v1/goals/:id/plan-approval"
+                      : path.endsWith("/planning-runs")
+                        ? "/api/v1/goals/:id/planning-runs"
+                        : path.endsWith("/question-history")
+                          ? "/api/v1/goals/:id/question-history"
+                          : path.endsWith("/messages")
+                            ? "/api/v1/goals/:id/messages"
+                            : "/api/v1/goals/:id?"
               : path === "/api/v1/me"
                 ? path
                 : "/api/auth/*",

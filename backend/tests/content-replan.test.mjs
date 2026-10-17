@@ -12,9 +12,16 @@ import { ASK_AUTO } from "../src/scheduling/chat.ts";
 import { checkedDialogue } from "../../apps/mobile/src/goals/dialogue.ts";
 import { checkedApproval } from "../../apps/mobile/src/goals/approval.ts";
 const MORE = "请继续问我一个有助于完善方案的问题。";
-async function approved(t) {
+async function approved(t, contract = false) {
   const f = await setup(t),
     g = await f.goal();
+  if (contract)
+    await f.db
+      .prepare(
+        "UPDATE plan_draft_attempts SET context_json=json_set(context_json,'$.planning_contract','strategy_21_v1') WHERE goal_id=?",
+      )
+      .bind(g.id)
+      .run();
   const r = await approvalResponse(g.request(), f.db, f.owner, "test");
   assert.equal(r.status, 200);
   return { ...f, g, parent: (await r.json()).data.approval };
@@ -546,5 +553,42 @@ test("a changed goal cannot retry an old frozen revision and GET never starts un
         .first()
     ).plan_version_id,
     f.parent.id,
+  );
+});
+
+test("discussion revision directly reserves a new draft, preserves the 21-day contract and leaves accepted history intact", async (t) => {
+  const f = await approved(t, true);
+  const before = (
+    await f.db.prepare("SELECT * FROM scheduled_occurrences ORDER BY id").all()
+  ).results;
+  const result = await send(
+    f,
+    "按讨论修改策略：保留21天，把练习改到早上7点。",
+    "direct-discussion-revision",
+  );
+  assert.equal(result.data.runs.at(-1).reply.stage, "draft_requested");
+  assert.equal((await result.call()).status, 200);
+  const job = await f.db
+    .prepare("SELECT * FROM planning_jobs WHERE goal_revision=1")
+    .first();
+  const context = JSON.parse(job.context_json);
+  assert.equal(context.planning_contract, "strategy_21_v1");
+  assert.equal(context.revision_request, "保留21天，把练习改到早上7点。");
+  assert.equal(context.replan_parent_id, f.parent.id);
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM planning_jobs").first()).n,
+    2,
+  );
+  assert.equal(
+    (await f.db.prepare("SELECT count(*) n FROM plan_versions").first()).n,
+    1,
+  );
+  assert.deepEqual(
+    (
+      await f.db
+        .prepare("SELECT * FROM scheduled_occurrences ORDER BY id")
+        .all()
+    ).results,
+    before,
   );
 });
