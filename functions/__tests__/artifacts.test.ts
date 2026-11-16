@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseModelText } from '../artifacts';
-import { buildSystemPrompt, buildUserMessage } from '../prompt';
+import { buildSystemPrompt, buildUserMessage, CONSTRAINT_SET_EXAMPLE } from '../prompt';
+import { ConstraintSetArtifactSchema } from '../../shared/schemas';
 const validSet = { type: 'constraint_set', plan_title: '考研冲刺', horizon_days: 7, task_defs: [{ key: 'math', title: '数学真题', category: 'study', duration_min: 90, frequency: { type: 'daily' } }], constraints: [], clarifications_needed: [] };
 describe('artifacts', () => {
   it('解析裸 JSON constraint_set', () => {
@@ -25,5 +26,25 @@ describe('artifacts', () => {
   });
   it('buildUserMessage 无计划时提示生成', () => {
     expect(buildUserMessage({ message: '排个计划', plan: null, history: [] })).toContain('constraint_set');
+  });
+});
+
+describe('prompt 契约 — 范例必须与引擎/确认卡消费的 schema 完全一致', () => {
+  it('内嵌范例可被 ConstraintSetArtifactSchema 解析', () => {
+    const r = ConstraintSetArtifactSchema.safeParse(CONSTRAINT_SET_EXAMPLE);
+    expect(r.success).toBe(true);
+  });
+  it('范例覆盖 AI 易错的四类约束', () => {
+    const types = CONSTRAINT_SET_EXAMPLE.constraints.map((c) => c.type);
+    for (const t of ['daily_cap', 'busy_window', 'mutex', 'preferred_period']) expect(types).toContain(t);
+  });
+  it('system prompt 逐字内嵌该范例供 AI 参照', () => {
+    expect(buildSystemPrompt()).toContain(JSON.stringify(CONSTRAINT_SET_EXAMPLE, null, 2));
+  });
+  it('system prompt 锁定易错字段名与枚举', () => {
+    const p = buildSystemPrompt();
+    for (const token of ['max_minutes', 'subjects', 'no_adjacent', 'high|mid|low', '{type:"daily"}', 'per_week', 'weekday', 'strength']) {
+      expect(p).toContain(token);
+    }
   });
 });
