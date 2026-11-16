@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
-import { CalendarPlus, Sparkles } from 'lucide-react';
+import { CalendarPlus } from 'lucide-react';
 import type { Block, PlacementCheck } from '@/shared/types';
 import { dayList, hhmmToMin, localDay, localMinutes, minToHHmm, utcAt, validatePlacement, weekdayOfDay } from '@/shared/engine';
 import { usePlanStore } from '@/store/usePlanStore';
@@ -52,8 +52,6 @@ export function CalendarPanel() {
   const moveBlock = usePlanStore((s) => s.moveBlock);
   const deleteBlock = usePlanStore((s) => s.deleteBlock);
   const togglePin = usePlanStore((s) => s.togglePin);
-  const restoreSample = usePlanStore((s) => s.restoreSample);
-  const isSample = usePlanStore((s) => s.isSample);
 
   const view = useUiStore((s) => s.view);
   const weekOffset = useUiStore((s) => s.weekOffset);
@@ -473,17 +471,12 @@ export function CalendarPanel() {
             <EmptyCalendar className="h-40 w-64" />
             <div className="text-center">
               <p className="font-display text-lg font-semibold text-site-ink">日历还是空的</p>
-              <p className="mt-1 text-sm text-site-ink-soft">双击任意时段快速添加任务，或先载入一份示例计划感受一下。</p>
+              <p className="mt-1 text-sm text-site-ink-soft">双击任意时段快速添加任务，或直接和左侧 AI 聊出你的计划。</p>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setQuickAdd({ day: days[0], minutes: 540 })}>
                 <CalendarPlus className="mr-1.5 h-4 w-4" /> 添加任务
               </Button>
-              {!isSample && (
-                <Button size="sm" className="dawn-gradient border-0 text-white hover:opacity-90" onClick={restoreSample}>
-                  <Sparkles className="mr-1.5 h-4 w-4" /> 载入示例计划
-                </Button>
-              )}
             </div>
           </div>
         )}

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
+import { MessageSquarePlus, Sparkles } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useChat } from '@/lib/useChat';
 import { useChatStore, cursorAfterMessages, shouldAutoRestore } from '@/store/useChatStore';
@@ -25,8 +24,6 @@ export function ChatPanel() {
   const restoreDone = useChatStore((s) => s.restoreDone);
   const setConversation = useChatStore((s) => s.setConversation);
 
-  const isSample = usePlanStore((s) => s.isSample);
-  const clearSample = usePlanStore((s) => s.clearSample);
   const preview = usePlanStore((s) => s.preview);
   const previewArtifact = usePlanStore((s) => s.previewArtifact);
   const discardPreview = usePlanStore((s) => s.discardPreview);
@@ -71,16 +68,7 @@ export function ChatPanel() {
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3" aria-live="polite">
-        {isSample && (
-          <div className="animate-guidy-fade-up rounded-lg border border-[var(--site-dawn-line)]/30 bg-[var(--site-dawn-soft)] p-3">
-            <p className="text-sm font-semibold text-site-ink">示例计划 · 在职考研冲刺</p>
-            <p className="mt-1 text-xs leading-relaxed text-site-ink-soft">右侧是预置示例。直接告诉我你的安排，Guidy 会提取约束并生成计划；首次保存后示例自动清空。</p>
-            <Button variant="outline" size="sm" className="mt-2 h-7 text-xs" onClick={() => { clearSample(); toast('已清空示例，开始你的计划吧'); }}>
-              <Trash2 className="mr-1 h-3.5 w-3.5" /> 清空，从头开始
-            </Button>
-          </div>
-        )}
-        {messages.length === 0 && !isSample && (
+        {messages.length === 0 && (
           <p className="px-1 text-xs leading-relaxed text-site-ink-soft">你想制定什么方案？说说你的目标、科目与时间安排，我会边聊边帮你提取约束，信息够了就在下方生成计划。</p>
         )}
         {messages.map((m) => (

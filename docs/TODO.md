@@ -116,3 +116,46 @@
 本地 UI 验证（dev server 5175 + fixture 8000，fake-qca 恒吐数学）：恢复一条旧数学对话→点新建对话清空→发送「你是什么模型」并反复聚焦 refetch→**旧「你能干什么」对话不再被拉回**（oldConvHijack=false），聊天仅含新这一轮。
 
 待办：发布到 private 需用户新授权（上一次发布授权不延及本次改动）。
+
+## M2 修复 — 气泡内原始 JSON 替换为生成动画
+
+状态：**已修复并本地验证，与 restore 修复捆绑发布 private（用户授权"现在修+一起发布"）**。
+
+用户报告：「agent 在会话里不应该直接发出 json，这一段可以替换成加载或者生成中的动画」。
+
+根因：模型把产物 JSON 作为文本吐出，投影器（project.ts:18）逐字流式透传，`MessageBubble` 以 ReactMarkdown 渲染 → 确认卡上方出现 JSON 代码块。
+
+修复（前端展示层，最小、可单测）：
+- 纯函数 `lib/artifactText.ts#splitArtifactText`：把气泡文本拆成可读 prose 与产物 JSON（识别 ```json 围栏与行首裸 JSON），围栏刚打开（流式中）即返回非 null 以触发动画。
+- `components/chat/ArtifactGenerating.tsx`：`正在生成方案…` + Sparkles，复用 `animate-guidy-breathe`，`role=status aria-live=polite`。
+- `MessageBubble`：assistant 文本若含产物 JSON，流式中渲染 prose + 生成动画；完成后仅渲染 prose（无 prose 则隐藏气泡，确认卡照常）。
+- TDD：artifactText.test.ts 先 RED（模块缺失）→ GREEN（9 条）；全量 **137 测试 / 18 文件通过**，build / check:function EXIT 0（`build/gates-jsonanim.log`）。
+
+本地验证（5175 + fixture 8000）：rawJsonInBubble=false，prose「【本地 fixture】已生成示例约束：」+ 确认卡保留；生成动画因 fixture 瞬时流完不可见，需 live 真实流式验证。
+
+## M3 范围追加 — 研究式规划（用户授权延后实现）
+
+用户：「如果用户完全不知道做什么，agent 需要结合自己的知识并且上网搜索，再给出具体计划，通过用户后续追加再慢慢修改计划，这个加入 M3 一起实现吧」。
+
+已记入 PRD §9 M3 范围与退出标准，并把原 P1 的 F1.5 联网检索提前并入 M3「研究式规划」（工具不可用降级为模型知识并明示，见 R1）。本次不实现，仅记录范围。
+
+## M2 修复 — 删除全部示例机制（用户授权"把示例全删掉"）
+
+状态：**已删除并门禁全绿，与 restore + JSON 动画捆绑发布 private**。
+
+用户报告新建对话仍唤起数学，要求把示例全删掉（含「【本地 fixture】已生成示例约束：」提示）。
+
+删除范围：
+- `lib/seed.ts` 删 `buildSamplePlan()` 及专用 `c()`/`seedConsId`（首屏不再预置"在职考研冲刺"数学计划）。
+- `store/usePlanStore.ts` `initial()` 改 `buildEmptyPlan()`；删 `isSample`/`clearSample`/`restoreSample`，persist 传参简化。
+- `lib/storage.ts`/`lib/useCommitPlan.ts` 去掉 `isSample` 持久化与回滚分支。
+- `ChatPanel` 删示例横幅；`CalendarPanel` 删"载入示例计划"按钮与文案。
+- `dev/function-local.ts` 删 fixture 示例提示前缀，改为只流式吐 JSON 产物（plan_title 去"示例"字样）。
+
+TDD：新增 `store/__tests__/planStore.test.ts` 先 RED（初始 6 个数学任务）→ GREEN（空计划）；全量 **138 测试 / 19 文件**，build / check:function EXIT 0（`build/gates-sample.log`）。
+
+后果：首屏 = 空日历 + 开场问句，M1"示例上拖拽"演示取消（用户确认）。
+
+未动（超出确认范围，待用户定夺）：`functions/prompt.ts` 的考研数学 few-shot 范例（第 61 行已明令禁止照抄科目，健身测试证明 agent 跟随用户意图；改动会变 QCA agent 指纹）；`ConstraintDrawer` 占位符"例如：考研初试"。
+
+注：本地 5175 仍见数学/旧 fixture 文本，源于残留 fixture server(8000) 旧对话被恢复 + 旧 fixture 代码，非示例种子；干净证明以 live 部署后为准。

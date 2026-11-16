@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { ENGINE_VERSION, LIMITS } from '@/shared/constants';
 import { diffBlocks, solve, validatePlacement } from '@/shared/engine';
 import type { Block, Constraint, ConstraintPayload, DiffResult, PlanState, SolveOutput, TaskDef } from '@/shared/types';
-import { buildEmptyPlan, buildSamplePlan } from '@/lib/seed';
+import { buildEmptyPlan } from '@/lib/seed';
 import { solveArtifact } from '@/lib/preview';
 import { loadPersisted, persist } from '@/lib/storage';
 
@@ -20,7 +20,6 @@ export interface ReschedulePreview {
 
 interface PlanStore {
   state: PlanState;
-  isSample: boolean;
   undoStack: UndoEntry[];
   redoStack: UndoEntry[];
   preview: ReschedulePreview | null;
@@ -48,8 +47,6 @@ interface PlanStore {
   applyPreview: () => void;
   discardPreview: () => void;
 
-  clearSample: () => void;
-  restoreSample: () => void;
   renamePlan: (title: string) => void;
   importState: (state: PlanState) => void;
   resetAll: () => void;
@@ -59,16 +56,16 @@ function clone(s: PlanState): PlanState {
   return JSON.parse(JSON.stringify(s)) as PlanState;
 }
 
-function initial(): { state: PlanState; isSample: boolean } {
+function initial(): PlanState {
   const persisted = loadPersisted();
-  if (persisted) return persisted;
-  return { state: buildSamplePlan(), isSample: true };
+  if (persisted) return persisted.state;
+  return buildEmptyPlan();
 }
 
 const init = initial();
 
 export const usePlanStore = create<PlanStore>((set, get) => {
-  const save = (state: PlanState, isSample: boolean) => persist(state, isSample);
+  const save = (state: PlanState) => persist(state);
 
   const placementCtx = (s: PlanState) => ({
     timezone: s.plan.timezone,
@@ -79,15 +76,14 @@ export const usePlanStore = create<PlanStore>((set, get) => {
   });
 
   return {
-    state: init.state,
-    isSample: init.isSample,
+    state: init,
     undoStack: [],
     redoStack: [],
     preview: null,
     lastCompromises: [],
 
     commit: (label, mutator) => {
-      const { state, undoStack, isSample } = get();
+      const { state, undoStack } = get();
       const before = clone(state);
       const draft = clone(state);
       mutator(draft);
@@ -96,11 +92,11 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       const entry = { label, before, after: clone(draft) };
       const next = [...undoStack, entry].slice(-LIMITS.undoDepth);
       set({ state: draft, undoStack: next, redoStack: [] });
-      save(draft, isSample);
+      save(draft);
     },
 
     undo: () => {
-      const { undoStack, redoStack, state, isSample } = get();
+      const { undoStack, redoStack, state } = get();
       const entry = undoStack[undoStack.length - 1];
       if (!entry) return null;
       set({
@@ -109,12 +105,12 @@ export const usePlanStore = create<PlanStore>((set, get) => {
         redoStack: [...redoStack, entry],
         preview: null,
       });
-      save(entry.before, isSample);
+      save(entry.before);
       return entry.label;
     },
 
     redo: () => {
-      const { undoStack, redoStack, isSample } = get();
+      const { undoStack, redoStack } = get();
       const entry = redoStack[redoStack.length - 1];
       if (!entry) return null;
       set({
@@ -123,7 +119,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
         undoStack: [...undoStack, entry],
         preview: null,
       });
-      save(entry.after, isSample);
+      save(entry.after);
       return entry.label;
     },
 
@@ -255,18 +251,6 @@ export const usePlanStore = create<PlanStore>((set, get) => {
 
     discardPreview: () => set({ preview: null }),
 
-    clearSample: () => {
-      const empty = buildEmptyPlan();
-      set({ state: empty, isSample: false, undoStack: [], redoStack: [], preview: null, lastCompromises: [] });
-      save(empty, false);
-    },
-
-    restoreSample: () => {
-      const sample = buildSamplePlan();
-      set({ state: sample, isSample: true, undoStack: [], redoStack: [], preview: null, lastCompromises: [] });
-      save(sample, true);
-    },
-
     renamePlan: (title) => {
       get().commit('重命名计划', (draft) => {
         draft.plan.title = title.slice(0, 60);
@@ -274,14 +258,14 @@ export const usePlanStore = create<PlanStore>((set, get) => {
     },
 
     importState: (state) => {
-      set({ state, isSample: false, undoStack: [], redoStack: [], preview: null });
-      save(state, false);
+      set({ state, undoStack: [], redoStack: [], preview: null });
+      save(state);
     },
 
     resetAll: () => {
       const empty = buildEmptyPlan();
-      set({ state: empty, isSample: false, undoStack: [], redoStack: [], preview: null, lastCompromises: [] });
-      save(empty, false);
+      set({ state: empty, undoStack: [], redoStack: [], preview: null, lastCompromises: [] });
+      save(empty);
     },
   };
 });

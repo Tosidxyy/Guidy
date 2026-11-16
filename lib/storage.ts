@@ -4,7 +4,6 @@ const KEY = 'guidy.plan.v1';
 
 export interface PersistedState {
   state: PlanState;
-  isSample: boolean;
 }
 
 export function loadPersisted(): PersistedState | null {
@@ -19,9 +18,9 @@ export function loadPersisted(): PersistedState | null {
   }
 }
 
-export function persist(state: PlanState, isSample: boolean): void {
+export function persist(state: PlanState): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ state, isSample }));
+    localStorage.setItem(KEY, JSON.stringify({ state }));
   } catch {
     /* 存储满时静默降级为会话内状态 */
   }

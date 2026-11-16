@@ -29,16 +29,14 @@ export function useCommitPlan() {
       const store = usePlanStore.getState();
       const snapshot = JSON.parse(JSON.stringify(store.state)) as PlanState;
       const hadPreview = store.preview;
-      const hadSample = store.isSample;
       pendingPreview.current = hadPreview;
       store.applyPreview();
-      return { snapshot, hadPreview, hadSample };
+      return { snapshot, hadPreview };
     },
     onError: (err, _draft, ctx) => {
       const store = usePlanStore.getState();
       pendingPreview.current = null;
       if (ctx?.snapshot) store.importState(ctx.snapshot);
-      if (ctx) usePlanStore.setState({ isSample: ctx.hadSample });
       if (ctx?.hadPreview) usePlanStore.setState({ preview: ctx.hadPreview });
       const e = err instanceof ApiError ? err : new ApiError('service_unavailable', 503, '提交失败，请重试');
       toast.error(e.message, { description: e.diagnosticId ? `诊断 ID：${e.diagnosticId}` : undefined });
