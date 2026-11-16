@@ -47,7 +47,7 @@ export function buildSamplePlan(): PlanState {
   const now = new Date().toISOString();
   return {
     plan: {
-      id: 'sample-plan', title: '在职考研冲刺周计划', horizon_start, horizon_days: 7,
+      id: null, title: '在职考研冲刺周计划', horizon_start, horizon_days: 7,
       timezone, status: 'active', version: 1, created_at: now, updated_at: now,
     },
     task_defs, constraints, blocks: out.blocks,
@@ -59,7 +59,7 @@ export function buildEmptyPlan(title = '我的新计划'): PlanState {
   const now = new Date().toISOString();
   return {
     plan: {
-      id: `plan-${Date.now()}`, title, horizon_start: todayStr(timezone), horizon_days: 7,
+      id: null, title, horizon_start: todayStr(timezone), horizon_days: 7,
       timezone, status: 'draft', version: 1, created_at: now, updated_at: now,
     },
     task_defs: [],

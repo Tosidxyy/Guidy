@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { CalendarDays, ChevronLeft, ChevronRight, Moon, Redo2, Settings2, Sun, Undo2, Users } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, ListChecks, Moon, Redo2, Settings2, ShieldCheck, Sun, Undo2, Users } from 'lucide-react';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { cn } from '@/lib/utils';
@@ -109,6 +109,12 @@ export function TopBar() {
           <TooltipContent>{redoDepth ? `重做：${redoLabel} (Ctrl+Shift+Z)` : '没有可重做的操作'}</TooltipContent>
         </Tooltip>
 
+        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="约束条件" onClick={() => openDrawer('constraints')}>
+          <ShieldCheck className="h-4 w-4" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="任务定义" onClick={() => openDrawer('tasks')}>
+          <ListChecks className="h-4 w-4" />
+        </Button>
         <Button
           variant="ghost" size="icon" className="h-8 w-8" aria-label="社区模板"
           onClick={() => toast.info('社区模板将在 M4 里程碑上线，敬请期待')}

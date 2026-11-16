@@ -16,7 +16,7 @@ export interface Block {
 }
 
 export interface Plan {
-  id: string;
+  id: string | null;
   title: string;
   horizon_start: string;
   horizon_days: 7 | 14;

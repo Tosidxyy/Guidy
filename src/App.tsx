@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { toast } from 'sonner';
-import { CalendarDays, LayoutList } from 'lucide-react';
+import { CalendarDays, MessageSquare } from 'lucide-react';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { applyPrefs, loadPrefs } from '@/lib/prefs';
@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { TopBar } from '@/components/workbench/TopBar';
-import { OverviewPanel } from '@/components/workbench/OverviewPanel';
+import { ChatPanel } from '@/components/chat/ChatPanel';
 import { ConstraintDrawer } from '@/components/workbench/ConstraintDrawer';
 import { BlockDrawer } from '@/components/workbench/BlockDrawer';
 import { TasksDrawer } from '@/components/workbench/TasksDrawer';
@@ -58,17 +58,17 @@ export default function App() {
       <div className="flex h-dvh flex-col bg-site-bg text-site-ink">
         <TopBar />
         <main className="flex min-h-0 flex-1 gap-3 p-3">
-          <div className={cn('min-h-0 w-full lg:block lg:w-[340px] lg:shrink-0', mobileTab === 'overview' ? 'block' : 'hidden')}>
-            <OverviewPanel />
+          <div className={cn('min-h-0 w-full lg:block lg:w-[38%] lg:shrink-0', mobileTab === 'chat' ? 'block' : 'hidden')}>
+            <ChatPanel />
           </div>
-          <div className={cn('min-h-0 min-w-0 flex-1 lg:block', mobileTab === 'calendar' ? 'block' : 'hidden')}>
+          <div className={cn('min-h-0 min-w-0 flex-1 lg:block lg:w-[62%]', mobileTab === 'calendar' ? 'block' : 'hidden')}>
             <CalendarPanel />
           </div>
         </main>
 
         <nav className="flex shrink-0 border-t border-site-line bg-site-surface lg:hidden" aria-label="移动端导航">
           {([
-            { key: 'overview', label: '概览与约束', icon: LayoutList },
+            { key: 'chat', label: '对话', icon: MessageSquare },
             { key: 'calendar', label: '日历', icon: CalendarDays },
           ] as const).map((t) => (
             <button

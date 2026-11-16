@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 export type DrawerKind = 'constraints' | 'block' | 'settings' | 'tasks' | null;
 export type ViewMode = 'week' | 'day';
-export type MobileTab = 'overview' | 'calendar';
+export type MobileTab = 'chat' | 'calendar';
 
 interface UiStore {
   theme: 'light' | 'dark';
@@ -49,7 +49,7 @@ export const useUiStore = create<UiStore>((set) => ({
   drawer: null,
   editingBlockId: null,
   quickAdd: null,
-  mobileTab: 'calendar',
+  mobileTab: 'chat',
   setTheme: (t) => {
     try {
       localStorage.setItem('guidy.theme', t);

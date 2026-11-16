@@ -1,16 +1,20 @@
+import { useRef } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { buildCommitInput } from '@/lib/commitInput';
-import { usePlanStore } from '@/store/usePlanStore';
+import { usePlanStore, type ReschedulePreview } from '@/store/usePlanStore';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 import type { PlanState } from '@/shared/types';
 
 export function useCommitPlan() {
+  // onMutate clears store.preview via applyPreview before mutationFn runs, so
+  // the preview being committed must be captured there and handed over here.
+  const pendingPreview = useRef<ReschedulePreview | null>(null);
   const mutation = useMutation({
     mutationFn: async (draft: ConstraintSetArtifact) => {
       const store = usePlanStore.getState();
-      const preview = store.preview;
+      const preview = pendingPreview.current;
       if (!preview) throw new ApiError('validation_failed', 422, '请先生成预览');
       const body = await buildCommitInput({
         draft,
@@ -25,18 +29,23 @@ export function useCommitPlan() {
       const store = usePlanStore.getState();
       const snapshot = JSON.parse(JSON.stringify(store.state)) as PlanState;
       const hadPreview = store.preview;
+      const hadSample = store.isSample;
+      pendingPreview.current = hadPreview;
       store.applyPreview();
-      return { snapshot, hadPreview };
+      return { snapshot, hadPreview, hadSample };
     },
     onError: (err, _draft, ctx) => {
       const store = usePlanStore.getState();
+      pendingPreview.current = null;
       if (ctx?.snapshot) store.importState(ctx.snapshot);
+      if (ctx) usePlanStore.setState({ isSample: ctx.hadSample });
       if (ctx?.hadPreview) usePlanStore.setState({ preview: ctx.hadPreview });
       const e = err instanceof ApiError ? err : new ApiError('service_unavailable', 503, '提交失败，请重试');
       toast.error(e.message, { description: e.diagnosticId ? `诊断 ID：${e.diagnosticId}` : undefined });
     },
     onSuccess: (serverPlan: any) => {
       const store = usePlanStore.getState();
+      pendingPreview.current = null;
       const next: PlanState = {
         plan: serverPlan.plan,
         task_defs: serverPlan.task_defs,
