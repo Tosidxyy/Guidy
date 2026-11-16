@@ -16,6 +16,7 @@ export const MESSAGES: Record<string, string> = {
   quota_exceeded: '今日对话额度已用完，请明天再来',
   dispatch_busy: '当前有正在生成的回复，请等待或中断后再发送',
   version_conflict: '计划已被更新，请刷新后重试',
+  conflict: '请求冲突，请刷新后重试',
   engine_version_mismatch: '排程引擎版本不一致，请刷新页面',
   upstream_error: 'AI 服务暂时失败，请稍后重试',
   service_unavailable: '后端尚未就绪，请稍后重试',

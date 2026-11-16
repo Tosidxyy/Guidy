@@ -1,4 +1,8 @@
 // Copy this framing helper into each package that parses SSE (Function/browser).
+/**
+ * @param {ReadableStream<Uint8Array>} body
+ * @param {{ maxFrameChars?: number, signal?: AbortSignal }} [options]
+ */
 export async function* readSSE(body, { maxFrameChars = 262144, signal } = {}) {
   const reader = body.getReader();
   const abort = () => { void reader.cancel().catch(() => {}); };
