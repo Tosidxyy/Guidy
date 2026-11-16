@@ -309,3 +309,18 @@
     animation: guidy-shimmer 1.4s linear infinite;
   }
 }
+
+.guidy-cursor {
+  background: linear-gradient(180deg, var(--site-dawn-line), var(--site-brand));
+  animation: guidy-cursor-breathe 1s ease-in-out infinite;
+}
+@keyframes guidy-cursor-breathe {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guidy-cursor { animation: none; opacity: 1; }
+}
+.guidy-prose :where(p, ul, ol) { margin: 0.25rem 0; }
+.guidy-prose :where(ul, ol) { padding-left: 1.1rem; }
+.guidy-prose :where(code) { font-size: 0.85em; background: var(--site-surface-2); padding: 0 0.25rem; border-radius: 0.25rem; }
