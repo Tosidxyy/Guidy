@@ -95,3 +95,24 @@
 证据：`build/chat-agent-card.png`、`build/gates-chat.log`。
 
 观察（仍未修复，YAGNI）：assistant 文本气泡在卡上方显示原始 JSON，自由对话下更明显；如后续优化可在投影侧把产物 JSON 与可读文本分离（不影响本次行为验收）。
+
+## M2 修复 — 新建对话被旧计划劫持恢复
+
+状态：**已修复并本地验证，待发布到 private**。commit `ac1a0d9`。
+
+用户报告：「为什么我新建了一个，又自动生成数学」。
+
+根因（系统化调试 + live 复现确认，非 prompt 问题）：
+- 后端 `chatSend` 从不带 `plan_id`（chatController.ts:36），`buildUserMessage` 恒走「当前还没有计划」；QCA 会话按对话绑定（sessions.ts:20），新对话 createSession 全新会话；系统提示 baked 进 agent 定义且指纹随 prompt 变（live.ts:27 / cloud-agents.mjs ensureCloudResources）——服务端不会把数学上下文带进新对话。
+- 真正根因在前端：`ChatPanel` 恢复 effect 旧 deps 只有 `[conversations.data]`，判据仅 `!conversationId`。`newConversation()` 只 `reset()` 把 `conversationId` 置 null，与「首次加载需恢复」无法区分。QueryClient `staleTime:30_000` + 默认 `refetchOnWindowFocus`，conversations 在 stale 后 refetch（或发送竞态）使引用变化时，effect 把 `items[0]`（最近一条旧数学对话，含 constraint_set 确认卡）`api.history + setConversation` 拉回，劫持新对话。
+- live 复现：点新建对话清空后发「你是什么模型」，聊天却出现整段旧数学对话历史（未重打）——只有恢复 effect 能做到。
+
+修复（最小，落在可单测的 store）：
+- `ChatState` 加 `restoreDone`；`reset()`/`startSend()`/`setConversation()` 均置 true。
+- 纯函数 `shouldAutoRestore(state,itemCount,dataReady)`：仅 `dataReady && !restoreDone && conversationId===null && itemCount>0` 放行（首次加载一次）。
+- `ChatPanel` 恢复 effect 改用该判据，deps 加 `conversationId/restoreDone`。
+- TDD：chatStore.test.ts 先 RED（5 条守卫断言失败）→ GREEN；全量 **128 测试通过**，build / check:function EXIT 0（`build/gates-restore.log`）。
+
+本地 UI 验证（dev server 5175 + fixture 8000，fake-qca 恒吐数学）：恢复一条旧数学对话→点新建对话清空→发送「你是什么模型」并反复聚焦 refetch→**旧「你能干什么」对话不再被拉回**（oldConvHijack=false），聊天仅含新这一轮。
+
+待办：发布到 private 需用户新授权（上一次发布授权不延及本次改动）。
