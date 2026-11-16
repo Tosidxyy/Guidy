@@ -10,7 +10,7 @@
     "predev": "node scripts/check-node.mjs",
     "prebuild": "node scripts/check-node.mjs",
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && node scripts/build.mjs",
+    "build": "tsc --noEmit && node scripts/build.mjs && node scripts/build-function-package.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "dev:function": "npx deno run --config dev/deno.check.json --allow-net=127.0.0.1:8000 --allow-read --allow-env dev/function-local.ts",
