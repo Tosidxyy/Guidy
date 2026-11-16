@@ -24,8 +24,30 @@ describe('artifacts', () => {
     expect(p).toContain('constraint_set');
     expect(p).toContain('clarifications_needed');
   });
-  it('buildUserMessage 无计划时提示生成', () => {
-    expect(buildUserMessage({ message: '排个计划', plan: null, history: [] })).toContain('constraint_set');
+});
+
+describe('prompt 对话策略 — 自由对话 agent，意图分流', () => {
+  it('系统指令声明可自由对话并守卫身份', () => {
+    const p = buildSystemPrompt();
+    expect(p).toContain('自由对话');
+    expect(p).toContain('不透露底层模型');
+  });
+  it('与排程无关时不输出产物', () => {
+    expect(buildSystemPrompt()).toContain('不输出任何产物');
+  });
+  it('信息不足用自然语言追问，每轮最多 2 个', () => {
+    expect(buildSystemPrompt()).toContain('每轮最多 2 个');
+  });
+  it('信息足够才生成 constraint_set', () => {
+    expect(buildSystemPrompt()).toContain('才输出 constraint_set');
+  });
+  it('范例标注仅示范形状、禁止照抄', () => {
+    expect(buildSystemPrompt()).toContain('禁止照抄范例');
+  });
+  it('buildUserMessage 无计划时不强制生成产物', () => {
+    const m = buildUserMessage({ message: '你是什么模型', plan: null, history: [] });
+    expect(m).not.toContain('请生成 constraint_set');
+    expect(m).toContain('当前还没有计划');
   });
 });
 

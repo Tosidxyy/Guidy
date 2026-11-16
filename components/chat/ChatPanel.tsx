@@ -81,7 +81,7 @@ export function ChatPanel() {
           </div>
         )}
         {messages.length === 0 && !isSample && (
-          <p className="px-1 text-xs leading-relaxed text-site-ink-soft">你好，我是 Guidy。说说你的任务与时间约束，例如「每天学 6 小时，周三晚兼职，数学英语别连着学」。</p>
+          <p className="px-1 text-xs leading-relaxed text-site-ink-soft">你想制定什么方案？说说你的目标、科目与时间安排，我会边聊边帮你提取约束，信息够了就在下方生成计划。</p>
         )}
         {messages.map((m) => (
           <MessageBubble key={`${m.seq}-${m.role}-${m.kind}`} message={m} streaming={streaming && m.seq === lastAssistant?.seq} />
