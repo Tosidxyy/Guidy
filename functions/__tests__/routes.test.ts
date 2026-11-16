@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { application } from '../app';
 import type { Deps, RouteCtx } from '../types';
 import { createFakeQca } from '../../dev/fake-qca';
+import { createMemoryDb } from '../../dev/fake-db';
 function deps(): Deps {
-  return { db: {} as any, requireUser: (ctx) => { if (!ctx.user) throw Object.assign(new Error('unauthorized'), { code: 'unauthorized', status: 401 }); return ctx.user; },
+  return { db: createMemoryDb(), requireUser: (ctx) => { if (!ctx.user) throw Object.assign(new Error('unauthorized'), { code: 'unauthorized', status: 401 }); return ctx.user; },
     qca: createFakeQca(), config: { cloudApiOrigin: 'https://api.qoder.com.cn', appScope: 'guidy-test', modelId: 'model-fake' } };
 }
 function ctx(method: string, path: string, user: { id: string } | null = { id: 'visitor-a' }): RouteCtx {
@@ -25,5 +26,24 @@ describe('router skeleton', () => {
   it('错误方法 405', async () => {
     const res = await application(deps())(ctx('POST', '/api/health'));
     expect(res.status).toBe(405);
+  });
+});
+describe('identity + quotas + me', () => {
+  it('R3: 无身份 /api/me → 401', async () => {
+    const res = await application(deps())(ctx('GET', '/api/me', null));
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe('unauthorized');
+  });
+  it('GET /api/me 返回 visitor_id 与满额配额', async () => {
+    const res = await application(deps())(ctx('GET', '/api/me'));
+    const body = await res.json();
+    expect(body.visitor_id).toBe('visitor-a');
+    expect(body.quotas.chat_remaining).toBe(60);
+  });
+  it('R13: incrementChatTurn 第 61 次抛 quota_exceeded，上游零调用', async () => {
+    const { incrementChatTurn } = await import('../quotas');
+    const db = createMemoryDb();
+    for (let i = 0; i < 60; i++) await incrementChatTurn(db, 'v', '2026-11-16');
+    await expect(incrementChatTurn(db, 'v', '2026-11-16')).rejects.toMatchObject({ code: 'quota_exceeded', status: 429 });
   });
 });
