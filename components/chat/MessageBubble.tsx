@@ -3,8 +3,10 @@ import rehypeSanitize from 'rehype-sanitize';
 import { Sparkles } from 'lucide-react';
 import type { ChatMessage } from '@/store/useChatStore';
 import { sanitizeSchema } from '@/lib/markdown';
+import { splitArtifactText } from '@/lib/artifactText';
 import { cn } from '@/lib/utils';
 import { StreamingCursor } from './StreamingCursor';
+import { ArtifactGenerating } from './ArtifactGenerating';
 
 export function MessageBubble({ message, streaming }: { message: ChatMessage; streaming?: boolean }) {
   if (message.kind === 'constraint_set' || message.kind === 'patch') {
@@ -19,6 +21,30 @@ export function MessageBubble({ message, streaming }: { message: ChatMessage; st
     return <p className="px-1 text-center text-[11px] text-site-ink-soft">{message.content}</p>;
   }
   const isUser = message.role === 'user';
+  if (!isUser) {
+    const { prose, artifactJson } = splitArtifactText(message.content);
+    if (artifactJson !== null) {
+      if (!streaming && !prose) return null;
+      return (
+        <div className="flex justify-start">
+          <div className="max-w-[85%] rounded-2xl border border-site-line bg-site-surface px-3.5 py-2.5 text-sm leading-relaxed text-site-ink">
+            {prose && (
+              <div className="guidy-prose break-words">
+                <ReactMarkdown rehypePlugins={[[rehypeSanitize, sanitizeSchema]]} skipHtml>
+                  {prose}
+                </ReactMarkdown>
+              </div>
+            )}
+            {streaming && (
+              <div className={cn(prose && 'mt-2')}>
+                <ArtifactGenerating />
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+  }
   return (
     <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
       <div
