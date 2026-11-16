@@ -1,23 +1,19 @@
-import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { rolldown } from 'rolldown';
+import { mkdir, rm } from 'node:fs/promises';
 
 const OUT = 'build/function-package';
 
 await rm(OUT, { recursive: true, force: true });
 await mkdir(OUT, { recursive: true });
 
-const skip = (src) => src.includes('__tests__') || src.includes('migrations');
-const keep = (src) => !skip(src);
+// The Sites packager zips only this directory and its bundler resolves no
+// import map or npm specifiers, so third-party deps are inlined here and only
+// the platform-injected _qoder SDK stays external.
+const bundle = await rolldown({
+  input: 'functions/index.ts',
+  external: (id) => id.includes('_qoder/'),
+});
+await bundle.write({ file: `${OUT}/index.ts`, format: 'esm' });
+await bundle.close();
 
-await cp('functions', `${OUT}/functions`, { recursive: true, filter: keep });
-await cp('shared', `${OUT}/shared`, { recursive: true, filter: keep });
-await mkdir(`${OUT}/lib`, { recursive: true });
-await cp('lib/describe.ts', `${OUT}/lib/describe.ts`);
-
-// The packager requires index.ts at the ZIP root; the real entry stays in
-// functions/ so every original relative import (../shared, ../lib) resolves
-// inside the package.
-await writeFile(`${OUT}/index.ts`, "import './functions/index.ts';\n");
-
-if (!existsSync(`${OUT}/functions/index.ts`)) throw new Error('function package missing entry');
-console.log(`function package ready: ${OUT}`);
+console.log(`function package ready: ${OUT}/index.ts`);
