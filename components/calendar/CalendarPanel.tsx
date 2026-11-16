@@ -27,6 +27,9 @@ interface DragState {
   origStart: number;
   origEnd: number;
   colWidth: number;
+  // React 按 prop diff 写样式，清空 height/zIndex 后 prop 不变则不会写回，须恢复原值
+  origHeightStyle: string;
+  origZStyle: string;
   moved: boolean;
   dayIdx: number;
   startMin: number;
@@ -133,32 +136,6 @@ export function CalendarPanel() {
       placementCtx,
     ), [placementCtx, tz]);
 
-  const finishDrag = useCallback(() => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    dragRef.current = null;
-    cancelAnimationFrame(rafRef.current);
-    const { el, block, mode, moved, dayIdx, startMin, endMin } = drag;
-    el.style.transform = '';
-    el.style.height = '';
-    el.style.outline = '';
-    el.style.zIndex = '';
-    el.style.transition = '';
-    setChip(null);
-    if (!moved) {
-      select(block.id);
-      return;
-    }
-    const result = moveBlock(block.id, utcAt(days[dayIdx], startMin, tz), utcAt(days[dayIdx], endMin, tz));
-    if (!result.ok) {
-      toast.error(result.reason ?? '无法放置到该位置');
-      setInvalidId(block.id);
-      setTimeout(() => setInvalidId(null), 320);
-    } else if (mode === 'resize') {
-      toast.success(`「${block.title}」调整为 ${minToHHmm(startMin)}–${minToHHmm(endMin)}`);
-    }
-  }, [days, moveBlock, select, tz]);
-
   const onDragMove = useCallback((e: PointerEvent) => {
     const drag = dragRef.current;
     const scroller = scrollRef.current;
@@ -208,6 +185,33 @@ export function CalendarPanel() {
     });
   }, [days, validate, visibleEnd, visibleStart]);
 
+  const finishDrag = useCallback(() => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    dragRef.current = null;
+    cancelAnimationFrame(rafRef.current);
+    window.removeEventListener('pointermove', onDragMove);
+    const { el, block, mode, moved, dayIdx, startMin, endMin } = drag;
+    el.style.transform = '';
+    el.style.height = drag.origHeightStyle;
+    el.style.outline = '';
+    el.style.zIndex = drag.origZStyle;
+    el.style.transition = '';
+    setChip(null);
+    if (!moved) {
+      select(block.id);
+      return;
+    }
+    const result = moveBlock(block.id, utcAt(days[dayIdx], startMin, tz), utcAt(days[dayIdx], endMin, tz));
+    if (!result.ok) {
+      toast.error(result.reason ?? '无法放置到该位置');
+      setInvalidId(block.id);
+      setTimeout(() => setInvalidId(null), 320);
+    } else if (mode === 'resize') {
+      toast.success(`「${block.title}」调整为 ${minToHHmm(startMin)}–${minToHHmm(endMin)}`);
+    }
+  }, [days, moveBlock, onDragMove, select, tz]);
+
   const beginDrag = useCallback((e: React.PointerEvent, block: Block, mode: 'move' | 'resize') => {
     if (e.button !== 0 || preview) return;
     const el = (e.currentTarget as HTMLElement).closest('[data-block-id]') as HTMLElement | null;
@@ -218,13 +222,15 @@ export function CalendarPanel() {
     const dayIdx = days.indexOf(day);
     if (dayIdx === -1) return;
     const colWidth = (grid.getBoundingClientRect().width - GUTTER_PX) / days.length;
+    const origHeightStyle = el.style.height;
+    const origZStyle = el.style.zIndex;
     dragRef.current = {
       mode, block, el,
       startX: e.clientX, startY: e.clientY,
       origDayIdx: dayIdx,
       origStart: localMinutes(block.start_utc, tz),
       origEnd: localMinutes(block.end_utc, tz),
-      colWidth, moved: false,
+      colWidth, origHeightStyle, origZStyle, moved: false,
       dayIdx, startMin: localMinutes(block.start_utc, tz), endMin: localMinutes(block.end_utc, tz),
       check: null,
     };
