@@ -18,7 +18,8 @@ export function createMemoryDb(seed: Record<string, any[]> = {}): MemoryDb {
       const project = (row: any) => (!columns || columns === '*') ? { ...row } : Object.fromEntries(columns.split(',').map((c) => [c.trim(), row[c.trim()]]));
       const q: DbQuery = {
         select(cols) { columns = cols ?? null; return q; },
-        eq(k, v) { filters.push([k, v]); return q; },
+        eq(k, v) { if (v === null) throw Object.assign(new Error('database_invalid_operation'), { code: 'database_invalid_operation', status: 400 }); filters.push([k, v]); return q; },
+        is(k, v) { filters.push([k, v]); return q; },
         order(k, o) { order.push([k, o?.ascending !== false]); return q; },
         limit(n) { count = n; return q; },
         insert(v) { mode = 'insert'; values = v; return q; },

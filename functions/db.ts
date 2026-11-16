@@ -2,6 +2,7 @@ import { fail } from './errors.ts';
 export interface DbQuery extends PromiseLike<{ data: any[] | null; error: { code: string; status: number } | null }> {
   select(cols?: string): DbQuery;
   eq(col: string, val: unknown): DbQuery;
+  is(col: string, val: unknown): DbQuery;
   order(col: string, opts?: { ascending?: boolean }): DbQuery;
   limit(n: number): DbQuery;
   insert(values: Record<string, unknown> | Record<string, unknown>[]): DbQuery;

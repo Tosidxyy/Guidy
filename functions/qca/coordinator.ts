@@ -19,8 +19,9 @@ export function createDbCoordinator(db: Db): Coordinator {
         const row = rows(await db.from('cloud_bindings').select('lease_token,updated_at').eq('key', key).limit(1))[0];
         const held = row?.lease_token != null && Date.now() - Date.parse(row.updated_at) < LEASE_TTL_MS;
         if (held) { await new Promise((r) => setTimeout(r, 50)); continue; }
-        const got = rows(await db.from('cloud_bindings').update({ lease_token: token, updated_at: nowIso() })
-          .eq('key', key).eq('lease_token', row?.lease_token ?? null).select('key'));
+        const priorToken = row?.lease_token ?? null;
+        const base = db.from('cloud_bindings').update({ lease_token: token, updated_at: nowIso() }).eq('key', key);
+        const got = rows(await (priorToken == null ? base.is('lease_token', null) : base.eq('lease_token', priorToken)).select('key'));
         acquired = got.length > 0;
       }
       if (!acquired) fail('service_unavailable', 503);
