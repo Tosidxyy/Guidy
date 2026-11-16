@@ -15,6 +15,11 @@ export interface ChatState {
 export interface AppFrame { event: string; data: any }
 const TERMINAL = ['completed', 'failed', 'interrupted'];
 export const initialChatState: ChatState = { conversationId: null, requestId: null, messages: [], streaming: false, connection: 'idle', cursor: '0:0', artifact: null, clarifications: [], error: null };
+// 恢复会话时历史已完整加载，cursor 须越过最大 seq，否则 resume 重放历史会把全文再追加一遍。
+export function cursorAfterMessages(messages: { seq: number }[]): string {
+  const max = messages.reduce((mx, m) => Math.max(mx, m.seq), 0);
+  return `${max + 1}:0`;
+}
 export function reduceFrame(state: ChatState, frame: AppFrame): ChatState {
   const d = frame.data;
   switch (frame.event) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reduceFrame, initialChatState } from '../useChatStore';
+import { reduceFrame, initialChatState, cursorAfterMessages } from '../useChatStore';
 describe('reduceFrame', () => {
   it('accepted 设定 conversationId 并把临时 user 消息 seq 转正', () => {
     const s0 = { ...initialChatState, messages: [{ seq: -1, role: 'user' as const, kind: 'text', content: 'hi' }] };
@@ -27,5 +27,14 @@ describe('reduceFrame', () => {
   it('done 停流', () => {
     const s = reduceFrame({ ...initialChatState, streaming: true }, { event: 'done', data: { seq: 5 } });
     expect(s.streaming).toBe(false);
+  });
+});
+
+describe('cursorAfterMessages — 恢复时 cursor 须越过已加载历史', () => {
+  it('cursor 设为最大 seq+1，resume 不再重放历史导致文本重复追加', () => {
+    expect(cursorAfterMessages([{ seq: 1 }, { seq: 2 }, { seq: 9 }])).toBe('10:0');
+  });
+  it('空历史从 1:0 开始', () => {
+    expect(cursorAfterMessages([])).toBe('1:0');
   });
 });

@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useChat } from '@/lib/useChat';
-import { useChatStore } from '@/store/useChatStore';
+import { useChatStore, cursorAfterMessages } from '@/store/useChatStore';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useCommitPlan } from '@/lib/useCommitPlan';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
@@ -43,6 +43,7 @@ export function ChatPanel() {
       api.history(first.id).then((h) => {
         const msgs = h.messages.map((m: any) => ({ seq: m.seq, role: m.role, kind: m.kind, content: m.content ?? '', payload: m.payload }));
         setConversation(first.id, msgs);
+        useChatStore.setState({ cursor: cursorAfterMessages(h.messages) });
         const lastSet = [...h.messages].reverse().find((m: any) => m.kind === 'constraint_set');
         if (lastSet?.payload) useChatStore.setState({ artifact: lastSet.payload, clarifications: lastSet.payload.clarifications_needed ?? [] });
         if (first.status === 'active') chat.resume();
