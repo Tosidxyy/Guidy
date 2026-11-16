@@ -3,6 +3,7 @@ import { ENGINE_VERSION, LIMITS } from '@/shared/constants';
 import { diffBlocks, solve, validatePlacement } from '@/shared/engine';
 import type { Block, Constraint, ConstraintPayload, DiffResult, PlanState, SolveOutput, TaskDef } from '@/shared/types';
 import { buildEmptyPlan, buildSamplePlan } from '@/lib/seed';
+import { solveArtifact } from '@/lib/preview';
 import { loadPersisted, persist } from '@/lib/storage';
 
 interface UndoEntry {
@@ -43,6 +44,7 @@ interface PlanStore {
   deleteTaskDef: (key: string) => void;
 
   requestReschedule: (reason: string) => void;
+  previewArtifact: (draft: import('@/shared/schemas').ConstraintSetArtifact) => void;
   applyPreview: () => void;
   discardPreview: () => void;
 
@@ -230,6 +232,16 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       });
       const diff = diffBlocks(state.blocks, output.blocks);
       set({ preview: { output, diff, reason }, lastCompromises: output.compromises });
+    },
+
+    previewArtifact: (draft) => {
+      const { state } = get();
+      const { output, diff } = solveArtifact(
+        draft,
+        { horizon_start: state.plan.horizon_start, timezone: state.plan.timezone },
+        state.blocks,
+      );
+      set({ preview: { output, diff, reason: 'AI 约束方案预览' }, lastCompromises: output.compromises });
     },
 
     applyPreview: () => {
