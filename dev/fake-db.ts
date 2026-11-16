@@ -15,7 +15,7 @@ export function createMemoryDb(seed: Record<string, any[]> = {}): MemoryDb {
       const filters: [string, unknown][] = []; const order: [string, boolean][] = [];
       let mode: 'read' | 'insert' | 'update' | 'delete' = 'read';
       let values: any; let conflict: string[] | null = null; let columns: string | null = null; let count = 1000;
-      const project = (row: any) => columns ? Object.fromEntries(columns.split(',').map((c) => [c.trim(), row[c.trim()]])) : { ...row };
+      const project = (row: any) => (!columns || columns === '*') ? { ...row } : Object.fromEntries(columns.split(',').map((c) => [c.trim(), row[c.trim()]]));
       const q: DbQuery = {
         select(cols) { columns = cols ?? null; return q; },
         eq(k, v) { filters.push([k, v]); return q; },
