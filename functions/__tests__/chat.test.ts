@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { application } from '../app';
 import { createMemoryDb } from '../../dev/fake-db';
-import { createFakeQca, upstreamStream } from '../../dev/fake-qca';
+import { createFakeQca, upstreamStream, persistentUpstreamStream } from '../../dev/fake-qca';
 import { readSSE } from '../qca/sse.mjs';
 import type { Deps, RouteCtx } from '../types';
 function deps(qcaOverrides = {}, db = createMemoryDb()): Deps {
@@ -60,6 +60,20 @@ describe('chatSend', () => {
     const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '排计划' })));
     expect(out.some((f) => f.event === 'artifact' && f.data.kind === 'constraint_set')).toBe(true);
   });
+  it('持久上游流 + 真实 session.status_idle：终态后主动结束，投影 artifact 并 done（不依赖 EOF）', async () => {
+    const set = { type: 'constraint_set', plan_title: '考研', horizon_days: 7, task_defs: [{ key: 'math', title: '数学', category: 'study', duration_min: 90, frequency: { type: 'daily' } }], constraints: [], clarifications_needed: [] };
+    const frames = [
+      { type: 'session.status_running' },
+      { type: 'event_delta', event_id: 'e1', delta: { type: 'content_delta', content: { type: 'text', text: '```json\n' + JSON.stringify(set) + '\n```' } } },
+      { type: 'agent.message', id: 'e1', content: [{ type: 'text', text: '```json\n' + JSON.stringify(set) + '\n```' }] },
+      { type: 'session.status_idle' },
+    ];
+    const d = deps({ openStream: async () => ({ body: persistentUpstreamStream(frames), close() {} }) });
+    const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '排计划' })));
+    expect(out.some((f) => f.event === 'artifact' && f.data.kind === 'constraint_set')).toBe(true);
+    expect(out.some((f) => f.event === 'status' && f.data.state === 'completed')).toBe(true);
+    expect(out.at(-1).event).toBe('done');
+  }, 3000);
 });
 describe('chatHistory / interrupt', () => {
   it('history 跨访客 → 403', async () => {

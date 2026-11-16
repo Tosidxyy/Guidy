@@ -23,11 +23,15 @@ export function createProjector(seq: () => number, deltaSeq: number) {
         drafts.set(id, t);
         if (!streamed && t) out.push({ event: 'delta', data: { seq: deltaSeq, text: t } });
       } else if (type.startsWith('session')) {
+        // QCA 把生命周期状态编码在事件 type 名中（session.status_idle 等），无嵌套 status 字段。
         const state: string = ev.status ?? ev.state ?? '';
-        if (type === 'session.error' || state === 'failed' || state === 'error') {
+        const failedNow = type === 'session.error' || state === 'failed' || state === 'error';
+        const idleNow = type === 'session.status_idle' || type === 'session.completed' || state === 'idle' || state === 'completed';
+        const endedNow = type === 'session.status_terminated' || type === 'session.deleted';
+        if (failedNow) {
           terminal = true; failed = true;
           out.push({ event: 'error', data: { seq: seq(), code: 'upstream_error', message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID() } });
-        } else if (state === 'idle' || state === 'completed' || type === 'session.completed') {
+        } else if (idleNow || endedNow) {
           terminal = true;
           out.push({ event: 'status', data: { seq: seq(), state: failed ? 'failed' : 'completed' } });
         }

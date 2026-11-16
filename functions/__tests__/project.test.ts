@@ -41,3 +41,51 @@ describe('projector', () => {
     expect(p.push({ type: 'event_start', id: 'e1' })).toHaveLength(0);
   });
 });
+describe('projector — QCA 真实生命周期事件（状态编码在 type 名中）', () => {
+  it('session.status_idle → completed 终态', () => {
+    const p = createProjector(seqFactory(), DELTA_SEQ);
+    const out = p.push({ type: 'session.status_idle', id: 'evt_x', processed_at: '2026-11-16T00:00:00Z' });
+    expect(out[0]).toMatchObject({ event: 'status', data: { state: 'completed' } });
+    expect(p.isTerminal()).toBe(true);
+  });
+  it('session.status_running → 非终态，无事件', () => {
+    const p = createProjector(seqFactory(), DELTA_SEQ);
+    expect(p.push({ type: 'session.status_running' })).toHaveLength(0);
+    expect(p.isTerminal()).toBe(false);
+  });
+  it('session.thread_status_idle → 非终态（thread 级，session 仍可能继续）', () => {
+    const p = createProjector(seqFactory(), DELTA_SEQ);
+    expect(p.push({ type: 'session.thread_status_idle' })).toHaveLength(0);
+    expect(p.isTerminal()).toBe(false);
+  });
+  it('session.status_terminated → 终态', () => {
+    const p = createProjector(seqFactory(), DELTA_SEQ);
+    const out = p.push({ type: 'session.status_terminated' });
+    expect(out[0]).toMatchObject({ event: 'status', data: { state: 'completed' } });
+    expect(p.isTerminal()).toBe(true);
+  });
+  it('session.deleted → 终态', () => {
+    const p = createProjector(seqFactory(), DELTA_SEQ);
+    const out = p.push({ type: 'session.deleted' });
+    expect(out[0]).toMatchObject({ event: 'status' });
+    expect(p.isTerminal()).toBe(true);
+  });
+  it('session.error 后 session.status_idle → failed，不翻转为成功', () => {
+    const p = createProjector(seqFactory(), DELTA_SEQ);
+    p.push({ type: 'session.error' });
+    const out = p.push({ type: 'session.status_idle' });
+    expect(out[0]).toMatchObject({ event: 'status', data: { state: 'failed' } });
+  });
+  it('完整真实事件流：running→delta→buffered→idle 累积文本并终态', () => {
+    const p = createProjector(seqFactory(), DELTA_SEQ);
+    expect(p.push({ type: 'session.status_running' })).toHaveLength(0);
+    p.push({ type: 'event_start', event: { id: 'e1', type: 'agent.message' } });
+    p.push({ type: 'event_delta', event_id: 'e1', delta: { type: 'content_delta', index: 0, content: { type: 'text', text: '你好' } } });
+    p.push({ type: 'agent.message', id: 'e1', content: [{ type: 'text', text: '你好' }] });
+    expect(p.isTerminal()).toBe(false);
+    const out = p.push({ type: 'session.status_idle' });
+    expect(out[0]).toMatchObject({ event: 'status', data: { state: 'completed' } });
+    expect(p.text()).toBe('你好');
+    expect(p.isTerminal()).toBe(true);
+  });
+});

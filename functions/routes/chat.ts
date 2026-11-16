@@ -47,20 +47,16 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
       const emit = (e: AppEvent) => controller.enqueue(appFrame(e.data.seq, e.event, e.data));
       const abort = new AbortController();
       interruptRegistry.set(conv.id, abort);
-      let phase = 'start';
       try {
         const userSeq = nextSeq();
         emit({ event: 'accepted', data: { request_id: requestId, conversation_id: conv.id, seq: userSeq } });
-        phase = 'insert_user_message';
         await insertMessage(deps.db, conv, { seq: userSeq, role: 'user', kind: 'text', content: text });
-        phase = 'advance_cursor';
         await advanceCursor(deps.db, conv, seq);
         if (replay) {
           for (const e of (intent.result ?? []) as AppEvent[]) emit({ ...e, data: { ...e.data, seq: nextSeq() } } as AppEvent);
           emit({ event: 'done', data: { seq: nextSeq() } });
           return;
         }
-        phase = 'ensure_qca_session';
         const { sessionId } = await ensureQcaSession(deps, conv);
         const collected: AppEvent[] = [];
         const assistantSeq = nextSeq();
@@ -70,12 +66,9 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         for (let attempt = 0; attempt < 3; attempt++) {
           if (attempt > 0) await deps.db.from('messages').delete().eq('conversation_id', conv.id).eq('seq', assistantSeq);
           const projector = createProjector(nextSeq, assistantSeq);
-          phase = 'open_stream';
           const upstream = await deps.qca.openStream(sessionId, { lastEventId: conv.last_event_id ?? undefined, signal: abort.signal });
           try {
-            phase = 'send_events';
             await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [] }), `${requestId}:${attempt}`);
-            phase = 'read_stream';
             for await (const frame of readSSE(upstream.body, { signal: abort.signal })) {
               const ev = JSON.parse(frame.data);
               if (frame.id) lastEventId = frame.id;
@@ -85,6 +78,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
                 if (p.event === 'status') { terminalState = p.data.state === 'completed' ? 'completed' : 'failed'; await insertMessage(deps.db, conv, { seq: p.data.seq, role: 'system', kind: 'status', content: p.data.state }); }
                 if (p.event === 'error') { terminalState = 'failed'; await insertMessage(deps.db, conv, { seq: p.data.seq, role: 'system', kind: 'error', content: p.data.code }); }
               }
+              if (projector.isTerminal()) break;
             }
           } finally { upstream.close(); }
           finalText = projector.text();
@@ -106,18 +100,14 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           }
           break;
         }
-        phase = 'advance_cursor_final';
         await advanceCursor(deps.db, conv, seq, lastEventId);
         const status: AppEvent = { event: 'status', data: { seq: nextSeq(), state: terminalState } };
         emit(status); collected.push(status);
         emit({ event: 'done', data: { seq: nextSeq() } });
-        phase = 'mark_dispatch';
         await markDispatch(deps.db, requestId, { status: terminalState === 'completed' ? 'done' : terminalState, session_id: sessionId, result: collected });
-        phase = 'update_conversation';
         await deps.db.from('conversations').update({ status: terminalState === 'completed' ? 'active' : terminalState }).eq('id', conv.id);
-      } catch (e) {
-        console.error('chat_send_failed', JSON.stringify({ code: (e as any)?.code, status: (e as any)?.status, outcome: (e as any)?.outcome, message: String((e as any)?.message ?? e).slice(0, 300) }));
-        const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'upstream_error', message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID(), upstream_code: typeof (e as any)?.code === 'string' ? (e as any).code : undefined, upstream_phase: phase, upstream_message: String((e as any)?.message ?? e).slice(0, 200) } };
+      } catch {
+        const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'upstream_error', message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID() } };
         controller.enqueue(appFrame(err.data.seq, err.event, err.data));
         controller.enqueue(appFrame(nextSeq(), 'done', { seq }));
         await markDispatch(deps.db, requestId, { status: 'failed' }).catch(() => {});
@@ -175,13 +165,13 @@ export async function chatEvents(ctx: RouteCtx, deps: Deps): Promise<Response> {
           try {
             for await (const frame of readSSE(upstream.body, { signal: abort.signal })) {
               for (const p of projector.push(JSON.parse(frame.data))) controller.enqueue(appFrame(p.data.seq, p.event, p.data));
+              if (projector.isTerminal()) break;
             }
           } finally { upstream.close(); interruptRegistry.delete(conv.id); }
         }
         controller.enqueue(appFrame(nextSeq(), 'done', { seq }));
-      } catch (e) {
-        console.error('chat_events_failed', JSON.stringify({ code: (e as any)?.code, status: (e as any)?.status, outcome: (e as any)?.outcome, message: String((e as any)?.message ?? e).slice(0, 300) }));
-        controller.enqueue(appFrame(nextSeq(), 'error', { seq, code: 'upstream_error', message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID(), upstream_code: typeof (e as any)?.code === 'string' ? (e as any).code : undefined }));
+      } catch {
+        controller.enqueue(appFrame(nextSeq(), 'error', { seq, code: 'upstream_error', message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID() }));
         controller.enqueue(appFrame(nextSeq(), 'done', { seq }));
       } finally { controller.close(); }
     },
