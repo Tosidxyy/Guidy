@@ -4,6 +4,7 @@ import { health } from './routes/health.ts';
 import { me } from './routes/me.ts';
 import { conversations } from './routes/conversations.ts';
 import { chatSend, chatHistory, chatEvents, chatInterrupt } from './routes/chat.ts';
+import { listPlans, getPlan, commitPlan } from './routes/plans.ts';
 export function application(deps: Deps) {
   const routes: Route[] = [
     { method: 'GET', pattern: /^\/api\/health$/, handler: health },
@@ -13,6 +14,9 @@ export function application(deps: Deps) {
     { method: 'GET', pattern: /^\/api\/chat\/history$/, handler: chatHistory },
     { method: 'GET', pattern: /^\/api\/chat\/events$/, handler: chatEvents },
     { method: 'POST', pattern: /^\/api\/chat\/interrupt$/, handler: chatInterrupt },
+    { method: 'POST', pattern: /^\/api\/plans\/commit$/, handler: commitPlan },
+    { method: 'GET', pattern: /^\/api\/plans$/, handler: listPlans },
+    { method: 'GET', pattern: /^\/api\/plans\/([^/]+)$/, handler: getPlan },
   ];
   const router = createRouter(routes);
   return (ctx: RouteCtx) => router(ctx, deps);
