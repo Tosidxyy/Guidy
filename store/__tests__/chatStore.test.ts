@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { reduceFrame, initialChatState, cursorAfterMessages } from '../useChatStore';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { reduceFrame, initialChatState, cursorAfterMessages, shouldAutoRestore, useChatStore } from '../useChatStore';
 describe('reduceFrame', () => {
   it('accepted 设定 conversationId 并把临时 user 消息 seq 转正', () => {
     const s0 = { ...initialChatState, messages: [{ seq: -1, role: 'user' as const, kind: 'text', content: 'hi' }] };
@@ -36,5 +36,33 @@ describe('cursorAfterMessages — 恢复时 cursor 须越过已加载历史', ()
   });
   it('空历史从 1:0 开始', () => {
     expect(cursorAfterMessages([])).toBe('1:0');
+  });
+});
+
+describe('auto-restore 守卫 — 新建对话后不得被旧对话劫持恢复', () => {
+  beforeEach(() => useChatStore.setState({ ...initialChatState }));
+  it('初次加载：未恢复过、无会话、有历史且数据就绪 → 应恢复', () => {
+    expect(shouldAutoRestore(useChatStore.getState(), 1, true)).toBe(true);
+  });
+  it('数据未就绪或无历史 → 不恢复', () => {
+    expect(shouldAutoRestore(useChatStore.getState(), 0, true)).toBe(false);
+    expect(shouldAutoRestore(useChatStore.getState(), 1, false)).toBe(false);
+  });
+  it('已有会话 → 不恢复', () => {
+    useChatStore.setState({ conversationId: 'c1' });
+    expect(shouldAutoRestore(useChatStore.getState(), 1, true)).toBe(false);
+  });
+  it('新建对话(reset)后即使 conversations refetch 也不再恢复旧数学对话', () => {
+    useChatStore.getState().setConversation('old-math', []);
+    expect(useChatStore.getState().restoreDone).toBe(true);
+    useChatStore.getState().reset();
+    expect(useChatStore.getState().conversationId).toBeNull();
+    expect(useChatStore.getState().restoreDone).toBe(true);
+    expect(shouldAutoRestore(useChatStore.getState(), 1, true)).toBe(false);
+  });
+  it('startSend 标记 restoreDone，发送竞态中不被恢复劫持', () => {
+    useChatStore.getState().startSend('你是什么模型');
+    expect(useChatStore.getState().restoreDone).toBe(true);
+    expect(shouldAutoRestore(useChatStore.getState(), 1, true)).toBe(false);
   });
 });

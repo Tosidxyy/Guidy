@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useChat } from '@/lib/useChat';
-import { useChatStore, cursorAfterMessages } from '@/store/useChatStore';
+import { useChatStore, cursorAfterMessages, shouldAutoRestore } from '@/store/useChatStore';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useCommitPlan } from '@/lib/useCommitPlan';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
@@ -22,6 +22,7 @@ export function ChatPanel() {
   const clarifications = useChatStore((s) => s.clarifications);
   const error = useChatStore((s) => s.error);
   const conversationId = useChatStore((s) => s.conversationId);
+  const restoreDone = useChatStore((s) => s.restoreDone);
   const setConversation = useChatStore((s) => s.setConversation);
 
   const isSample = usePlanStore((s) => s.isSample);
@@ -38,18 +39,17 @@ export function ChatPanel() {
 
   useEffect(() => {
     const items = conversations.data?.items ?? [];
-    if (!conversationId && items.length > 0) {
-      const first = items[0];
-      api.history(first.id).then((h) => {
-        const msgs = h.messages.map((m: any) => ({ seq: m.seq, role: m.role, kind: m.kind, content: m.content ?? '', payload: m.payload }));
-        setConversation(first.id, msgs);
-        useChatStore.setState({ cursor: cursorAfterMessages(h.messages) });
-        const lastSet = [...h.messages].reverse().find((m: any) => m.kind === 'constraint_set');
-        if (lastSet?.payload) useChatStore.setState({ artifact: lastSet.payload, clarifications: lastSet.payload.clarifications_needed ?? [] });
-        if (first.status === 'active') chat.resume();
-      }).catch(() => {});
-    }
-  }, [conversations.data]);
+    if (!shouldAutoRestore({ conversationId, restoreDone }, items.length, !!conversations.data)) return;
+    const first = items[0];
+    api.history(first.id).then((h) => {
+      const msgs = h.messages.map((m: any) => ({ seq: m.seq, role: m.role, kind: m.kind, content: m.content ?? '', payload: m.payload }));
+      setConversation(first.id, msgs);
+      useChatStore.setState({ cursor: cursorAfterMessages(h.messages) });
+      const lastSet = [...h.messages].reverse().find((m: any) => m.kind === 'constraint_set');
+      if (lastSet?.payload) useChatStore.setState({ artifact: lastSet.payload, clarifications: lastSet.payload.clarifications_needed ?? [] });
+      if (first.status === 'active') chat.resume();
+    }).catch(() => {});
+  }, [conversations.data, conversationId, restoreDone]);
 
   const onConfirm = (draft: ConstraintSetArtifact) => {
     previewArtifact(draft);

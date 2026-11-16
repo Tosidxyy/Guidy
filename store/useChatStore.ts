@@ -11,14 +11,19 @@ export interface ChatState {
   artifact: ConstraintSetArtifact | null;
   clarifications: string[];
   error: { code: string; message: string; diagnosticId?: string } | null;
+  restoreDone: boolean;
 }
 export interface AppFrame { event: string; data: any }
 const TERMINAL = ['completed', 'failed', 'interrupted'];
-export const initialChatState: ChatState = { conversationId: null, requestId: null, messages: [], streaming: false, connection: 'idle', cursor: '0:0', artifact: null, clarifications: [], error: null };
+export const initialChatState: ChatState = { conversationId: null, requestId: null, messages: [], streaming: false, connection: 'idle', cursor: '0:0', artifact: null, clarifications: [], error: null, restoreDone: false };
 // 恢复会话时历史已完整加载，cursor 须越过最大 seq，否则 resume 重放历史会把全文再追加一遍。
 export function cursorAfterMessages(messages: { seq: number }[]): string {
   const max = messages.reduce((mx, m) => Math.max(mx, m.seq), 0);
   return `${max + 1}:0`;
+}
+// 自动恢复只在首次加载发生一次；用户新建对话或发送后 restoreDone=true，conversations refetch 不得把旧对话拉回。
+export function shouldAutoRestore(state: Pick<ChatState, 'conversationId' | 'restoreDone'>, itemCount: number, dataReady: boolean): boolean {
+  return dataReady && !state.restoreDone && state.conversationId === null && itemCount > 0;
 }
 export function reduceFrame(state: ChatState, frame: AppFrame): ChatState {
   const d = frame.data;
@@ -59,7 +64,7 @@ interface ChatStore extends ChatState {
 export const useChatStore = create<ChatStore>((set, get) => ({
   ...initialChatState,
   applyFrame: (frame) => set(reduceFrame(get(), frame)),
-  startSend: (text) => set({ ...get(), streaming: true, connection: 'connecting', error: null, artifact: null, clarifications: [], messages: [...get().messages, { seq: -1, role: 'user', kind: 'text', content: text }] }),
-  setConversation: (id, messages = []) => set({ ...initialChatState, conversationId: id, messages }),
-  reset: () => set({ ...initialChatState }),
+  startSend: (text) => set({ ...get(), streaming: true, connection: 'connecting', error: null, artifact: null, clarifications: [], restoreDone: true, messages: [...get().messages, { seq: -1, role: 'user', kind: 'text', content: text }] }),
+  setConversation: (id, messages = []) => set({ ...initialChatState, conversationId: id, messages, restoreDone: true }),
+  reset: () => set({ ...initialChatState, restoreDone: true }),
 }));
