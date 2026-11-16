@@ -1,6 +1,6 @@
-export { solve } from './solve';
-export { validatePlacement } from './validate';
-export type { PlacementCandidate, PlacementContext } from './validate';
-export { diffBlocks } from './diff';
-export { resultHash } from './hash';
-export * from './time';
+export { solve } from './solve.ts';
+export { validatePlacement } from './validate.ts';
+export type { PlacementCandidate, PlacementContext } from './validate.ts';
+export { diffBlocks } from './diff.ts';
+export { resultHash } from './hash.ts';
+export * from './time.ts';

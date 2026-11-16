@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'npm:zod@3.25.76';
 
 export const CategoryEnum = z.enum([
   'study', 'fitness', 'reading', 'work', 'life', 'creative', 'rest', 'other',

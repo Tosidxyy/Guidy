@@ -1,6 +1,6 @@
-import { DEFAULT_ACTIVE, DEFAULT_MUTEX_GAP, MIN_FRAGMENT_MIN, PERIOD_BOUNDS, PRIORITY_WEIGHT } from '../constants';
-import type { Block, Compromise, Constraint, SolveInput, SolveOutput, TaskDef, Violation } from '../types';
-import { dayList, gapBetween, hhmmToMin, localDay, localMinutes, subtractIntervals, utcAt, weekdayOfDay, type Interval } from './time';
+import { DEFAULT_ACTIVE, DEFAULT_MUTEX_GAP, MIN_FRAGMENT_MIN, PERIOD_BOUNDS, PRIORITY_WEIGHT } from '../constants.ts';
+import type { Block, Compromise, Constraint, SolveInput, SolveOutput, TaskDef, Violation } from '../types.ts';
+import { dayList, gapBetween, hhmmToMin, localDay, localMinutes, subtractIntervals, utcAt, weekdayOfDay, type Interval } from './time.ts';
 
 interface DayContext {
   day: string;

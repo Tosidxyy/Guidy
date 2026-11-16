@@ -1,5 +1,5 @@
-import { ENGINE_VERSION } from '../constants';
-import type { Block } from '../types';
+import { ENGINE_VERSION } from '../constants.ts';
+import type { Block } from '../types.ts';
 
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);

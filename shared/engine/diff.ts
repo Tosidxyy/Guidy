@@ -1,4 +1,4 @@
-import type { Block, DiffResult } from '../types';
+import type { Block, DiffResult } from '../types.ts';
 
 export function diffBlocks(before: Block[], after: Block[]): DiffResult {
   const beforeMap = new Map(before.map((b) => [b.id, b]));

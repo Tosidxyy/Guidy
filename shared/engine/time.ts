@@ -1,5 +1,5 @@
-import { addDays } from 'date-fns';
-import { formatInTimeZone, fromZonedTime, toZonedTime } from 'date-fns-tz';
+import { addDays } from 'npm:date-fns@4.4.0';
+import { formatInTimeZone, fromZonedTime, toZonedTime } from 'npm:date-fns-tz@3.2.0';
 
 export interface Interval {
   start: number;

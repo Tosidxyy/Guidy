@@ -1,6 +1,6 @@
-import { DEFAULT_MUTEX_GAP, PERIOD_BOUNDS } from '../constants';
-import type { Block, Constraint, PlacementCheck, Violation } from '../types';
-import { gapBetween, hhmmToMin, localDay, localMinutes, overlaps, weekdayOfDay, type Interval } from './time';
+import { DEFAULT_MUTEX_GAP, PERIOD_BOUNDS } from '../constants.ts';
+import type { Block, Constraint, PlacementCheck, Violation } from '../types.ts';
+import { gapBetween, hhmmToMin, localDay, localMinutes, overlaps, weekdayOfDay, type Interval } from './time.ts';
 
 export interface PlacementCandidate {
   id?: string;

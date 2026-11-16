@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'npm:zod@3.25.76';
 import { readJson } from '../router.ts';
 import { fail } from '../errors.ts';
 import { rows } from '../db.ts';

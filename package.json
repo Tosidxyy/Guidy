@@ -13,8 +13,8 @@
     "build": "tsc --noEmit && node scripts/build.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
-    "dev:function": "npx deno run --allow-net=127.0.0.1:8000 --allow-read --allow-env dev/function-local.ts",
-    "check:function": "npx deno check functions/app.ts"
+    "dev:function": "npx deno run --config dev/deno.check.json --allow-net=127.0.0.1:8000 --allow-read --allow-env dev/function-local.ts",
+    "check:function": "npx deno check --config dev/deno.check.json functions/app.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

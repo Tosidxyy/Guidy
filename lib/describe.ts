@@ -1,5 +1,5 @@
-import { CATEGORY_MAP, PERIOD_LABEL } from '@/shared/constants';
-import type { ConstraintPayload, Frequency, TaskDef } from '@/shared/types';
+import { CATEGORY_MAP, PERIOD_LABEL } from '../shared/constants.ts';
+import type { ConstraintPayload, Frequency, TaskDef } from '../shared/types.ts';
 
 const WEEKDAY_LABEL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
