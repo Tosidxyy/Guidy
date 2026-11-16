@@ -56,6 +56,18 @@ describe('commitPlan', () => {
     expect((await res.json()).error.code).toBe('engine_infeasible');
     expect(d.db.tables.plans ?? []).toHaveLength(0);
   });
+  it('persists uuid PKs for blocks and constraints (ignores engine/client ids)', async () => {
+    const d = deps();
+    const input = { ...baseInput, constraints: [{ id: 'ai-0', payload: { type: 'active_window', start: '08:00', end: '22:00' }, source: 'ai', enabled: true }] };
+    const result_hash = await hashFor(input);
+    const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: crypto.randomUUID(), plan_id: null, input, result_hash, engine_version: 1 }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    expect(body.blocks.length).toBeGreaterThan(0);
+    expect(body.blocks.every((b: any) => uuid.test(b.id))).toBe(true);
+    expect(body.constraints.every((c: any) => uuid.test(c.id))).toBe(true);
+  });
 });
 describe('getPlan', () => {
   it('跨访客 → 403', async () => {

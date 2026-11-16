@@ -77,12 +77,13 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
     await deps.db.from('task_defs').insert({ plan_id: plan.id, key: t.key, title: t.title, category: t.category, duration_min: t.duration_min, frequency: t.frequency, priority: t.priority, splittable: t.splittable, preferred_period: t.preferred_period ?? null, sort_order: t.sort_order });
   }
   for (const c of input.constraints) {
-    await deps.db.from('constraints').insert({ id: c.id, plan_id: plan.id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
+    await deps.db.from('constraints').insert({ plan_id: plan.id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
   }
   for (const b of output.blocks) {
-    await deps.db.from('blocks').insert({ id: b.id, plan_id: plan.id, title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc, priority: b.priority, pinned: b.pinned, origin: b.origin, notes: b.notes ?? null });
+    await deps.db.from('blocks').insert({ plan_id: plan.id, title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc, priority: b.priority, pinned: b.pinned, origin: b.origin, notes: b.notes ?? null });
   }
   await deps.db.from('commit_log').insertIfAbsent({ preview_id, visitor_id: visitor, plan_id: plan.id }, { onConflict: 'preview_id' });
   const blocks = rows(await deps.db.from('blocks').select('*').eq('plan_id', plan.id).order('start_utc', { ascending: true }));
-  return Response.json({ plan, task_defs: input.task_defs, constraints: input.constraints, blocks, version: plan.version, server_authoritative, violations: [], compromises: output.compromises });
+  const constraints = rows(await deps.db.from('constraints').select('*').eq('plan_id', plan.id));
+  return Response.json({ plan, task_defs: input.task_defs, constraints, blocks, version: plan.version, server_authoritative, violations: [], compromises: output.compromises });
 }
