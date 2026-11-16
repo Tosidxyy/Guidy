@@ -75,3 +75,23 @@
 ### 验收截图（build/，git-ignored）
 
 `a2-confirm.png` / `a2-card.png` / `a3-calendar.png` / `a9-restore.png` / `c6-newconv.png`；门禁日志 `build/gates-final.log`。
+
+## M2 增强 — 自由对话 agent（意图分流）
+
+状态：**已实现并发布到 private**。commit `f6550e8`；发布 actionId `fb8e98bb-9195-498a-9dbf-64badc74edca`（publish op `01a1e563-d850-7141-a323-0b827799fb23`，committed）；部署 bundle `index-DXsSocaf.js`。
+
+起因：旧 prompt 强制每轮输出产物（`buildUserMessage` 无计划时硬塞「请生成 constraint_set」+「产物只输出一个 JSON」+ 唯一考研数学范例），导致问「你是什么模型」也被套成数学计划。
+
+改动（后端/schema/确认卡/日历零改动，纯 prompt 策略 + 开场白）：
+- `functions/prompt.ts`：身份守卫（只以 Guidy 助手作答，不透露底层模型）+ 意图分流（闲聊/元问题→自然语言不输出产物；信息不足→自然语言追问每轮≤2；目标明确且信息足够→才输出 constraint_set；改计划→patch）；范例标注「仅示范形状，禁止照抄范例科目」；无计划上下文改中性「当前还没有计划。」。
+- `components/chat/ChatPanel.tsx`：静态开场改为问句「你想制定什么方案？…信息够了就在下方生成计划。」。
+- TDD：`artifacts.test.ts` 先 RED（6 条策略断言）→ GREEN；全量 123 测试通过，check:function/build EXIT 0。
+
+真实 AI 浏览器实测（owner，private，三条路径全过）：
+1. 问「你是什么模型」→ accepted/status/done，**无 artifact、无卡**；答「我是 Guidy 排程助手…要不要聊聊你想排什么？」。
+2. 模糊目标「我想做个学习计划」→ **无 artifact、无卡**；自然语言追问 2 个（学什么/每天多久+忙碌时段）。
+3. 具体目标（数学120/英语90 daily、08–22 有空、周三18–22 兼职、数学英语不连续、偏好早上数学）→ artifact（残留 1 澄清→「还需要确认」框，卡暂不出）；答澄清后 → artifact clarifications 清空 → **确认卡自动出现**「核对约束方案」：任务2 + 约束5（active 08–22 / 周三 busy 18–22 兼职 / math·english no_adjacent soft / math 早晨 / english 下午）+ 取消/确认并生成。
+
+证据：`build/chat-agent-card.png`、`build/gates-chat.log`。
+
+观察（仍未修复，YAGNI）：assistant 文本气泡在卡上方显示原始 JSON，自由对话下更明显；如后续优化可在投影侧把产物 JSON 与可读文本分离（不影响本次行为验收）。
