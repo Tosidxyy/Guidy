@@ -107,7 +107,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         await deps.db.from('conversations').update({ status: terminalState === 'completed' ? 'active' : terminalState }).eq('id', conv.id);
       } catch (e) {
         console.error('chat_send_failed', JSON.stringify({ code: (e as any)?.code, status: (e as any)?.status, outcome: (e as any)?.outcome, message: String((e as any)?.message ?? e).slice(0, 300) }));
-        const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'upstream_error', message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID() } };
+        const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'upstream_error', message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID(), upstream_code: typeof (e as any)?.code === 'string' ? (e as any).code : undefined } };
         controller.enqueue(appFrame(err.data.seq, err.event, err.data));
         controller.enqueue(appFrame(nextSeq(), 'done', { seq }));
         await markDispatch(deps.db, requestId, { status: 'failed' }).catch(() => {});
@@ -171,7 +171,7 @@ export async function chatEvents(ctx: RouteCtx, deps: Deps): Promise<Response> {
         controller.enqueue(appFrame(nextSeq(), 'done', { seq }));
       } catch (e) {
         console.error('chat_events_failed', JSON.stringify({ code: (e as any)?.code, status: (e as any)?.status, outcome: (e as any)?.outcome, message: String((e as any)?.message ?? e).slice(0, 300) }));
-        controller.enqueue(appFrame(nextSeq(), 'error', { seq, code: 'upstream_error', message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID() }));
+        controller.enqueue(appFrame(nextSeq(), 'error', { seq, code: 'upstream_error', message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID(), upstream_code: typeof (e as any)?.code === 'string' ? (e as any).code : undefined }));
         controller.enqueue(appFrame(nextSeq(), 'done', { seq }));
       } finally { controller.close(); }
     },

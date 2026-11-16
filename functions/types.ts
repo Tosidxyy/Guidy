@@ -20,5 +20,5 @@ export type AppEvent =
   | { event: 'delta'; data: { seq: number; text: string } }
   | { event: 'artifact'; data: { seq: number; kind: 'constraint_set' | 'patch'; payload: unknown } }
   | { event: 'status'; data: { seq: number; state: 'running' | 'waiting_confirm' | 'completed' | 'interrupted' | 'failed' } }
-  | { event: 'error'; data: { seq: number; code: string; message: string; diagnostic_id: string } }
+  | { event: 'error'; data: { seq: number; code: string; message: string; diagnostic_id: string; upstream_code?: string } }
   | { event: 'done'; data: { seq: number } };
