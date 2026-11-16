@@ -1,5 +1,0 @@
-* text=auto
-*.md whitespace=-blank-at-eol
-*.png binary
-*.ttf binary
-*.sql text eol=lf

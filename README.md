@@ -1,88 +1,41 @@
-# Guidy — Chat & Do It.
+# Guidy · 把目标排进日历
 
-**Guidy** 是面向 iOS 的通用 AI 目标规划与执行产品。用户提出目标，Agent 在短对话中澄清必要条件、自主研究、生成有依据的可执行计划，经过确认后安排到应用内日历，通过提醒、反馈和可审阅的重规划帮助用户推进目标。未来可以将经过执行记录与审核的规划**路径**作为模板复用。
+免登录的 AI 计划工作台：用自然语言说出目标与限制，Agent 提取时间窗口、互斥、每日上限等约束，确定性排程引擎生成个性化计划，落在可拖拽的日历面板上；支持手动编辑、AI 编辑预览，满意后可发布为社区模板供他人套用自己的约束重排。
 
-> 当前状态（2026-10-17）：已接入真实邮箱登录、Guidy聊天制订、21天策略预览、DeepSeek/豆包按需后台制订、确定性候选排程、明确确认入历与自然语言修订。日历按日期展示激活时段和具体做法。旧手填条件/来源/数值审阅入口已退役；通知/反馈完整闭环、签名发布与最新全流程iPhone验收尚未完成。实际检查与边界见[改造验收](docs/REDESIGN_ACCEPTANCE.md)、[聊天策略验收](docs/CONVERSATION_STRATEGY_ACCEPTANCE.md)及[TODO](docs/TODO.md)。
+本分支 `Guidy-Qoder` 是面向 Qoder 天池大赛的 **Qoder Sites Web 实现**（React + Vite + Tailwind + 双端共享排程引擎）。`main` 保留早期 iOS / Cloudflare 版本，两者互不影响。
 
-## 产品与技术决策
+## 当前进度
 
-- 品牌：**Guidy**；Slogan：**Chat & Do It.**
-- 首发：**iOS（Windows 开发 + iPhone 真机验证）**。
-- 底部导航：**目标｜日历｜我的**。Agent 属于目标流程；模板从「我的 → 我的模板」进入。
-- 客户端：**React Native + Expo + TypeScript + Expo Router**。
-- 后端：**Cloudflare Workers + TypeScript 领域服务**（模块化单体）。
-- 数据：**Cloudflare D1 + Better Auth**，服务端进行对象级权限校验。
-- 日程：**确定性规则排程 + 用户确认**，通知通过 iPhone 本地通知实现（需真实同步状态）。
-- 版本：**V0.1 核心闭环；V0.2 21 天观察期/私人模板；V0.3 公开模板社区**。
+| 里程碑 | 范围 | 状态 |
+| --- | --- | --- |
+| M1 工作台骨架 | 日历拖拽编辑、8 类约束管理、重排预览、撤销重做、本地持久化、视觉系统 | ✅ 已完成 |
+| M2 AI 规划闭环 | Sites 后端 + QCA SSE 对话、约束提取确认卡、生成预览与恢复 | 待启动（后端开通需确认） |
+| M3 AI 编辑与身份 | Patch diff 预览/应用、多计划、恢复码、配额限流 | 规划中 |
+| M4 社区与发布 | 模板发布/脱敏/广场/套用、公开访问 | 规划中 |
 
-## 文档导航
+里程碑定义与退出标准见 [docs/PRD.md](docs/PRD.md) §9 与 [docs/测试与验收用例.md](docs/测试与验收用例.md) §11。
 
-| 文档 | 作用 |
-| --- | --- |
-| [docs/PRD.md](docs/PRD.md) | 产品范围、用户旅程、规则与验收条件 |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 技术选型、服务分层、Agent、调度、API |
-| [docs/UI_DESIGN.md](docs/UI_DESIGN.md) | iOS 页面、导航、交互与基础视觉 |
-| [docs/DATABASE.md](docs/DATABASE.md) | 概念数据结构、对象授权与原子批次策略 |
-| [docs/TODO.md](docs/TODO.md) | M0–M4 里程碑和逐项任务 |
-| [docs/REDESIGN_ACCEPTANCE.md](docs/REDESIGN_ACCEPTANCE.md) | 当前卡片/日历改造的逐项证据与未验证项 |
-| [docs/BRAND_GUIDE.md](docs/BRAND_GUIDE.md) | Guidy 黑白标识和 UI 视觉 Token |
-| [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) | Windows + iPhone 初始化与图标接入步骤 |
-| [docs/IPHONE_PREVIEW.md](docs/IPHONE_PREVIEW.md) | iPhone Expo Go 与本地 Worker 联通及排查 |
-| [docs/IOS_BUILD.md](docs/IOS_BUILD.md) | EAS 开发构建、签名与 TestFlight 前置条件 |
-| [docs/CLOUDFLARE_DEPLOY.md](docs/CLOUDFLARE_DEPLOY.md) | 已部署的 Cloudflare 开发 Worker/D1 与后续邮件条件 |
-| [docs/EMAIL_SETUP.md](docs/EMAIL_SETUP.md) | Cloudflare 收信与 Resend 验证码发送配置 |
-| [AGENTS.md](AGENTS.md) | 给 Codex 的项目约定及实施原则 |
-| [apps/mobile/README.md](apps/mobile/README.md) | 当前前端启动、检查命令与验证边界 |
-| [backend/README.md](backend/README.md) | Workers 启动、API 合同、日志与后端检查 |
+## 快速开始
 
-## 图标资源 · 已锁定最终视觉
-
-![Guidy 最终黑白图标](assets/icons/guidy-icon-preview-rounded-256.png)
-
-**设计母版：用户最终亲自确认的黑色圆角背景 + 白色抽象路径箭头，禁止未经明确确认重绘、变更颜色或替换符号。**
-
-
-- 正式 iOS 方形 App icon：`assets/icons/guidy-app-icon-ios-1024.png`
-- 已确认设计母版（完整原图）：`assets/icons/guidy-approved-original.png`（保持原图字节不变）
-- 兼容旧引用：`assets/icons/guidy-icon-source-black-white.png`（与母版相同）
-- 透明黑/白符号、反白备选与主屏幕圆角预览：`assets/icons/`
-- 启动页透明白色符号：`assets/icons/guidy-splash-symbol-white.png`
-- Expo 接入范例：`examples/expo/`（配置和已准备的图片）
-- 原始包说明中的 `archive/` 历史文件未包含在当前目录；不作为实现依据。
-
-**注意**：正式 App icon 为完整方形黑底，不预先裁圆角；iOS 系统会处理图标蒙版。商标与上架同名检查尚未完成。
-
-## iOS 页面原型（新增）
-
-- [六屏总览](design/prototypes/00-overview.png) · [离线浏览图库](design/prototypes/index.html)
-- [目标首页](design/prototypes/01-goals.png) · [Agent 澄清](design/prototypes/02-agent-chat.png) · [计划详情](design/prototypes/03-plan-detail.png)
-- [日历与反馈](design/prototypes/04-calendar.png) · [我的](design/prototypes/05-profile.png) · [模板详情（V0.3 概念）](design/prototypes/06-template-detail.png)
-- [设计体系与实现限制](design/DESIGN_SYSTEM.md)；`design/prototypes/*.svg` 为可编辑版本。
-
-**注意：PNG/SVG 是静态页面设计稿，不是已跑通的 React Native 页面。开发时必须同时阅读 `docs/UI_DESIGN.md`，并遵守 V0.1/V0.2/V0.3 功能边界。**
-
-## 本地启动与开发下一步
-
-```powershell
-cd apps/mobile
+```sh
 npm ci
-npm start
+npm run dev      # 本地预览（loopback URL 见终端输出）
+npm test         # 引擎 + Schema 单测（Vitest）
+npm run build    # tsc 校验 + 静态产物 dist/
 ```
 
-在同一局域网的 iPhone 上使用兼容 Expo Go 扫描 Metro 二维码。Windows 无法运行 Xcode iOS 模拟器；实际手机结果必须另行记录。
+M1 为纯本地工作台：数据存于浏览器 localStorage，无云资源、无模拟 AI。
 
-从根目录运行 `npm run typecheck`、`npm run lint`；浏览器预览用 `npm run mobile:web`。详细信息见 [移动端说明](apps/mobile/README.md)。
+## 目录
 
-1. 阅读 [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) 和 [examples/expo/README.md](examples/expo/README.md)。
-2. 按 `AGENTS.md` 和 `docs/TODO.md` 继续 **M0**；真实登录与本地收件箱使用见 [后端说明](backend/README.md)，iPhone 新认证验收须另行记录。
-3. 在 Windows 启动 Expo 和 Wrangler，在 iPhone 上检查三个 Tab 和 `/health`。
-4. **每轮小任务都遵守 `AGENTS.md` 的闭环：快速测试通过 → `git commit` 实现 → 更新 `docs/TODO.md` → 单独 `git commit` TODO → `git push` 到 [私人仓库](https://github.com/Tosidxyy/Guidy)，并反馈真实 SHA 和推送结果。**
-5. M0 通过后才启动动态澄清与 Agent 研究。
+- `shared/` — 双端共享：类型、Zod Schema、确定性排程引擎（solve / validate / diff / hash）
+- `components/calendar/` — 自研日历面板（CSS Grid + Pointer Events，拖拽/缩放/键盘/预览 ghost）
+- `components/workbench/` — 概览、约束/任务/块/设置抽屉、顶栏
+- `store/` — zustand 状态（计划、撤销栈、预览、UI）
+- `lib/` — 示例计划、持久化、外观偏好、约束文案
+- `functions/` — Sites Edge Function（M2 起启用）
+- `docs/` — PRD、技术方案、数据模型与 API 契约、UI/UX 设计规范、测试与验收用例
 
-## 基础 CI
+## 设计
 
-[GitHub Actions](https://github.com/Tosidxyy/Guidy/actions) 在 main 的相关代码 Push、PR 和手动触发时运行：前端 `npm ci`、类型/lint/API 客户端测试；后端 `npm ci`、类型/lint/格式、边界测试与 Wrangler dry-run。Node 24.15.0 与官方 Action SHA 固定；workflow 只有 contents:read 权限，不需要服务端密钥。纯文档 Push 不重复触发。CI 不替代 iPhone 测试，依赖审计遗留项仍保留。
-
-## 重要安全边界
-
-不要把用户的健康数据/日历同步记录、模型密钥或 Cloudflare Token 或 Better Auth 密钥写入客户端仓库。外部检索内容与社区模板不得作为系统提示执行。任何高风险医疗/用药建议都需要单独的安全边界和人工判断。21 天仅是**启动观察期**，不是保证习惯养成的科学结论。
+视觉方向「晨光时间轴」：黎明渐变品牌时刻 + 8 类别色板；外观/圆角/间距/字号/动效通过 `--site-*` 变量实时可调，设计注册见 `.Guidy.qoder.site`。

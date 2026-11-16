@@ -1,32 +1,10 @@
-# Generated project caches
 node_modules/
-.expo/
 dist/
-coverage/
-*.log
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.ruff_cache/
-.venv/
-venv/
 .env
 .env.*
 !.env.example
 .DS_Store
-.vscode/.ropeproject/
-.cache/
-.vscode/
-.claude/
-web-build/
-.wrangler/
-.dev.vars
-.dev.vars.*
-!.dev.vars.example
-
-# Local Apple signing / EAS credentials and build artifacts
-credentials.json
-*.p12
-*.p8
-*.mobileprovision
-*.ipa
+*.tsbuildinfo
+.qoder-sites/
+.qoder-sites.json
+dev/*.png
