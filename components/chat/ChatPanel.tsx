@@ -18,6 +18,7 @@ export function ChatPanel() {
   const chat = useChat();
   const messages = useChatStore((s) => s.messages);
   const streaming = useChatStore((s) => s.streaming);
+  const searching = useChatStore((s) => s.searching);
   const connection = useChatStore((s) => s.connection);
   const artifact = useChatStore((s) => s.artifact);
   const patch = useChatStore((s) => s.patch);
@@ -132,6 +133,7 @@ export function ChatPanel() {
           </p>
         )}
         {connection === 'connecting' && <p className="px-1 text-[11px] text-site-ink-soft">正在连接…</p>}
+        {searching && streaming && <p className="px-1 text-[11px] text-site-ink-soft">正在联网检索…</p>}
       </div>
 
       <ChatInput streaming={streaming} onSend={(t) => { setConfirmedDraft(null); setConfirmedPatch(null); chat.send(t); }} onInterrupt={() => chat.interrupt()} />
