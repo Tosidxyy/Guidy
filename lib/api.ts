@@ -27,6 +27,7 @@ export const api = {
   plans: () => requestJson<{ items: any[] }>('/plans'),
   plan: (id: string) => requestJson<any>(`/plans/${encodeURIComponent(id)}`),
   commit: (body: unknown) => requestJson<any>('/plans/commit', { method: 'POST', body }),
+  applyPatch: (body: unknown) => requestJson<any>('/patches/apply', { method: 'POST', body }),
   interrupt: (id: string) => requestJson<{ ok: boolean }>('/chat/interrupt', { method: 'POST', body: { conversation_id: id } }),
 };
 export const SEND_URL = BASE + '/chat/send';
