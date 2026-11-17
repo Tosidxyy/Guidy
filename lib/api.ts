@@ -21,7 +21,7 @@ export async function requestJson<T>(path: string, opts: { method?: string; body
   return json as T;
 }
 export const api = {
-  me: () => requestJson<{ visitor_id: string; quotas: { chat_remaining: number; publish_remaining: number } }>('/me'),
+  me: () => requestJson<{ visitor_id: string; quotas: { chat_remaining: number; publish_remaining: number }; has_recovery_code: boolean }>('/me'),
   conversations: () => requestJson<{ items: any[] }>('/conversations'),
   history: (id: string) => requestJson<{ conversation: any; messages: any[] }>(`/chat/history?conversation_id=${encodeURIComponent(id)}`),
   plans: () => requestJson<{ items: any[] }>('/plans'),
@@ -30,6 +30,9 @@ export const api = {
   applyPatch: (body: unknown) => requestJson<any>('/patches/apply', { method: 'POST', body }),
   deletePlan: (id: string) => requestJson<{ ok: boolean }>(`/plans/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   interrupt: (id: string) => requestJson<{ ok: boolean }>('/chat/interrupt', { method: 'POST', body: { conversation_id: id } }),
+  recoveryGenerate: () => requestJson<{ code: string }>('/recovery/generate', { method: 'POST' }),
+  recoveryClaim: (code: string) => requestJson<{ ok: boolean; plans_count: number; conversations_count: number }>('/recovery/claim', { method: 'POST', body: { code, strategy: 'overwrite' } }),
+  deleteAll: () => requestJson<{ ok: boolean; deleted: Record<string, number> }>('/data/delete-all', { method: 'POST', body: { confirm_token: 'DELETE' } }),
 };
 export const SEND_URL = BASE + '/chat/send';
 export const EVENTS_URL = (id: string, cursor: string) => `${BASE}/chat/events?conversation_id=${encodeURIComponent(id)}&cursor=${encodeURIComponent(cursor)}`;
