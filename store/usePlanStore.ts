@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { ENGINE_VERSION, LIMITS } from '@/shared/constants';
-import { diffBlocks, solve, validatePlacement } from '@/shared/engine';
+import { diffBlocks, solve, validatePlacement, applyPatch } from '@/shared/engine';
 import type { Block, Constraint, ConstraintPayload, DiffResult, PlanState, SolveOutput, TaskDef } from '@/shared/types';
 import { buildEmptyPlan } from '@/lib/seed';
 import { solveArtifact } from '@/lib/preview';
@@ -44,6 +44,8 @@ interface PlanStore {
 
   requestReschedule: (reason: string) => void;
   previewArtifact: (draft: import('@/shared/schemas').ConstraintSetArtifact) => void;
+  previewPatch: (patch: import('@/shared/schemas').PatchArtifact) => void;
+  replaceStateKeepUndo: (next: PlanState) => void;
   applyPreview: () => void;
   discardPreview: () => void;
 
@@ -238,6 +240,28 @@ export const usePlanStore = create<PlanStore>((set, get) => {
         state.blocks,
       );
       set({ preview: { output, diff, reason: 'AI 约束方案预览' }, lastCompromises: output.compromises });
+    },
+
+    previewPatch: (patch) => {
+      const { state } = get();
+      const patched = applyPatch(state, patch.ops);
+      let output: SolveOutput;
+      if (patched.requiresReschedule) {
+        const pinned = patched.state.blocks.filter((b) => b.pinned || b.origin === 'manual');
+        output = solve({ engine_version: ENGINE_VERSION, horizon_start: state.plan.horizon_start, horizon_days: state.plan.horizon_days, timezone: state.plan.timezone, task_defs: patched.state.task_defs, constraints: patched.state.constraints, pinned_blocks: pinned });
+      } else {
+        output = { blocks: patched.state.blocks, violations: [], compromises: [], stats: { placed: patched.state.blocks.length, unplaced: 0, solve_ms: 0 } };
+      }
+      const diff = diffBlocks(state.blocks, output.blocks);
+      set({ preview: { output, diff, reason: patch.summary }, lastCompromises: output.compromises });
+    },
+
+    replaceStateKeepUndo: (next) => {
+      const { undoStack } = get();
+      const top = undoStack[undoStack.length - 1];
+      const stack = top ? [...undoStack.slice(0, -1), { ...top, after: clone(next) }] : undoStack;
+      set({ state: next, undoStack: stack, preview: null });
+      save(next);
     },
 
     applyPreview: () => {
