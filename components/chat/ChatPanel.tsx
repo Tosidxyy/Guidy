@@ -6,11 +6,13 @@ import { useChat } from '@/lib/useChat';
 import { useChatStore, cursorAfterMessages, shouldAutoRestore } from '@/store/useChatStore';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useCommitPlan } from '@/lib/useCommitPlan';
-import type { ConstraintSetArtifact } from '@/shared/schemas';
+import { useApplyPatch } from '@/lib/useApplyPatch';
+import type { ConstraintSetArtifact, PatchArtifact } from '@/shared/schemas';
 import { Button } from '@/components/ui/button';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { ConstraintConfirmCard } from './ConstraintConfirmCard';
+import { PatchConfirmCard } from './PatchConfirmCard';
 
 export function ChatPanel() {
   const chat = useChat();
@@ -18,6 +20,7 @@ export function ChatPanel() {
   const streaming = useChatStore((s) => s.streaming);
   const connection = useChatStore((s) => s.connection);
   const artifact = useChatStore((s) => s.artifact);
+  const patch = useChatStore((s) => s.patch);
   const clarifications = useChatStore((s) => s.clarifications);
   const error = useChatStore((s) => s.error);
   const conversationId = useChatStore((s) => s.conversationId);
@@ -26,10 +29,13 @@ export function ChatPanel() {
 
   const preview = usePlanStore((s) => s.preview);
   const previewArtifact = usePlanStore((s) => s.previewArtifact);
+  const previewPatch = usePlanStore((s) => s.previewPatch);
   const discardPreview = usePlanStore((s) => s.discardPreview);
   const { commit, isPending } = useCommitPlan();
+  const { apply: applyPatch, isPending: patchPending } = useApplyPatch();
 
   const [confirmedDraft, setConfirmedDraft] = useState<ConstraintSetArtifact | null>(null);
+  const [confirmedPatch, setConfirmedPatch] = useState<PatchArtifact | null>(null);
 
   const me = useQuery({ queryKey: ['me'], queryFn: () => api.me(), retry: false });
   const conversations = useQuery({ queryKey: ['conversations'], queryFn: () => api.conversations(), retry: false });
@@ -42,8 +48,11 @@ export function ChatPanel() {
       const msgs = h.messages.map((m: any) => ({ seq: m.seq, role: m.role, kind: m.kind, content: m.content ?? '', payload: m.payload }));
       setConversation(first.id, msgs);
       useChatStore.setState({ cursor: cursorAfterMessages(h.messages) });
-      const lastSet = [...h.messages].reverse().find((m: any) => m.kind === 'constraint_set');
-      if (lastSet?.payload) useChatStore.setState({ artifact: lastSet.payload, clarifications: lastSet.payload.clarifications_needed ?? [] });
+      const lastArt = [...h.messages].reverse().find((m: any) => m.kind === 'constraint_set' || m.kind === 'patch');
+      if (lastArt?.payload) {
+        if (lastArt.kind === 'constraint_set') useChatStore.setState({ artifact: lastArt.payload, clarifications: lastArt.payload.clarifications_needed ?? [], patch: null });
+        else useChatStore.setState({ patch: lastArt.payload, artifact: null, clarifications: [] });
+      }
       if (first.status === 'active') chat.resume();
     }).catch(() => {});
   }, [conversations.data, conversationId, restoreDone]);
@@ -51,6 +60,13 @@ export function ChatPanel() {
   const onConfirm = (draft: ConstraintSetArtifact) => {
     previewArtifact(draft);
     setConfirmedDraft(draft);
+    setConfirmedPatch(null);
+  };
+
+  const onConfirmPatch = (p: PatchArtifact) => {
+    previewPatch(p);
+    setConfirmedPatch(p);
+    setConfirmedDraft(null);
   };
 
   const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant' && m.kind === 'text');
@@ -61,7 +77,7 @@ export function ChatPanel() {
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-site-ink"><Sparkles className="h-4 w-4 text-site-brand" /> AI 对话排程</h2>
         <div className="flex items-center gap-1">
           {me.data && <span className="tabular text-[10px] text-site-ink-soft">今日剩余 {me.data.quotas.chat_remaining}</span>}
-          <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="新建对话" onClick={() => { chat.newConversation(); setConfirmedDraft(null); }}>
+          <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="新建对话" onClick={() => { chat.newConversation(); setConfirmedDraft(null); setConfirmedPatch(null); }}>
             <MessageSquarePlus className="h-4 w-4" />
           </Button>
         </div>
@@ -85,6 +101,20 @@ export function ChatPanel() {
         {artifact && clarifications.length === 0 && !confirmedDraft && (
           <ConstraintConfirmCard artifact={artifact} onConfirm={onConfirm} onCancel={() => useChatStore.setState({ artifact: null })} />
         )}
+        {patch && !confirmedPatch && (
+          <PatchConfirmCard patch={patch} onConfirm={onConfirmPatch} onCancel={() => useChatStore.setState({ patch: null })} />
+        )}
+        {confirmedPatch && preview && (
+          <div className="rounded-lg border border-[var(--site-dawn-line)]/40 bg-site-surface p-3">
+            <p className="text-xs text-site-ink">调整预览已生成（右侧日历 ghost 块）。确认保存到云端？</p>
+            <div className="mt-2 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => { discardPreview(); setConfirmedPatch(null); }}>放弃</Button>
+              <Button size="sm" className="dawn-gradient text-white" disabled={patchPending} onClick={() => applyPatch(confirmedPatch)}>
+                {patchPending ? '保存中…' : '确认保存调整'}
+              </Button>
+            </div>
+          </div>
+        )}
         {confirmedDraft && preview && (
           <div className="rounded-lg border border-[var(--site-dawn-line)]/40 bg-site-surface p-3">
             <p className="text-xs text-site-ink">预览已生成（右侧日历 ghost 块）。确认保存到云端？</p>
@@ -104,7 +134,7 @@ export function ChatPanel() {
         {connection === 'connecting' && <p className="px-1 text-[11px] text-site-ink-soft">正在连接…</p>}
       </div>
 
-      <ChatInput streaming={streaming} onSend={(t) => { setConfirmedDraft(null); chat.send(t); }} onInterrupt={() => chat.interrupt()} />
+      <ChatInput streaming={streaming} onSend={(t) => { setConfirmedDraft(null); setConfirmedPatch(null); chat.send(t); }} onInterrupt={() => chat.interrupt()} />
     </aside>
   );
 }
