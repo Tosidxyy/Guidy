@@ -14,6 +14,7 @@ import { BlockDrawer } from '@/components/workbench/BlockDrawer';
 import { TasksDrawer } from '@/components/workbench/TasksDrawer';
 import { SettingsDrawer } from '@/components/workbench/SettingsDrawer';
 import { PlansDrawer } from '@/components/workbench/PlansDrawer';
+import { PrivacyFooter } from '@/components/brand/PrivacyFooter';
 import { CalendarPanel } from '@/components/calendar/CalendarPanel';
 
 export default function App() {
@@ -87,6 +88,8 @@ export default function App() {
             </button>
           ))}
         </nav>
+
+        <PrivacyFooter />
 
         <ConstraintDrawer />
         <BlockDrawer />

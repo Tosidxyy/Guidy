@@ -1,14 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Download, Moon, Settings2, Sun, Trash2, Upload } from 'lucide-react';
+import { Copy, Download, KeyRound, Moon, Settings2, ShieldCheck, Sun, Trash2, Upload } from 'lucide-react';
 import { ConstraintSchema, TaskDefSchema } from '@/shared/schemas';
 import type { PlanState } from '@/shared/types';
+import { api } from '@/lib/api';
+import { useRecovery } from '@/lib/useRecovery';
 import { usePlanStore } from '@/store/usePlanStore';
+import { useChatStore } from '@/store/useChatStore';
 import { useUiStore } from '@/store/useUiStore';
 import { DEFAULT_PREFS, applyPrefs, loadPrefs, savePrefs, type GuidyPrefs } from '@/lib/prefs';
 import { cn } from '@/lib/utils';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Separator } from '@/components/ui/separator';
@@ -28,13 +33,23 @@ export function SettingsDrawer() {
   const setVisibleRange = useUiStore((s) => s.setVisibleRange);
   const state = usePlanStore((s) => s.state);
   const importState = usePlanStore((s) => s.importState);
-  const resetAll = usePlanStore((s) => s.resetAll);
+  const streaming = useChatStore((s) => s.streaming);
+
+  const me = useQuery({ queryKey: ['me'], queryFn: () => api.me(), retry: false });
+  const hasCode = me.data?.has_recovery_code ?? false;
+  const { generate, generatedCode, clearCode, isGenerating, claim, isClaiming, deleteAll, isDeleting } = useRecovery();
+  const [claimInput, setClaimInput] = useState('');
 
   const [prefs, setPrefs] = useState<GuidyPrefs>(loadPrefs);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (open) setPrefs(loadPrefs());
+    if (open) {
+      setPrefs(loadPrefs());
+    } else {
+      clearCode();
+      setClaimInput('');
+    }
   }, [open]);
 
   const update = (patch: Partial<GuidyPrefs>) => {
@@ -77,6 +92,16 @@ export function SettingsDrawer() {
       closeDrawer();
     } catch {
       toast.error('无法解析 JSON 文件');
+    }
+  };
+
+  const copyCode = async () => {
+    if (!generatedCode) return;
+    try {
+      await navigator.clipboard.writeText(generatedCode);
+      toast.success('恢复码已复制');
+    } catch {
+      toast.error('复制失败，请手动选择复制');
     }
   };
 
@@ -175,24 +200,69 @@ export function SettingsDrawer() {
                 e.target.value = '';
               }}
             />
+          </section>
+
+          <Separator />
+
+          <section className="space-y-2">
+            <Label>身份与数据</Label>
+            <p className="text-[11px] leading-relaxed text-site-ink-soft">
+              恢复码用于跨设备或清除缓存后找回计划与对话。平台匿名身份不收集邮箱或手机号。
+            </p>
+            <Button variant="outline" className="w-full" disabled={isGenerating} onClick={() => generate()}>
+              <KeyRound className="mr-1.5 h-4 w-4" /> {hasCode ? '重新生成恢复码（旧码立即失效）' : '生成恢复码'}
+            </Button>
+            {generatedCode && (
+              <div className="space-y-2 rounded-lg border border-site-brand/40 bg-site-brand/5 p-3">
+                <p className="break-all font-mono text-sm tracking-wider text-site-ink">{generatedCode}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] text-site-danger">仅显示一次，请立即保存；关闭后无法再次查看</p>
+                  <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={copyCode}>
+                    <Copy className="mr-1 h-3.5 w-3.5" /> 复制
+                  </Button>
+                </div>
+              </div>
+            )}
+            <Input
+              value={claimInput} onChange={(e) => setClaimInput(e.target.value)}
+              placeholder="输入恢复码（XXXX-XXXX-…）" aria-label="恢复码"
+              className="font-mono text-sm"
+            />
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="outline" className="w-full text-site-danger hover:text-site-danger">
-                  <Trash2 className="mr-1.5 h-4 w-4" /> 清空所有数据
+                <Button variant="outline" className="w-full" disabled={isClaiming || streaming || !claimInput.trim()}>
+                  <ShieldCheck className="mr-1.5 h-4 w-4" /> {isClaiming ? '认领中…' : '认领恢复码'}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle className="font-display">清空所有数据？</AlertDialogTitle>
-                  <AlertDialogDescription>将删除当前计划的全部任务块、任务定义与约束，且无法撤销。建议先导出 JSON 备份。</AlertDialogDescription>
+                  <AlertDialogTitle className="font-display">覆盖当前设备数据？</AlertDialogTitle>
+                  <AlertDialogDescription>认领将删除当前设备的全部计划与对话，并恢复旧设备的数据，无法撤销。建议先导出 JSON 备份。</AlertDialogDescription>
                 </AlertDialogHeader>
+                <Button variant="outline" size="sm" onClick={exportJson}><Download className="mr-1.5 h-4 w-4" /> 导出当前计划 JSON</Button>
                 <AlertDialogFooter>
                   <AlertDialogCancel>取消</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => { resetAll(); closeDrawer(); toast('已清空所有数据'); }}>确认清空</AlertDialogAction>
+                  <AlertDialogAction onClick={() => claim(claimInput.trim())}>确认覆盖并认领</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-            <p className="text-[11px] leading-relaxed text-site-ink-soft">M1 阶段数据仅保存在本机浏览器（localStorage），不会上传。云端同步与 AI 对话将在后续里程碑上线。</p>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" className="w-full text-site-danger hover:text-site-danger" disabled={isDeleting || streaming}>
+                  <Trash2 className="mr-1.5 h-4 w-4" /> {isDeleting ? '删除中…' : '删除我的全部数据'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="font-display">删除全部云端数据？</AlertDialogTitle>
+                  <AlertDialogDescription>将永久删除当前身份名下的全部计划、对话与恢复码，无法撤销。建议先导出 JSON 备份。</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>取消</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => deleteAll()}>确认删除</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </section>
         </div>
       </SheetContent>

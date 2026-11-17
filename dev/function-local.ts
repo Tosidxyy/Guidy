@@ -9,6 +9,10 @@ const cannedFrames = [
   { type: 'session.status', status: 'idle' },
 ];
 const qca = createFakeQca({ openStream: async () => ({ body: upstreamStream(cannedFrames), close() {} }) });
-const handle = application({ db, requireUser: () => ({ id: 'local-visitor' }), qca, config: { cloudApiOrigin: 'http://local', appScope: 'local-dev', modelId: 'local-fixture' } });
+const handle = application({ db, requireUser: (ctx) => { if (!ctx.user) throw Object.assign(new Error('unauthorized'), { code: 'unauthorized', status: 401 }); return ctx.user; }, qca, config: { cloudApiOrigin: 'http://local', appScope: 'local-dev', modelId: 'local-fixture' } });
+function visitorOf(request: Request): string {
+  const m = request.headers.get('cookie')?.match(/(?:^|;\s*)dev_visitor=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : 'local-visitor';
+}
 console.log('Guidy local Function (FIXTURE, not real AI): http://127.0.0.1:8000');
-Deno.serve({ hostname: '127.0.0.1', port: 8000 }, (request) => handle({ request, user: { id: 'local-visitor' }, requestId: crypto.randomUUID() }));
+Deno.serve({ hostname: '127.0.0.1', port: 8000 }, (request) => handle({ request, user: { id: visitorOf(request) }, requestId: crypto.randomUUID() }));
