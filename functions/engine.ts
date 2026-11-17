@@ -1,1 +1,1 @@
-export { solve, validatePlacement, diffBlocks, resultHash } from '../shared/engine/index.ts';
+export { solve, validatePlacement, diffBlocks, resultHash, applyPatch } from '../shared/engine/index.ts';
