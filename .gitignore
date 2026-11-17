@@ -8,4 +8,5 @@ build/
 *.tsbuildinfo
 .qoder-sites/
 .qoder-sites.json
+.superpowers/
 dev/*.png
