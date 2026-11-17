@@ -66,3 +66,16 @@ describe('auto-restore 守卫 — 新建对话后不得被旧对话劫持恢复'
     expect(shouldAutoRestore(useChatStore.getState(), 1, true)).toBe(false);
   });
 });
+
+describe('reduceFrame — patch 产物', () => {
+  it('artifact kind=patch 设定 patch 字段', () => {
+    const payload = { type: 'patch', summary: '改时长', ops: [{ op: 'reschedule', scope: 'all', keep_pinned: true }] };
+    const s = reduceFrame(initialChatState, { event: 'artifact', data: { seq: 3, kind: 'patch', payload } });
+    expect(s.patch).toEqual(payload);
+  });
+  it('startSend 清空 patch', () => {
+    useChatStore.setState({ patch: { type: 'patch', summary: 'x', ops: [] } as any });
+    useChatStore.getState().startSend('hi');
+    expect(useChatStore.getState().patch).toBeNull();
+  });
+});

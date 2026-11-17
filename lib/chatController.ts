@@ -22,7 +22,7 @@ async function openChecked(
 }
 
 export function createChatController(deps: {
-  store: typeof useChatStore; stream: ChatStream; fetchFn?: typeof fetch; newId?: () => string;
+  store: typeof useChatStore; stream: ChatStream; fetchFn?: typeof fetch; newId?: () => string; getPlanId?: () => string | null;
 }) {
   const store = deps.store;
   const stream = deps.stream;
@@ -33,7 +33,7 @@ export function createChatController(deps: {
     send(text: string) {
       const st = store.getState();
       st.startSend(text);
-      const body = { conversation_id: st.conversationId ?? undefined, text, request_id: newId() };
+      const body = { conversation_id: st.conversationId ?? undefined, text, request_id: newId(), plan_id: deps.getPlanId?.() ?? undefined };
       stream.read((signal) => openChecked(fetchFn, SEND_URL, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body), signal, credentials: 'same-origin',
