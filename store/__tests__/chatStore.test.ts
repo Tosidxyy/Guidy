@@ -79,3 +79,32 @@ describe('reduceFrame — patch 产物', () => {
     expect(useChatStore.getState().patch).toBeNull();
   });
 });
+
+describe('reduceFrame — progress 研究指示', () => {
+  it('progress 置 searching=true 且不进 messages', () => {
+    const s = reduceFrame(initialChatState, { event: 'progress', data: { seq: 7, tool: 'WebSearch' } });
+    expect(s.searching).toBe(true);
+    expect(s.messages).toHaveLength(0);
+  });
+  it('首个 delta 清除 searching', () => {
+    let s = reduceFrame(initialChatState, { event: 'progress', data: { seq: 7, tool: 'WebSearch' } });
+    s = reduceFrame(s, { event: 'delta', data: { seq: 7, text: '好' } });
+    expect(s.searching).toBe(false);
+  });
+  it('终态 status/done/error 复位 searching', () => {
+    const base = { ...initialChatState, searching: true };
+    expect(reduceFrame(base, { event: 'status', data: { seq: 8, state: 'completed' } }).searching).toBe(false);
+    expect(reduceFrame(base, { event: 'done', data: { seq: 8 } }).searching).toBe(false);
+    expect(reduceFrame(base, { event: 'error', data: { seq: 8, code: 'x', message: 'm', diagnostic_id: 'd' } }).searching).toBe(false);
+  });
+  it('accepted 复位 searching', () => {
+    const base = { ...initialChatState, searching: true };
+    const s = reduceFrame(base, { event: 'accepted', data: { request_id: 'r', conversation_id: 'c', seq: 1 } });
+    expect(s.searching).toBe(false);
+  });
+  it('startSend 复位 searching', () => {
+    useChatStore.setState({ searching: true });
+    useChatStore.getState().startSend('hi');
+    expect(useChatStore.getState().searching).toBe(false);
+  });
+});
