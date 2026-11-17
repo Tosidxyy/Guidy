@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useChatStore } from '@/store/useChatStore';
 import { chatController } from '@/lib/chatRuntime';
@@ -28,7 +29,15 @@ export function usePlanManager() {
     invalidatePlans: () => { qc.invalidateQueries({ queryKey: ['plans'] }); },
     listPlans: async () => (await api.plans()).items,
   });
-  const run = async (fn: () => void | Promise<void>) => { setPending(true); try { await fn(); } finally { setPending(false); } };
+  const run = async (fn: () => void | Promise<void>) => {
+    setPending(true);
+    try { await fn(); }
+    catch (err) {
+      const e = err instanceof ApiError ? err : new ApiError('service_unavailable', 503, '操作失败，请重试');
+      toast.error(e.message, { description: e.diagnosticId ? `诊断 ID：${e.diagnosticId}` : undefined });
+    }
+    finally { setPending(false); }
+  };
   return {
     plans: (query.data?.items ?? []) as PlanListItem[],
     isLoading: query.isLoading,

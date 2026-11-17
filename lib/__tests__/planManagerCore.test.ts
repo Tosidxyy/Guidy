@@ -69,4 +69,21 @@ describe('createPlanManager', () => {
     await createPlanManager(d).restoreConversation('p2');
     expect(d.newConversation).toHaveBeenCalled();
   });
+  it('switchPlan fetch 失败 → 不覆盖活动态 + invalidate + 抛出', async () => {
+    const d = fakeDeps({ fetchPlan: vi.fn(async () => { throw Object.assign(new Error('gone'), { status: 404 }); }) });
+    await expect(createPlanManager(d).switchPlan('p2')).rejects.toThrow('gone');
+    expect(d.importState).not.toHaveBeenCalled();
+    expect(d.invalidatePlans).toHaveBeenCalled();
+  });
+  it('deletePlan 404 → 按已不在处理：invalidate + 兜底切换', async () => {
+    const d = fakeDeps({ deletePlan: vi.fn(async () => { throw Object.assign(new Error('not found'), { status: 404 }); }) });
+    await createPlanManager(d).deletePlan('p1');
+    expect(d.invalidatePlans).toHaveBeenCalled();
+    expect(d.fetchPlan).toHaveBeenCalledWith('p3');
+  });
+  it('deletePlan 非 404 失败 → 抛出，不做兜底切换', async () => {
+    const d = fakeDeps({ deletePlan: vi.fn(async () => { throw Object.assign(new Error('boom'), { status: 503 }); }) });
+    await expect(createPlanManager(d).deletePlan('p1')).rejects.toThrow('boom');
+    expect(d.fetchPlan).not.toHaveBeenCalled();
+  });
 });

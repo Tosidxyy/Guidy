@@ -37,7 +37,9 @@ export function createPlanManager(deps: PlanManagerDeps) {
   async function switchPlan(id: string) {
     if (deps.isStreaming()) return;
     if (deps.getPlanState().plan.id === id) { await restoreConversation(id); return; }
-    const serverPlan = await deps.fetchPlan(id);
+    let serverPlan: PlanState;
+    try { serverPlan = await deps.fetchPlan(id); }
+    catch (err) { deps.invalidatePlans(); throw err; }
     deps.importState(serverPlan);
     await restoreConversation(id);
   }
@@ -48,7 +50,11 @@ export function createPlanManager(deps: PlanManagerDeps) {
   }
   async function deletePlan(id: string) {
     if (deps.isStreaming()) return;
-    await deps.deletePlan(id);
+    try { await deps.deletePlan(id); }
+    catch (err) {
+      // 404 = 已被删（如另一标签页），按「已不在」走同一兜底路径；其余错误上抛由 UI 提示。
+      if ((err as { status?: number }).status !== 404) throw err;
+    }
     deps.invalidatePlans();
     if (deps.getPlanState().plan.id === id) {
       const remaining = (await deps.listPlans()).filter((p) => p.id !== id);

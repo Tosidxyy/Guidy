@@ -75,7 +75,7 @@ export function PlansDrawer() {
                 </button>
                 {p.id === currentId && <Badge variant="secondary">当前</Badge>}
               </div>
-              <p className="tabular mt-0.5 text-[11px] text-site-ink-soft">{p.horizon_start} · {p.horizon_days} 天 · v{p.version}</p>
+              <p className="tabular mt-0.5 text-[11px] text-site-ink-soft">{p.horizon_start} · {p.horizon_days} 天 · v{p.version} · 更新于 {p.updated_at.slice(0, 10)}</p>
               <div className="mt-1.5 flex justify-end gap-1">
                 {p.id === currentId && (
                   <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => { setDraft(p.title); setRenaming(true); }}>重命名</Button>
