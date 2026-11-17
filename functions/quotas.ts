@@ -20,7 +20,7 @@ export async function assertNoPendingDispatch(db: Db, visitor: string): Promise<
 export async function incrementRecoveryAttempt(db: Db, visitor: string, day: string, limit = QUOTAS.recoveryAttemptsPerDay): Promise<void> {
   rows(await db.from('quotas').insertIfAbsent({ visitor_id: visitor, day, chat_turns: 0, publishes: 0, recovery_attempts: 0 }, { onConflict: 'visitor_id,day' }));
   const existing = rows(await db.from('quotas').select('recovery_attempts').eq('visitor_id', visitor).eq('day', day).limit(1))[0];
-  if (existing && existing.recovery_attempts === undefined) {
+  if (existing && existing.recovery_attempts == null) {
     rows(await db.from('quotas').update({ recovery_attempts: 0 }).eq('visitor_id', visitor).eq('day', day));
   }
   for (let attempt = 0; attempt < 5; attempt++) {

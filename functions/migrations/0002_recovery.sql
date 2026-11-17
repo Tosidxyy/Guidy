@@ -8,4 +8,5 @@ CREATE TABLE app.recovery_codes (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX recovery_codes_visitor_idx ON app.recovery_codes (visitor_id);
-ALTER TABLE app.quotas ADD COLUMN recovery_attempts integer NOT NULL DEFAULT 0;
+-- 受限 DDL：新增列必须可空且无默认值；历史行 NULL 由 incrementRecoveryAttempt 归一化为 0
+ALTER TABLE app.quotas ADD COLUMN recovery_attempts integer;

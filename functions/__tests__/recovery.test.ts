@@ -22,6 +22,14 @@ describe('recovery attempt quota', () => {
     expect(row.chat_turns).toBe(7);
     expect(row.publishes).toBe(1);
   });
+  it('云端迁移 NULL 列：recovery_attempts=null 归一化后递增，chat_turns/publishes 保留', async () => {
+    const db = createMemoryDb({ quotas: [{ visitor_id: 'v', day: '2026-11-16', chat_turns: 7, publishes: 1, recovery_attempts: null }] });
+    await incrementRecoveryAttempt(db, 'v', '2026-11-16');
+    const row = db.tables.quotas[0];
+    expect(row.recovery_attempts).toBe(1);
+    expect(row.chat_turns).toBe(7);
+    expect(row.publishes).toBe(1);
+  });
   it('chat 创建的 quotas 行自带 recovery_attempts 字段，随后递增正常', async () => {
     const db = createMemoryDb();
     await incrementChatTurn(db, 'v', '2026-11-16');
