@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Copy, Download, KeyRound, Moon, Settings2, ShieldCheck, Sun, Trash2, Upload } from 'lucide-react';
+import { CalendarDays, Copy, Download, KeyRound, Moon, Settings2, ShieldCheck, Sun, Trash2, Upload } from 'lucide-react';
 import { ConstraintSchema, TaskDefSchema } from '@/shared/schemas';
 import type { PlanState } from '@/shared/types';
 import { api } from '@/lib/api';
+import { buildIcs, icsFileName } from '@/lib/ics';
 import { useRecovery } from '@/lib/useRecovery';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useChatStore } from '@/store/useChatStore';
@@ -68,6 +69,21 @@ export function SettingsDrawer() {
     a.click();
     URL.revokeObjectURL(url);
     toast.success('已导出计划 JSON');
+  };
+
+  const exportIcs = () => {
+    if (state.blocks.length === 0) {
+      toast.error('当前计划没有任务块，无法导出日历');
+      return;
+    }
+    const blob = new Blob([buildIcs(state)], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = icsFileName(state.plan.title);
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('已导出日历文件（.ics）');
   };
 
   const importJson = async (file: File) => {
@@ -192,6 +208,9 @@ export function SettingsDrawer() {
               <Button variant="outline" onClick={exportJson}><Download className="mr-1.5 h-4 w-4" /> 导出 JSON</Button>
               <Button variant="outline" onClick={() => fileRef.current?.click()}><Upload className="mr-1.5 h-4 w-4" /> 导入 JSON</Button>
             </div>
+            <Button variant="outline" className="w-full" onClick={exportIcs}>
+              <CalendarDays className="mr-1.5 h-4 w-4" /> 导出 .ics（导入系统日历）
+            </Button>
             <input
               ref={fileRef} type="file" accept="application/json,.json" className="hidden"
               onChange={(e) => {
