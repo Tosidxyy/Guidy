@@ -33,8 +33,9 @@ describe('chatSend', () => {
   it('R13: 配额耗尽 → 429，上游零调用', async () => {
     let calls = 0;
     const d = deps({ openStream: async () => { calls++; return { body: upstreamStream(replyFrames), close() {} }; } });
-    const { incrementChatTurn } = await import('../quotas');
-    for (let i = 0; i < 60; i++) await incrementChatTurn(d.db, 'v', '2026-11-16');
+    const { incrementChatTurn, todayStr } = await import('../quotas');
+    const day = todayStr(new Date());
+    for (let i = 0; i < 60; i++) await incrementChatTurn(d.db, 'v', day);
     const res = await application(d)(ctx('POST', '/api/chat/send', { text: 'hi' }));
     expect(res.status).toBe(429);
     expect(calls).toBe(0);
