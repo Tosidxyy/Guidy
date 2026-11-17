@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type DrawerKind = 'constraints' | 'block' | 'settings' | 'tasks' | null;
+export type DrawerKind = 'constraints' | 'block' | 'settings' | 'tasks' | 'plans' | null;
 export type ViewMode = 'week' | 'day';
 export type MobileTab = 'chat' | 'calendar';
 

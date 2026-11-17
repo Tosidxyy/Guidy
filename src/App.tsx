@@ -13,6 +13,7 @@ import { ConstraintDrawer } from '@/components/workbench/ConstraintDrawer';
 import { BlockDrawer } from '@/components/workbench/BlockDrawer';
 import { TasksDrawer } from '@/components/workbench/TasksDrawer';
 import { SettingsDrawer } from '@/components/workbench/SettingsDrawer';
+import { PlansDrawer } from '@/components/workbench/PlansDrawer';
 import { CalendarPanel } from '@/components/calendar/CalendarPanel';
 
 export default function App() {
@@ -91,6 +92,7 @@ export default function App() {
         <BlockDrawer />
         <TasksDrawer />
         <SettingsDrawer />
+        <PlansDrawer />
         <Toaster position="top-center" richColors closeButton />
       </div>
     </TooltipProvider>
