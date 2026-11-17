@@ -24,6 +24,7 @@ interface PlanStore {
   redoStack: UndoEntry[];
   preview: ReschedulePreview | null;
   lastCompromises: SolveOutput['compromises'];
+  dirty: boolean;
 
   commit: (label: string, mutator: (draft: PlanState) => void) => void;
   undo: () => string | null;
@@ -83,6 +84,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
     redoStack: [],
     preview: null,
     lastCompromises: [],
+    dirty: false,
 
     commit: (label, mutator) => {
       const { state, undoStack } = get();
@@ -93,7 +95,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       draft.plan.updated_at = new Date().toISOString();
       const entry = { label, before, after: clone(draft) };
       const next = [...undoStack, entry].slice(-LIMITS.undoDepth);
-      set({ state: draft, undoStack: next, redoStack: [] });
+      set({ state: draft, undoStack: next, redoStack: [], dirty: true });
       save(draft);
     },
 
@@ -106,6 +108,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
         undoStack: undoStack.slice(0, -1),
         redoStack: [...redoStack, entry],
         preview: null,
+        dirty: true,
       });
       save(entry.before);
       return entry.label;
@@ -120,6 +123,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
         redoStack: redoStack.slice(0, -1),
         undoStack: [...undoStack, entry],
         preview: null,
+        dirty: true,
       });
       save(entry.after);
       return entry.label;
@@ -260,7 +264,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       const { undoStack } = get();
       const top = undoStack[undoStack.length - 1];
       const stack = top ? [...undoStack.slice(0, -1), { ...top, after: clone(next) }] : undoStack;
-      set({ state: next, undoStack: stack, preview: null });
+      set({ state: next, undoStack: stack, preview: null, dirty: false });
       save(next);
     },
 
@@ -282,13 +286,13 @@ export const usePlanStore = create<PlanStore>((set, get) => {
     },
 
     importState: (state) => {
-      set({ state, undoStack: [], redoStack: [], preview: null });
+      set({ state, undoStack: [], redoStack: [], preview: null, dirty: false });
       save(state);
     },
 
     resetAll: () => {
       const empty = buildEmptyPlan();
-      set({ state: empty, undoStack: [], redoStack: [], preview: null, lastCompromises: [] });
+      set({ state: empty, undoStack: [], redoStack: [], preview: null, lastCompromises: [], dirty: false });
       save(empty);
     },
   };

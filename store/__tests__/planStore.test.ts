@@ -46,3 +46,34 @@ describe('replaceStateKeepUndo', () => {
     expect(st.undoStack[0].after.plan.title).toBe('服务端名');
   });
 });
+
+describe('dirty 标记', () => {
+  it('importState 后 dirty=false', () => {
+    usePlanStore.getState().importState(seeded);
+    expect(usePlanStore.getState().dirty).toBe(false);
+  });
+  it('commit（renamePlan）后 dirty=true', () => {
+    usePlanStore.getState().importState(seeded);
+    usePlanStore.getState().renamePlan('新名');
+    expect(usePlanStore.getState().dirty).toBe(true);
+  });
+  it('undo/redo 后 dirty=true', () => {
+    usePlanStore.getState().importState(seeded);
+    usePlanStore.getState().renamePlan('x');
+    usePlanStore.getState().undo();
+    expect(usePlanStore.getState().dirty).toBe(true);
+    usePlanStore.getState().redo();
+    expect(usePlanStore.getState().dirty).toBe(true);
+  });
+  it('replaceStateKeepUndo 后 dirty=false', () => {
+    usePlanStore.getState().importState(seeded);
+    usePlanStore.getState().renamePlan('x');
+    usePlanStore.getState().replaceStateKeepUndo(seeded);
+    expect(usePlanStore.getState().dirty).toBe(false);
+  });
+  it('resetAll 后 dirty=false', () => {
+    usePlanStore.getState().renamePlan('x');
+    usePlanStore.getState().resetAll();
+    expect(usePlanStore.getState().dirty).toBe(false);
+  });
+});
