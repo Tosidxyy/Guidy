@@ -75,6 +75,9 @@ export function ChatPanel() {
 
   const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant' && m.kind === 'text');
 
+  const chatRemaining = me.data?.quotas.chat_remaining;
+  const quotaExhausted = chatRemaining === 0;
+
   return (
     <aside className="guidy-noise flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-site-line bg-site-bg shadow-sm" aria-label="AI 对话排程">
       <div className="flex items-center justify-between border-b border-site-line px-3 py-2">
@@ -139,7 +142,12 @@ export function ChatPanel() {
         {searching && streaming && <p className="px-1 text-[11px] text-site-ink-soft">正在联网检索…</p>}
       </div>
 
-      <ChatInput streaming={streaming} onSend={(t) => { setConfirmedDraft(null); setConfirmedPatch(null); chat.send(t); }} onInterrupt={() => chat.interrupt()} />
+      {chatRemaining !== undefined && chatRemaining <= 10 && (
+        <p className="px-3 pb-1 text-[11px] text-site-ink-soft">
+          {quotaExhausted ? '今天的对话额度用完了，明天再来继续规划。' : `今日对话额度还剩 ${chatRemaining} 轮`}
+        </p>
+      )}
+      <ChatInput streaming={streaming} disabled={quotaExhausted} onSend={(t) => { setConfirmedDraft(null); setConfirmedPatch(null); chat.send(t); }} onInterrupt={() => chat.interrupt()} />
     </aside>
   );
 }
