@@ -70,3 +70,22 @@ describe('prompt 契约 — 范例必须与引擎/确认卡消费的 schema 完�
     }
   });
 });
+
+describe('prompt 研究式规划指引 — 用户不知道做什么时联网检索', () => {
+  it('声明研究式规划并点名 WebSearch/WebFetch', () => {
+    const p = buildSystemPrompt();
+    expect(p).toContain('研究式规划');
+    expect(p).toContain('WebSearch');
+    expect(p).toContain('WebFetch');
+  });
+  it('要求把来源依据写进正文，不暴露原始搜索词', () => {
+    const p = buildSystemPrompt();
+    expect(p).toContain('来源');
+    expect(p).toContain('不要暴露原始搜索词');
+  });
+  it('检索无果回退自身知识，适度搜索不拖延', () => {
+    const p = buildSystemPrompt();
+    expect(p).toContain('回退自身知识');
+    expect(p).toContain('不要过度搜索');
+  });
+});
