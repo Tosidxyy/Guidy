@@ -5,6 +5,7 @@ import { me } from './routes/me.ts';
 import { conversations } from './routes/conversations.ts';
 import { chatSend, chatHistory, chatEvents, chatInterrupt } from './routes/chat.ts';
 import { listPlans, getPlan, commitPlan } from './routes/plans.ts';
+import { applyPatchRoute } from './routes/patches.ts';
 export function application(deps: Deps) {
   const routes: Route[] = [
     { method: 'GET', pattern: /^\/api\/health$/, handler: health },
@@ -15,6 +16,7 @@ export function application(deps: Deps) {
     { method: 'GET', pattern: /^\/api\/chat\/events$/, handler: chatEvents },
     { method: 'POST', pattern: /^\/api\/chat\/interrupt$/, handler: chatInterrupt },
     { method: 'POST', pattern: /^\/api\/plans\/commit$/, handler: commitPlan },
+    { method: 'POST', pattern: /^\/api\/patches\/apply$/, handler: applyPatchRoute },
     { method: 'GET', pattern: /^\/api\/plans$/, handler: listPlans },
     { method: 'GET', pattern: /^\/api\/plans\/([^/]+)$/, handler: getPlan },
   ];
