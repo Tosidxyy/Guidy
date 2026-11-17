@@ -1,5 +1,5 @@
 import { CATEGORY_MAP, PERIOD_LABEL } from '../shared/constants.ts';
-import type { ConstraintPayload, Frequency, TaskDef } from '../shared/types.ts';
+import type { ConstraintPayload, Frequency, PatchOp, TaskDef } from '../shared/types.ts';
 
 const WEEKDAY_LABEL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -62,4 +62,32 @@ export function daysUntil(dateStr: string): number {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   return Math.round((target.getTime() - now.getTime()) / 86400000);
+}
+
+export function patchOpText(op: PatchOp, taskTitle?: (key: string) => string): string {
+  const title = (key: string) => taskTitle?.(key) ?? key;
+  switch (op.op) {
+    case 'add_task_def':
+      return `新增任务「${op.value.title}」（${taskSummary(op.value)}）`;
+    case 'update_task_def':
+      return `调整任务「${title(op.key)}」：${Object.entries(op.patch).map(([k, v]) => `${k}→${typeof v === 'object' ? JSON.stringify(v) : v}`).join('，')}`;
+    case 'remove_task_def':
+      return `删除任务「${title(op.key)}」`;
+    case 'add_constraint':
+      return `新增约束：${constraintText(op.value)}`;
+    case 'update_constraint':
+      return `调整约束 ${op.id}`;
+    case 'remove_constraint':
+      return `删除约束 ${op.id}`;
+    case 'add_block':
+      return `新增日程「${op.value.title}」${op.value.start_utc.slice(5, 16).replace('T', ' ')}`;
+    case 'update_block':
+      return `调整日程 ${op.id}`;
+    case 'move_block':
+      return `移动日程到 ${op.start_utc.slice(5, 16).replace('T', ' ')}`;
+    case 'remove_block':
+      return `删除日程 ${op.id}`;
+    case 'reschedule':
+      return `重新排程（${op.scope === 'all' ? '全部' : '受影响部分'}）`;
+  }
 }
