@@ -75,6 +75,37 @@ describe('chatSend', () => {
     expect(out.some((f) => f.event === 'status' && f.data.state === 'completed')).toBe(true);
     expect(out.at(-1).event).toBe('done');
   }, 3000);
+  it('progress 不进 collected：重复 request_id 重放不含 progress', async () => {
+    const frames = [
+      { type: 'agent.tool_use', id: 'evt_t', name: 'WebSearch', input: {} },
+      { type: 'agent.message', id: 'e1', content: [{ type: 'text', text: '好的' }] },
+      { type: 'session.status_idle' },
+    ];
+    const d = deps({ openStream: async () => ({ body: upstreamStream(frames), close() {} }) });
+    const app = application(d);
+    const body = { text: '不知道做什么', request_id: 'req-prog' };
+    const first = await collect(await app(ctx('POST', '/api/chat/send', body)));
+    expect(first.some((f) => f.event === 'progress')).toBe(true);
+    const second = await collect(await app(ctx('POST', '/api/chat/send', body)));
+    expect(second.some((f) => f.event === 'progress')).toBe(false);
+  });
+  it('progress：实时流含 progress（仅工具名、不泄露 input），不持久化为消息，终态 completed', async () => {
+    const frames = [
+      { type: 'agent.tool_use', id: 'evt_t', name: 'WebSearch', input: { query: '秘密搜索词' }, evaluated_permission: 'allow' },
+      { type: 'event_delta', event_id: 'e1', delta: { type: 'content_delta', content: { type: 'text', text: '好的' } } },
+      { type: 'agent.message', id: 'e1', content: [{ type: 'text', text: '好的' }] },
+      { type: 'session.status_idle' },
+    ];
+    const d = deps({ openStream: async () => ({ body: upstreamStream(frames), close() {} }) });
+    const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '不知道做什么' })));
+    const prog = out.find((f) => f.event === 'progress');
+    expect(prog?.data.tool).toBe('WebSearch');
+    expect(JSON.stringify(out)).not.toContain('秘密搜索词');
+    expect(out.some((f) => f.event === 'status' && f.data.state === 'completed')).toBe(true);
+    const { rows } = await import('../db');
+    const msgs = rows(await d.db.from('messages').select('*'));
+    expect(msgs.some((m: any) => m.kind === 'progress' || m.content === 'WebSearch')).toBe(false);
+  });
 });
 describe('chatHistory / interrupt', () => {
   it('history 跨访客 → 403', async () => {

@@ -73,6 +73,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
               const ev = JSON.parse(frame.data);
               if (frame.id) lastEventId = frame.id;
               for (const p of projector.push(ev)) {
+                if (p.event === 'progress') { emit(p); continue; }
                 emit(p); collected.push(p);
                 if (p.event === 'delta') await appendAssistant(deps.db, conv, p.data.seq, p.data.text);
                 if (p.event === 'status') { terminalState = p.data.state === 'completed' ? 'completed' : 'failed'; await insertMessage(deps.db, conv, { seq: p.data.seq, role: 'system', kind: 'status', content: p.data.state }); }
