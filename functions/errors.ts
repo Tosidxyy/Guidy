@@ -23,6 +23,8 @@ export const MESSAGES: Record<string, string> = {
   payload_too_large: '消息过长，请精简后重试',
   method_not_allowed: '请求方法不被允许',
   invalid_input: '请求格式不正确',
+  recovery_invalid: '恢复码无效或已被使用',
+  recovery_rate_limited: '今日恢复尝试次数已用完，请明天再来',
 };
 export function fail(code: string, status: number, details?: unknown): never {
   throw new AppError(code, status, details);
