@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { buildPatchBody } from '@/lib/patchInput';
@@ -8,6 +8,7 @@ import type { PatchArtifact } from '@/shared/schemas';
 import type { PlanState } from '@/shared/types';
 
 export function useApplyPatch() {
+  const qc = useQueryClient();
   const pendingPreview = useRef<ReschedulePreview | null>(null);
   const pendingBase = useRef<number>(0);
   const mutation = useMutation({
@@ -51,6 +52,7 @@ export function useApplyPatch() {
         blocks: resp.blocks,
       };
       store.replaceStateKeepUndo(next);
+      qc.invalidateQueries({ queryKey: ['plans'] });
       toast.success(resp.server_authoritative ? '已按服务端结果保存调整' : '调整已保存到云端');
     },
   });

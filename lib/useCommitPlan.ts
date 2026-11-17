@@ -1,13 +1,15 @@
 import { useRef } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { buildCommitInput } from '@/lib/commitInput';
 import { usePlanStore, type ReschedulePreview } from '@/store/usePlanStore';
+import { useChatStore } from '@/store/useChatStore';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 import type { PlanState } from '@/shared/types';
 
 export function useCommitPlan() {
+  const qc = useQueryClient();
   // onMutate clears store.preview via applyPreview before mutationFn runs, so
   // the preview being committed must be captured there and handed over here.
   const pendingPreview = useRef<ReschedulePreview | null>(null);
@@ -22,6 +24,7 @@ export function useCommitPlan() {
         blocks: preview.output.blocks,
         previewId: crypto.randomUUID(),
         planId: store.state.plan.id ?? null,
+        conversationId: useChatStore.getState().conversationId,
       });
       return api.commit(body);
     },
@@ -52,6 +55,7 @@ export function useCommitPlan() {
       };
       store.importState(next);
       usePlanStore.setState({ preview: null });
+      qc.invalidateQueries({ queryKey: ['plans'] });
       toast.success(serverPlan.server_authoritative ? '已按服务端结果保存计划' : '计划已保存到云端');
     },
   });
