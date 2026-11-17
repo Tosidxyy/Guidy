@@ -16,6 +16,7 @@ export interface CommitBody {
   };
   result_hash: string;
   engine_version: number;
+  conversation_id?: string | null;
 }
 
 export async function buildCommitInput(args: {
@@ -24,8 +25,9 @@ export async function buildCommitInput(args: {
   blocks: Block[];
   previewId: string;
   planId: string | null;
+  conversationId?: string | null;
 }): Promise<CommitBody> {
-  const { draft, plan, blocks, previewId, planId } = args;
+  const { draft, plan, blocks, previewId, planId, conversationId } = args;
   const constraints: Constraint[] = draft.constraints.map((payload, i) => ({
     id: `ai-${i}`, payload, source: 'ai', enabled: true,
   }));
@@ -42,5 +44,6 @@ export async function buildCommitInput(args: {
     },
     result_hash: await resultHash(blocks),
     engine_version: ENGINE_VERSION,
+    conversation_id: conversationId ?? null,
   };
 }

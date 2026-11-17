@@ -26,4 +26,14 @@ describe('buildCommitInput', () => {
     expect(body.input.constraints[0].id).toBe('ai-0');
     expect(body.result_hash).toBe(await resultHash(output.blocks));
   });
+  it('conversation_id 透传', async () => {
+    const { output } = solveArtifact(draft, plan, []);
+    const body = await buildCommitInput({ draft, plan, blocks: output.blocks, previewId: 'pv-2', planId: null, conversationId: 'conv-1' });
+    expect(body.conversation_id).toBe('conv-1');
+  });
+  it('未提供 conversationId → conversation_id 为 null', async () => {
+    const { output } = solveArtifact(draft, plan, []);
+    const body = await buildCommitInput({ draft, plan, blocks: output.blocks, previewId: 'pv-3', planId: null });
+    expect(body.conversation_id).toBeNull();
+  });
 });
