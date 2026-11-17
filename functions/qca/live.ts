@@ -1,6 +1,7 @@
 import { createCloudAgentsClient, ensureCloudResources } from './cloud-agents.mjs';
 import { createDbCoordinator } from './coordinator.ts';
 import { buildSystemPrompt } from '../prompt.ts';
+import { RESEARCH_TOOLS } from './tools.ts';
 import { fail } from '../errors.ts';
 import type { Db } from '../db.ts';
 import type { QcaAdapter, QcaBinding } from '../types.ts';
@@ -24,7 +25,7 @@ export function createLiveQca({ db, config }: { db: Db; config: { cloudApiOrigin
         const model = await resolveModel();
         return ensureCloudResources({
           client, coordinator, applicationScope: scope,
-          agent: { name: 'Guidy 排程助手', model, system: buildSystemPrompt(), tools: [], metadata: { app: 'guidy', purpose: 'planning' } },
+          agent: { name: 'Guidy 排程助手', model, system: buildSystemPrompt(), tools: RESEARCH_TOOLS, metadata: { app: 'guidy', purpose: 'planning' } },
           environment: { name: 'Guidy 排程环境', config: { type: 'cloud' } },
         }) as Promise<QcaBinding>;
       })().catch((e) => { bindingPromise = null; throw e; });
