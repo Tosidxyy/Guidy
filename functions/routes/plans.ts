@@ -14,6 +14,7 @@ const CommitSchema = z.object({
   plan_id: z.string().min(1).nullable(),
   result_hash: z.string().min(1),
   engine_version: z.number(),
+  conversation_id: z.string().min(1).nullable().optional(),
   input: z.object({
     title: z.string().min(1).max(LIMITS.titleChars),
     horizon_start: z.string().min(1),
@@ -64,7 +65,7 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const body = await readJson(ctx.request, 262144);
   const parsed = CommitSchema.safeParse(body);
   if (!parsed.success) fail('validation_failed', 422, parsed.error.flatten());
-  const { preview_id, plan_id, input, result_hash, engine_version } = parsed.data;
+  const { preview_id, plan_id, input, result_hash, engine_version, conversation_id } = parsed.data;
   if (engine_version !== ENGINE_VERSION) fail('engine_version_mismatch', 409);
   const existingLog = rows(await deps.db.from('commit_log').select('plan_id').eq('preview_id', preview_id).eq('visitor_id', visitor).limit(1))[0];
   if (existingLog) {
@@ -95,6 +96,13 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
     await deps.db.from('blocks').insert({ plan_id: plan.id, title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc, priority: b.priority, pinned: b.pinned, origin: b.origin, notes: b.notes ?? null });
   }
   await deps.db.from('commit_log').insertIfAbsent({ preview_id, visitor_id: visitor, plan_id: plan.id }, { onConflict: 'preview_id' });
+  // best-effort：仅本人且尚未绑定计划的对话才置位；失败不影响 commit，绝不重绑。
+  if (conversation_id) {
+    const conv = rows(await deps.db.from('conversations').select('*').eq('id', conversation_id).eq('owner_visitor_id', visitor).limit(1))[0];
+    if (conv && conv.plan_id === null) {
+      await deps.db.from('conversations').update({ plan_id: plan.id }).eq('id', conv.id).eq('owner_visitor_id', visitor);
+    }
+  }
   const blocks = rows(await deps.db.from('blocks').select('*').eq('plan_id', plan.id).order('start_utc', { ascending: true }));
   const constraints = rows(await deps.db.from('constraints').select('*').eq('plan_id', plan.id));
   return Response.json({ plan, task_defs: input.task_defs, constraints, blocks, version: plan.version, server_authoritative, violations: [], compromises: output.compromises });

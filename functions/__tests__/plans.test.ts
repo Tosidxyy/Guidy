@@ -126,3 +126,39 @@ describe('deletePlan', () => {
     expect(d.db.tables.blocks.every((x: any) => x.plan_id === b.id)).toBe(true);
   });
 });
+
+describe('commitPlan conversation binding', () => {
+  it('新建 + 本人 null-plan 对话 → 绑定到新 plan.id', async () => {
+    const d = deps();
+    const ins = await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: 'c', plan_id: null, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' });
+    const convId = ins.data[0].id;
+    const result_hash = await hashFor(baseInput);
+    const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'b1', plan_id: null, conversation_id: convId, input: baseInput, result_hash, engine_version: 1 }));
+    expect(res.status).toBe(200);
+    const planId = (await res.json()).plan.id;
+    expect(d.db.tables.conversations[0].plan_id).toBe(planId);
+  });
+  it('对话非本人 → 忽略绑定，commit 仍成功', async () => {
+    const d = deps();
+    const ins = await d.db.from('conversations').insert({ owner_visitor_id: 'other', title: 'c', plan_id: null, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' });
+    const result_hash = await hashFor(baseInput);
+    const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'b2', plan_id: null, conversation_id: ins.data[0].id, input: baseInput, result_hash, engine_version: 1 }));
+    expect(res.status).toBe(200);
+    expect(d.db.tables.conversations[0].plan_id).toBeNull();
+  });
+  it('对话已绑定 → 不重绑', async () => {
+    const d = deps();
+    const ins = await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: 'c', plan_id: 'existing-plan', qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' });
+    const result_hash = await hashFor(baseInput);
+    const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'b3', plan_id: null, conversation_id: ins.data[0].id, input: baseInput, result_hash, engine_version: 1 }));
+    expect(res.status).toBe(200);
+    expect(d.db.tables.conversations[0].plan_id).toBe('existing-plan');
+  });
+  it('无 conversation_id → 行为不变（向后兼容）', async () => {
+    const d = deps();
+    const result_hash = await hashFor(baseInput);
+    const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'b4', plan_id: null, input: baseInput, result_hash, engine_version: 1 }));
+    expect(res.status).toBe(200);
+    expect(d.db.tables.plans).toHaveLength(1);
+  });
+});
