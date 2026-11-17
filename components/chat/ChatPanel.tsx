@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { useChat } from '@/lib/useChat';
 import { useChatStore, cursorAfterMessages, shouldAutoRestore } from '@/store/useChatStore';
 import { usePlanStore } from '@/store/usePlanStore';
+import { conversationForPlan } from '@/lib/planConversation';
 import { useCommitPlan } from '@/lib/useCommitPlan';
 import { useApplyPatch } from '@/lib/useApplyPatch';
 import type { ConstraintSetArtifact, PatchArtifact } from '@/shared/schemas';
@@ -28,6 +29,7 @@ export function ChatPanel() {
   const restoreDone = useChatStore((s) => s.restoreDone);
   const setConversation = useChatStore((s) => s.setConversation);
 
+  const planId = usePlanStore((s) => s.state.plan.id);
   const preview = usePlanStore((s) => s.preview);
   const previewArtifact = usePlanStore((s) => s.previewArtifact);
   const previewPatch = usePlanStore((s) => s.previewPatch);
@@ -44,7 +46,8 @@ export function ChatPanel() {
   useEffect(() => {
     const items = conversations.data?.items ?? [];
     if (!shouldAutoRestore({ conversationId, restoreDone }, items.length, !!conversations.data)) return;
-    const first = items[0];
+    const first = conversationForPlan(items, planId);
+    if (!first) return;
     api.history(first.id).then((h) => {
       const msgs = h.messages.map((m: any) => ({ seq: m.seq, role: m.role, kind: m.kind, content: m.content ?? '', payload: m.payload }));
       setConversation(first.id, msgs);
@@ -56,7 +59,7 @@ export function ChatPanel() {
       }
       if (first.status === 'active') chat.resume();
     }).catch(() => {});
-  }, [conversations.data, conversationId, restoreDone]);
+  }, [conversations.data, conversationId, restoreDone, planId]);
 
   const onConfirm = (draft: ConstraintSetArtifact) => {
     previewArtifact(draft);
