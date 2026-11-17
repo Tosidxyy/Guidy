@@ -31,13 +31,15 @@ export function createRouter(routes: Route[]) {
     const diagnosticId = crypto.randomUUID();
     try {
       const path = stripPrefix(ctx.request.url);
-      let matched: Route | null = null; let params: string[] = [];
+      let matched: Route | null = null; let params: string[] = []; let pathMatched = false;
       for (const r of routes) {
         const m = path.match(r.pattern);
-        if (m) { matched = r; params = m.slice(1); break; }
+        if (m) {
+          pathMatched = true;
+          if (r.method === ctx.request.method) { matched = r; params = m.slice(1); break; }
+        }
       }
-      if (!matched) fail('not_found', 404);
-      if (matched.method !== ctx.request.method) fail('method_not_allowed', 405);
+      if (!matched) fail(pathMatched ? 'method_not_allowed' : 'not_found', pathMatched ? 405 : 404);
       return await matched.handler(ctx, deps, params);
     } catch (error) {
       const { status, body } = errorEnvelope(error, diagnosticId);

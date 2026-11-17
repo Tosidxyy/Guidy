@@ -47,6 +47,18 @@ export async function getPlan(ctx: RouteCtx, deps: Deps, params: string[]): Prom
   const plan = await getOwnedPlan(deps.db, visitor, params[0]);
   return Response.json({ plan, ...(await children(deps.db, plan.id)) }, { headers: { 'cache-control': 'no-store' } });
 }
+export async function deletePlan(ctx: RouteCtx, deps: Deps, params: string[]): Promise<Response> {
+  const visitor = requireVisitor(deps, ctx);
+  const plan = await getOwnedPlan(deps.db, visitor, params[0]);
+  // FK 均为 NO ACTION：按依赖顺序显式清理，幂等可重跑；对话仅解绑不删除。
+  await deps.db.from('blocks').delete().eq('plan_id', plan.id);
+  await deps.db.from('task_defs').delete().eq('plan_id', plan.id);
+  await deps.db.from('constraints').delete().eq('plan_id', plan.id);
+  await deps.db.from('commit_log').delete().eq('plan_id', plan.id);
+  await deps.db.from('conversations').update({ plan_id: null }).eq('plan_id', plan.id).eq('owner_visitor_id', visitor);
+  await deps.db.from('plans').delete().eq('id', plan.id).eq('owner_visitor_id', visitor);
+  return Response.json({ ok: true }, { headers: { 'cache-control': 'no-store' } });
+}
 export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const visitor = requireVisitor(deps, ctx);
   const body = await readJson(ctx.request, 262144);

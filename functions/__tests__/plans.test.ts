@@ -78,3 +78,51 @@ describe('getPlan', () => {
     expect(res.status).toBe(403);
   });
 });
+
+async function seedPlan(d: Deps, input: any = baseInput) {
+  const out = solve({ engine_version: 1, ...input, pinned_blocks: [] });
+  const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: crypto.randomUUID(), plan_id: null, input, result_hash: await resultHash(out.blocks), engine_version: 1 }));
+  return (await res.json()).plan;
+}
+const inputWithConstraint = { ...baseInput, constraints: [{ id: 'c1', payload: { type: 'active_window', start: '07:00', end: '23:00' }, source: 'user', enabled: true }] };
+
+describe('deletePlan', () => {
+  it('本人删除 → 200，plan 及子表清空，对话解绑但保留', async () => {
+    const d = deps();
+    const plan = await seedPlan(d, inputWithConstraint);
+    await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: 'c', plan_id: plan.id, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' });
+    const res = await application(d)(ctx('DELETE', `/api/plans/${plan.id}`));
+    expect(res.status).toBe(200);
+    expect((await res.json()).ok).toBe(true);
+    expect(d.db.tables.plans).toHaveLength(0);
+    expect(d.db.tables.task_defs).toHaveLength(0);
+    expect(d.db.tables.constraints).toHaveLength(0);
+    expect(d.db.tables.blocks).toHaveLength(0);
+    expect(d.db.tables.commit_log).toHaveLength(0);
+    expect(d.db.tables.conversations).toHaveLength(1);
+    expect(d.db.tables.conversations[0].plan_id).toBeNull();
+  });
+  it('跨访客 → 403，不删任何表', async () => {
+    const d = deps();
+    const plan = await seedPlan(d, inputWithConstraint);
+    const res = await application(d)(ctx('DELETE', `/api/plans/${plan.id}`, undefined, { id: 'other' }));
+    expect(res.status).toBe(403);
+    expect(d.db.tables.plans).toHaveLength(1);
+    expect(d.db.tables.blocks.length).toBeGreaterThan(0);
+  });
+  it('不存在 → 404', async () => {
+    const res = await application(deps())(ctx('DELETE', `/api/plans/${crypto.randomUUID()}`));
+    expect(res.status).toBe(404);
+  });
+  it('重复删除幂等 → 404，不破坏他计划', async () => {
+    const d = deps();
+    const a = await seedPlan(d, inputWithConstraint);
+    const b = await seedPlan(d, { ...inputWithConstraint, title: '另一个' });
+    const app = application(d);
+    expect((await app(ctx('DELETE', `/api/plans/${a.id}`))).status).toBe(200);
+    expect((await app(ctx('DELETE', `/api/plans/${a.id}`))).status).toBe(404);
+    expect(d.db.tables.plans).toHaveLength(1);
+    expect(d.db.tables.plans[0].id).toBe(b.id);
+    expect(d.db.tables.blocks.every((x: any) => x.plan_id === b.id)).toBe(true);
+  });
+});

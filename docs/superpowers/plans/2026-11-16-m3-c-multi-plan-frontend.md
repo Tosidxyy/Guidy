@@ -565,7 +565,7 @@ git commit -m "refactor(m3-c): lift chat controller to a shared module singleton
     importState(s: PlanState): void;
     getConversations(): ConversationLike[];
     setConversation(id: string | null, messages?: any[]): void;
-    setChatState(patch: Record<string, unknown>): void;
+    setChatState(patch: Partial<ChatState>): void;
     newConversation(): void;
     resume(): void;
     isStreaming(): boolean;
@@ -670,7 +670,7 @@ Create `lib/planManagerCore.ts`:
 
 ```ts
 import { conversationForPlan, type ConversationLike } from '@/lib/planConversation';
-import { cursorAfterMessages } from '@/store/useChatStore';
+import { cursorAfterMessages, type ChatState } from '@/store/useChatStore';
 import { buildEmptyPlan } from '@/lib/seed';
 import type { PlanState } from '@/shared/types';
 
@@ -682,7 +682,7 @@ export interface PlanManagerDeps {
   importState(s: PlanState): void;
   getConversations(): ConversationLike[];
   setConversation(id: string | null, messages?: any[]): void;
-  setChatState(patch: Record<string, unknown>): void;
+  setChatState(patch: Partial<ChatState>): void;
   newConversation(): void;
   resume(): void;
   isStreaming(): boolean;
