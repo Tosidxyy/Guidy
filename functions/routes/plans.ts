@@ -5,7 +5,7 @@ import { rows } from '../db.ts';
 import type { Db } from '../db.ts';
 import { requireVisitor } from '../identity.ts';
 import { solve, resultHash } from '../engine.ts';
-import { ENGINE_VERSION, LIMITS } from '../../shared/constants.ts';
+import { ENGINE_VERSION, LIMITS, QUOTAS } from '../../shared/constants.ts';
 import { TaskDefSchema, ConstraintSchema } from '../../shared/schemas.ts';
 import type { Deps, RouteCtx } from '../types.ts';
 
@@ -84,6 +84,8 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
     await deps.db.from('blocks').delete().eq('plan_id', plan_id);
     plan = rows(await deps.db.from('plans').update({ title: input.title, horizon_start: input.horizon_start, horizon_days: input.horizon_days, timezone: input.timezone, status: 'active', version: old.version + 1, updated_at: new Date().toISOString() }).eq('id', plan_id).eq('owner_visitor_id', visitor).select('*'))[0];
   } else {
+    const count = rows(await deps.db.from('plans').select('id').eq('owner_visitor_id', visitor)).length;
+    if (count >= QUOTAS.plansPerVisitor) fail('plan_quota_exceeded', 429, { limit: QUOTAS.plansPerVisitor });
     plan = rows(await deps.db.from('plans').insert({ owner_visitor_id: visitor, title: input.title, horizon_start: input.horizon_start, horizon_days: input.horizon_days, timezone: input.timezone, status: 'active', version: 1 }).select('*'))[0];
   }
   for (const t of input.task_defs) {

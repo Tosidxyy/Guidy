@@ -49,6 +49,6 @@ export const LIMITS = {
   undoDepth: 30,
 };
 
-export const QUOTAS = { chatTurnsPerDay: 60, publishesPerDay: 3, recoveryAttemptsPerDay: 10 };
+export const QUOTAS = { chatTurnsPerDay: 60, publishesPerDay: 3, recoveryAttemptsPerDay: 10, plansPerVisitor: 20 };
 
 export const PRIORITY_WEIGHT: Record<string, number> = { high: 0, mid: 1, low: 2 };

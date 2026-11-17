@@ -162,3 +162,45 @@ describe('commitPlan conversation binding', () => {
     expect(d.db.tables.plans).toHaveLength(1);
   });
 });
+
+describe('plan quota (F)', () => {
+  it('第 20 个新建成功；第 21 个 429 plan_quota_exceeded，零新增', async () => {
+    const d = deps();
+    for (let i = 0; i < 19; i++) await seedPlan(d);
+    const result_hash = await hashFor(baseInput);
+    const ok = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'q20', plan_id: null, input: baseInput, result_hash, engine_version: 1 }));
+    expect(ok.status).toBe(200);
+    expect(d.db.tables.plans).toHaveLength(20);
+    const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'q21', plan_id: null, input: baseInput, result_hash, engine_version: 1 }));
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body.error.code).toBe('plan_quota_exceeded');
+    expect(body.error.details.limit).toBe(20);
+    expect(d.db.tables.plans).toHaveLength(20);
+  });
+  it('满 20 仍可更新既有计划，version+1', async () => {
+    const d = deps();
+    let first: any;
+    for (let i = 0; i < 20; i++) { const p = await seedPlan(d); if (i === 0) first = p; }
+    const result_hash = await hashFor(baseInput);
+    const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'qu1', plan_id: first.id, input: baseInput, result_hash, engine_version: 1 }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).version).toBe(2);
+    expect(d.db.tables.plans).toHaveLength(20);
+  });
+  it('删除 1 个后新建恢复成功（额度释放）', async () => {
+    const d = deps();
+    let first: any;
+    for (let i = 0; i < 20; i++) { const p = await seedPlan(d); if (i === 0) first = p; }
+    expect((await application(d)(ctx('DELETE', `/api/plans/${first.id}`))).status).toBe(200);
+    const result_hash = await hashFor(baseInput);
+    const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'qr1', plan_id: null, input: baseInput, result_hash, engine_version: 1 }));
+    expect(res.status).toBe(200);
+    expect(d.db.tables.plans).toHaveLength(20);
+  });
+  it('MESSAGES：quota_exceeded 为 UIUX 标准句；plan_quota_exceeded 含 20', async () => {
+    const { MESSAGES } = await import('../errors');
+    expect(MESSAGES.quota_exceeded).toBe('今天的对话额度用完了，明天再来继续规划。');
+    expect(MESSAGES.plan_quota_exceeded).toContain('20');
+  });
+});

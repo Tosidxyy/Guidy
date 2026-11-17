@@ -13,7 +13,7 @@ export const MESSAGES: Record<string, string> = {
   engine_infeasible: '当前约束下无法排下全部任务',
   content_rejected: '内容审核未通过',
   artifact_invalid: 'AI 产出结构不合格，已保留上下文，请重试',
-  quota_exceeded: '今日对话额度已用完，请明天再来',
+  quota_exceeded: '今天的对话额度用完了，明天再来继续规划。',
   dispatch_busy: '当前有正在生成的回复，请等待或中断后再发送',
   version_conflict: '计划已被更新，请刷新后重试',
   conflict: '请求冲突，请刷新后重试',
@@ -25,6 +25,7 @@ export const MESSAGES: Record<string, string> = {
   invalid_input: '请求格式不正确',
   recovery_invalid: '恢复码无效或已被使用',
   recovery_rate_limited: '今日恢复尝试次数已用完，请明天再来',
+  plan_quota_exceeded: '计划数量已达上限（20 个），删除旧计划后再新建',
 };
 export function fail(code: string, status: number, details?: unknown): never {
   throw new AppError(code, status, details);
