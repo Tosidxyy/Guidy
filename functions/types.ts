@@ -20,5 +20,6 @@ export type AppEvent =
   | { event: 'delta'; data: { seq: number; text: string } }
   | { event: 'artifact'; data: { seq: number; kind: 'constraint_set' | 'patch'; payload: unknown } }
   | { event: 'status'; data: { seq: number; state: 'running' | 'waiting_confirm' | 'completed' | 'interrupted' | 'failed' } }
+  | { event: 'progress'; data: { seq: number; tool: 'WebSearch' | 'WebFetch' } }
   | { event: 'error'; data: { seq: number; code: string; message: string; diagnostic_id: string } }
   | { event: 'done'; data: { seq: number } };
