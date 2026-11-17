@@ -6,6 +6,7 @@ import { conversations } from './routes/conversations.ts';
 import { chatSend, chatHistory, chatEvents, chatInterrupt } from './routes/chat.ts';
 import { listPlans, getPlan, commitPlan, deletePlan } from './routes/plans.ts';
 import { applyPatchRoute } from './routes/patches.ts';
+import { recoveryGenerate } from './routes/recovery.ts';
 export function application(deps: Deps) {
   const routes: Route[] = [
     { method: 'GET', pattern: /^\/api\/health$/, handler: health },
@@ -20,6 +21,7 @@ export function application(deps: Deps) {
     { method: 'GET', pattern: /^\/api\/plans$/, handler: listPlans },
     { method: 'GET', pattern: /^\/api\/plans\/([^/]+)$/, handler: getPlan },
     { method: 'DELETE', pattern: /^\/api\/plans\/([^/]+)$/, handler: deletePlan },
+    { method: 'POST', pattern: /^\/api\/recovery\/generate$/, handler: recoveryGenerate },
   ];
   const router = createRouter(routes);
   return (ctx: RouteCtx) => router(ctx, deps);
