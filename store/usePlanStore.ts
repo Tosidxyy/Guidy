@@ -11,6 +11,7 @@ interface UndoEntry {
   label: string;
   before: PlanState;
   after: PlanState;
+  at: number;
 }
 
 export interface ReschedulePreview {
@@ -52,6 +53,7 @@ interface PlanStore {
   previewArtifact: (draft: import('@/shared/schemas').ConstraintSetArtifact) => void;
   previewPatch: (patch: import('@/shared/schemas').PatchArtifact) => void;
   replaceStateKeepUndo: (next: PlanState) => void;
+  applyServerBlocks: (blocks: Block[]) => void;
   applyPreview: () => void;
   discardPreview: () => void;
 
@@ -98,7 +100,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       mutator(draft);
       draft.plan.version += 1;
       draft.plan.updated_at = new Date().toISOString();
-      const entry = { label, before, after: clone(draft) };
+      const entry = { label, before, after: clone(draft), at: Date.now() };
       const next = [...undoStack, entry].slice(-LIMITS.undoDepth);
       set({ state: draft, undoStack: next, redoStack: [], dirty: true });
       save(draft);
@@ -300,6 +302,18 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       const stack = top ? [...undoStack.slice(0, -1), { ...top, after: clone(next) }] : undoStack;
       set({ state: next, undoStack: stack, preview: null, dirty: false });
       save(next);
+    },
+
+    applyServerBlocks: (blocks) => {
+      const { state, undoStack, redoStack } = get();
+      const nextState = { ...state, blocks };
+      const rewrite = (entry: UndoEntry): UndoEntry => ({
+        ...entry,
+        before: { ...entry.before, blocks },
+        after: { ...entry.after, blocks },
+      });
+      set({ state: nextState, undoStack: undoStack.map(rewrite), redoStack: redoStack.map(rewrite) });
+      save(nextState);
     },
 
     applyPreview: () => {

@@ -97,6 +97,25 @@ describe('整组移动与删除', () => {
   });
 });
 
+describe('applyServerBlocks', () => {
+  it('只替换 blocks，不推本地撤销、不改 dirty，并更新快照 blocks', () => {
+    usePlanStore.getState().importState(seeded);
+    usePlanStore.getState().renamePlan('新名');
+    const nextBlocks = [{
+      id: 'srv-1', title: '服务端块', category: 'study' as const,
+      start_utc: '2026-11-16T01:00:00.000Z', end_utc: '2026-11-16T02:00:00.000Z',
+      priority: 'mid' as const, pinned: false, origin: 'engine' as const,
+    }];
+    usePlanStore.getState().applyServerBlocks(nextBlocks);
+    const s = usePlanStore.getState();
+    expect(s.state.blocks).toEqual(nextBlocks);
+    expect(s.undoStack).toHaveLength(1);
+    expect(s.undoStack[0].before.blocks).toEqual(nextBlocks);
+    expect(s.undoStack[0].after.blocks).toEqual(nextBlocks);
+    expect(s.dirty).toBe(true);
+  });
+});
+
 describe('replaceStateKeepUndo', () => {
   it('保留撤销栈顶 before，after 更新为 next', () => {
     usePlanStore.getState().importState(seeded);
