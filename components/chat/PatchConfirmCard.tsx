@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { Check } from 'lucide-react';
 import type { PatchArtifact } from '@/shared/schemas';
 import { patchOpText } from '@/lib/describe';
+import { countExternalOps } from '@/lib/patchTargets';
 import { useFocusTrap } from '@/lib/useFocusTrap';
 import { Button } from '@/components/ui/button';
 import { usePlanStore } from '@/store/usePlanStore';
@@ -12,7 +13,9 @@ export function PatchConfirmCard({ patch, onConfirm, onCancel }: {
   const ref = useRef<HTMLDivElement>(null);
   useFocusTrap(ref, true, onCancel);
   const taskDefs = usePlanStore((s) => s.state.task_defs);
+  const planState = usePlanStore((s) => s.state);
   const title = (key: string) => taskDefs.find((t) => t.key === key)?.title ?? key;
+  const external = countExternalOps(patch.ops, planState);
 
   return (
     <div
@@ -32,6 +35,11 @@ export function PatchConfirmCard({ patch, onConfirm, onCancel }: {
           </li>
         ))}
       </ul>
+      {external > 0 && (
+        <p className="mt-2 rounded-lg bg-site-warning/10 px-2.5 py-1.5 text-xs text-site-warning-text">
+          其中 {external} 项作用于其他计划（共享日历），确认后会一起保存。
+        </p>
+      )}
       <div className="mt-4 flex items-center justify-end gap-2">
         <Button variant="outline" size="sm" onClick={onCancel}>取消</Button>
         <Button size="sm" className="dawn-gradient text-white" onClick={() => onConfirm(patch)}>
