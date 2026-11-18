@@ -277,6 +277,23 @@ describe('savePlan（草稿整份保存）', () => {
     expect(d.db.tables.conversations[0].plan_id).toBe(j.plan.id);
   });
 
+  it('新建计划继承已有计划的忙时，状态为 draft；更新时不再继承', async () => {
+    const d = deps();
+    const app = application(d);
+    const base = { title: '工作日程', horizon_start: '2026-11-18', horizon_days: 7, timezone: 'Asia/Shanghai', task_defs: [], blocks: [] };
+    const a = await (await app(ctx('POST', '/api/plans/save', { plan_id: null, input: { ...base, constraints: [{ id: crypto.randomUUID(), payload: { type: 'busy_window', weekday: 1, start: '09:00', end: '17:30', label: '上班' }, source: 'user', enabled: true }] } }))).json();
+    expect(a.plan.status).toBe('draft');
+
+    const b = await (await app(ctx('POST', '/api/plans/save', { plan_id: null, input: { ...base, title: '训练', constraints: [{ id: crypto.randomUUID(), payload: { type: 'active_window', start: '07:00', end: '23:00' }, source: 'user', enabled: true }] } }))).json();
+    expect(b.plan.status).toBe('draft');
+    expect(b.constraints).toHaveLength(2);
+    expect(b.constraints.some((c: any) => c.payload.type === 'busy_window')).toBe(true);
+
+    // 更新：用户删掉忙时后不应被重新继承
+    const updated = await (await app(ctx('POST', '/api/plans/save', { plan_id: b.plan.id, input: { ...base, title: '训练', constraints: [] } }))).json();
+    expect(updated.constraints).toHaveLength(0);
+    expect(updated.plan.status).toBe('draft');
+  });
   it('再次保存同一计划 → version+1，整表替换', async () => {
     const d = deps();
     const app = application(d);

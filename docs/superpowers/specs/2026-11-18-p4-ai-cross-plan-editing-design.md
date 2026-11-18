@@ -118,3 +118,10 @@ resolvePatchTargets(ops, active: PlanState, layers: PlanState[]): PlanTarget[]
 - `chatSend` 把结果作为 `availability` 传给 `buildUserMessage`，prompt 里写作「【可安排时段（按共享日历计算，已扣除忙时与既有安排）】」，并明确：追问选项必须落在这些时段内，生成计划时 `active_window` 要与之一致。
 
 这样「AI 说的可用时间」与「给出的选项」出自同一份计算，不再出现自相矛盾；若用户认为早晨不该排训练，只需补一条忙时，选项随之收敛。
+
+## 8. 共享日历：忙时继承与草稿状态
+
+两处修正，来自真实使用反馈：
+
+1. **新建计划继承忙时**：`busy_window` 与 `fixed_block` 描述的是「这个人的日历」，不是某个计划的私有属性。新建计划（`POST /plans/save` 或 `/plans/commit` 且 `plan_id` 为空）时，从访客已有计划里继承这两类约束（按 payload 去重，最多 12 条）。这样新对话的日历上仍然有上班忙时，排程也会避开；更新计划时**不**继承，避免用户删掉的忙时被复活。
+2. **草稿用 constraint_set，已确认计划才用 patch**：自动保存会把新对话写成 `status: 'draft'` 的计划，此前模型看到「当前计划已保存」就改用 patch，绕过方案卡。现在 `savePlan` 新建为 draft、更新保留原状态；`commit` 才置为 active。prompt 明确：draft 状态下用户补充或回答追问后输出**完整 constraint_set**（由方案卡确认生成），只有 active 计划才输出 patch。

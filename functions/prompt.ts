@@ -41,7 +41,7 @@ export function buildSystemPrompt(): string {
     '- 有排程目标但信息不足：输出 question_card（见下方契约），把要问的放进卡片，每轮最多 2 个问题；能给具体选项就给（2–4 个）。闲聊或与排程无关的追问才用自然语言。不要臆造用户未给出的硬性时间，不要急于生成 constraint_set。',
     '- 目标明确且信息足够，或用户明确要求生成：才输出 constraint_set（一个 JSON 对象，可用 ```json 代码块包裹），下方确认卡会自动出现。',
     '- 时间基准：用户消息开头会给出「今天是 YYYY-MM-DD（周X，时区）」。用户说「下周 / 下个月 / 从某天开始」时，必须换算成具体日期写入 horizon_start；「下周」指下一个自然周的周一。用户未指定开始日时省略 horizon_start。',
-    '- 用户要求修改已有计划：仅当上下文里已有已保存的计划（「当前计划」存在）时输出 patch。',
+    '- 用户要求修改已有计划：仅当「当前计划」状态为已确认（active）时输出 patch；状态是草稿（draft）时仍输出完整 constraint_set，交给方案卡确认生成。',
     '- 如果方案还只是未确认的 constraint_set（上下文显示「当前还没有计划」），用户的修改要求仍输出更新后的完整 constraint_set，不要输出 patch；已解决的 clarifications 要清空。',
     '- 结构化产物一旦输出，字段名、类型、枚举必须与下方契约逐字一致，不要自创字段、不要改用近义词或把对象写成字符串。',
     '',
@@ -164,7 +164,7 @@ export function buildUserMessage(input: {
     lines.push('追问的选项必须落在这些可安排时段内；生成计划时如无其他依据，active_window 要与之一致，不要排进忙时或既有块。');
   }
   if (input.plan) {
-    lines.push(`当前计划「${input.plan.plan.title}」，horizon_start=${input.plan.plan.horizon_start}，timezone=${input.plan.plan.timezone}。`);
+    lines.push(`当前计划「${input.plan.plan.title}」（${input.plan.plan.status === 'active' ? '已确认' : '草稿，尚未确认排程'}），horizon_start=${input.plan.plan.horizon_start}，timezone=${input.plan.plan.timezone}。`);
     const holidays = holidaysInRange(input.plan.plan.horizon_start, input.plan.plan.horizon_days);
     const makeup = makeupWorkdaysInRange(input.plan.plan.horizon_start, input.plan.plan.horizon_days);
     if (holidays.length) lines.push(`计划期内法定节假日：${holidays.map((h) => `${h.date} ${h.name}`).join('、')}。`);
@@ -196,7 +196,8 @@ export function buildUserMessage(input: {
       if (input.conflicts.length > 6) lines.push(`- …另有 ${input.conflicts.length - 6} 处重叠`);
       lines.push('若与用户当前请求相关，用一句话提醒他们可能撞时间；合并由用户在日历上点「合并」完成，你不要输出修改其他计划的 patch。');
     }
-    lines.push('当前计划已保存；用户要求修改时输出 patch。');
+    if (input.plan.plan.status === 'active') lines.push('当前计划已确认；用户要求修改时输出 patch。');
+    else lines.push('当前计划还是草稿（未确认生成）：用户回答追问或补充需求后，输出完整 constraint_set（不要输出 patch），由用户在方案卡里确认生成。');
   } else {
     lines.push('当前对话还没有计划（草稿状态）；之前的 constraint_set 也尚未落库。用户对方案的修改请输出完整 constraint_set，不要输出 patch。');
     if (input.others?.length) {

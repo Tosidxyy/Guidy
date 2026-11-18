@@ -88,6 +88,17 @@ describe('buildUserMessage — 跨计划上下文', () => {
     expect(text).toContain('周六、周日：09:00–22:00');
     expect(text).toContain('追问的选项必须落在这些可安排时段内');
   });
+  it('草稿计划要求输出 constraint_set，已确认计划才用 patch', () => {
+    const draftPlan: PlanState = { ...plan, plan: { ...plan.plan, status: 'draft' } };
+    const draftText = buildUserMessage({ message: '补一个腿部任务', plan: draftPlan, history: [], today: '2026-11-18' });
+    expect(draftText).toContain('草稿，尚未确认排程');
+    expect(draftText).toContain('不要输出 patch');
+
+    const activePlan: PlanState = { ...plan, plan: { ...plan.plan, status: 'active' } };
+    const activeText = buildUserMessage({ message: '把数学挪到下午', plan: activePlan, history: [], today: '2026-11-18' });
+    expect(activeText).toContain('当前计划已确认');
+    expect(activeText).toContain('用户要求修改时输出 patch');
+  });
   it('没有其他计划时不出现该段', () => {
     const text = buildUserMessage({ message: 'hi', plan, history: [], today: '2026-11-18' });
     expect(text).not.toContain('【共享日历中的其他计划】');

@@ -83,6 +83,7 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const serverHash = await resultHash(output.blocks);
   const server_authoritative = serverHash !== result_hash;
   let plan;
+  const planIdCreated = !plan_id;
   if (plan_id) {
     const old = await getOwnedPlan(deps.db, visitor, plan_id);
     await deps.db.from('task_defs').delete().eq('plan_id', plan_id);
@@ -97,7 +98,8 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
   for (const t of input.task_defs) {
     await deps.db.from('task_defs').insert({ plan_id: plan.id, key: t.key, title: t.title, category: t.category, duration_min: t.duration_min, frequency: t.frequency, priority: t.priority, splittable: t.splittable, preferred_period: t.preferred_period ?? null, sort_order: t.sort_order });
   }
-  for (const c of input.constraints) {
+  const inherited = planIdCreated ? await inheritedRecurring(deps.db, visitor) : [];
+  for (const c of (planIdCreated ? mergedConstraints(input.constraints, inherited) : input.constraints)) {
     await deps.db.from('constraints').insert({ plan_id: plan.id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
   }
   for (const b of output.blocks) {
@@ -129,6 +131,42 @@ const SaveSchema = z.object({
   }),
 });
 
+const RECURRING_TYPES = new Set(['busy_window', 'fixed_block']);
+
+function stableKey(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableKey).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    return `{${Object.keys(obj).sort().map((k) => `${JSON.stringify(k)}:${stableKey(obj[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+// 忙时与固定日程是「这个人的日历」而不是某个计划的属性：新建计划时继承已有计划里的这类约束，
+// 否则新计划的日历不显示上班时间，排程也会把任务放进工作时段。
+async function inheritedRecurring(db: Db, visitor: string): Promise<any[]> {
+  const plans = rows(await db.from('plans').select('id').eq('owner_visitor_id', visitor));
+  const out: any[] = [];
+  const seen = new Set<string>();
+  for (const p of plans) {
+    const constraints = rows(await db.from('constraints').select('*').eq('plan_id', p.id));
+    for (const c of constraints) {
+      if (c.enabled === false || !RECURRING_TYPES.has(c.payload?.type)) continue;
+      const key = stableKey(c.payload);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ id: crypto.randomUUID(), payload: c.payload, source: c.source ?? 'user', enabled: true });
+    }
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+function mergedConstraints(input: any[], inherited: any[]): any[] {
+  const seen = new Set(input.map((c) => stableKey(c.payload)));
+  return [...input, ...inherited.filter((c) => !seen.has(stableKey(c.payload)))].slice(0, LIMITS.constraintsMax);
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // 保存本地草稿：整份快照落库，不跑求解，保留用户手放的块与备注。
@@ -149,21 +187,22 @@ export async function savePlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
     await deps.db.from('blocks').delete().eq('plan_id', old.id);
     plan = rows(await deps.db.from('plans').update({
       title: input.title, horizon_start: input.horizon_start, horizon_days: input.horizon_days,
-      timezone: input.timezone, status: 'active', version: old.version + 1, updated_at: new Date().toISOString(),
+      timezone: input.timezone, status: old.status ?? 'draft', version: old.version + 1, updated_at: new Date().toISOString(),
     }).eq('id', old.id).eq('owner_visitor_id', visitor).select('*'))[0];
   } else {
     const count = rows(await deps.db.from('plans').select('id').eq('owner_visitor_id', visitor)).length;
     if (count >= QUOTAS.plansPerVisitor) fail('plan_quota_exceeded', 429, { limit: QUOTAS.plansPerVisitor });
     plan = rows(await deps.db.from('plans').insert({
       owner_visitor_id: visitor, title: input.title, horizon_start: input.horizon_start,
-      horizon_days: input.horizon_days, timezone: input.timezone, status: 'active', version: 1,
+      horizon_days: input.horizon_days, timezone: input.timezone, status: 'draft', version: 1,
     }).select('*'))[0];
   }
 
   for (const t of input.task_defs) {
     await deps.db.from('task_defs').insert({ plan_id: plan.id, key: t.key, title: t.title, category: t.category, duration_min: t.duration_min, frequency: t.frequency, priority: t.priority, splittable: t.splittable, preferred_period: t.preferred_period ?? null, sort_order: t.sort_order });
   }
-  for (const c of input.constraints) {
+  const savedConstraints = old ? input.constraints : mergedConstraints(input.constraints, await inheritedRecurring(deps.db, visitor));
+  for (const c of savedConstraints) {
     await deps.db.from('constraints').insert({ ...(UUID_RE.test(c.id) ? { id: c.id } : {}), plan_id: plan.id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
   }
   for (const b of input.blocks) {
