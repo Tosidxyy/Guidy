@@ -114,7 +114,7 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
   for (const b of newBlocks) {
     await deps.db.from('blocks').insert({
       ...(originalBlockIds.has(b.id) || clientIds.has(b.id) ? { id: b.id } : {}),
-      plan_id, title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc, priority: b.priority, pinned: b.pinned, origin: b.origin, notes: b.notes ?? null,
+      plan_id, task_key: b.task_key ?? null, title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc, priority: b.priority, pinned: b.pinned, origin: b.origin, notes: b.notes ?? null,
     });
   }
   await deps.db.from('commit_log').insertIfAbsent({ preview_id, visitor_id: visitor, plan_id }, { onConflict: 'preview_id' });

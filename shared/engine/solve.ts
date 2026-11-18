@@ -234,17 +234,17 @@ export function solve(input: SolveInput): SolveOutput {
   };
 
   for (const task of sortedTasks) {
-    const target = task.frequency.type === 'daily' ? days.length : task.frequency.type === 'per_week' ? task.frequency.count : 1;
     const pre = pinnedByTask.get(task.key);
     let placedCount = pre?.count ?? 0;
-    let splitMinutesLeft = 0;
     const usedDays = new Set<string>(pre?.days ?? []);
     const period = preferredPeriodFor(task, constraints);
     const candidate = { task_key: task.key, category: task.category };
 
-    while (placedCount < target) {
+    /** 在允许的日期里落一次；允许集合为空表示整个 horizon。 */
+    const placeOne = (allowed?: Set<string>): boolean => {
       const bestRef: { current: { ctx: DayContext; interval: Interval; score: number } | null } = { current: null };
       for (const ctx of ctxByDay.values()) {
+        if (allowed && !allowed.has(ctx.day)) continue;
         if (usedDays.has(ctx.day)) continue;
         if (capFor(ctx.day, task.category) < (task.splittable ? MIN_FRAGMENT_MIN : task.duration_min)) continue;
         for (const slot of freeSlots(ctx)) {
@@ -262,7 +262,7 @@ export function solve(input: SolveInput): SolveOutput {
       }
 
       const best = bestRef.current;
-      if (!best) break;
+      if (!best) return false;
       const { ctx, interval } = best;
       const minutes = interval.end - interval.start;
       const block = makeBlock(task, ctx, interval);
@@ -270,12 +270,13 @@ export function solve(input: SolveInput): SolveOutput {
       usedDays.add(ctx.day);
       recordSoft(task, block, ctx, interval);
       if (task.splittable && minutes < task.duration_min) {
-        splitMinutesLeft = task.duration_min - minutes;
+        let splitMinutesLeft = task.duration_min - minutes;
         while (splitMinutesLeft >= MIN_FRAGMENT_MIN) {
           let frag: { ctx: DayContext; interval: Interval } | null = null;
           let fallback: { ctx: DayContext; interval: Interval } | null = null;
           const fragTask = { ...task, duration_min: splitMinutesLeft };
           for (const fctx of ctxByDay.values()) {
+            if (allowed && !allowed.has(fctx.day)) continue;
             if (capFor(fctx.day, task.category) < MIN_FRAGMENT_MIN) continue;
             for (const slot of freeSlots(fctx)) {
               for (const fi of candidateIntervals(fctx, slot, fragTask, candidate, period)) {
@@ -300,7 +301,27 @@ export function solve(input: SolveInput): SolveOutput {
           violations.push({ task_key: task.key, reason: `「${task.title}」拆分后仍有 ${splitMinutesLeft} 分钟无法落位`, suggestion: '放宽每日上限或增加可用时段' });
         }
       }
-      placedCount++;
+      return true;
+    };
+
+    // per_week 是「每周 count 次」：按 7 天一段逐周配额，而不是整个 horizon 只排 count 次。
+    const weekSegments: string[][] = [];
+    for (let i = 0; i < days.length; i += 7) weekSegments.push(days.slice(i, i + 7));
+    let target: number;
+    if (task.frequency.type === 'per_week') {
+      const { count } = task.frequency;
+      target = 0;
+      for (const seg of weekSegments) {
+        const quota = seg.length === 7 ? count : Math.max(1, Math.round((count * seg.length) / 7));
+        target += quota;
+        const allowed = new Set(seg);
+        const pinnedHere = [...(pre?.days ?? [])].filter((d) => allowed.has(d)).length;
+        let need = Math.max(0, quota - pinnedHere);
+        while (need > 0 && placeOne(allowed)) { placedCount += 1; need -= 1; }
+      }
+    } else {
+      target = task.frequency.type === 'daily' ? days.length : 1;
+      while (placedCount < target && placeOne()) placedCount += 1;
     }
 
     if (placedCount < target) {

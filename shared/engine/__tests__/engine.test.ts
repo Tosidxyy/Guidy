@@ -218,6 +218,34 @@ describe('engine solve', () => {
     expect(days.size).toBe(4);
   });
 
+  it('E14b per_week 在 90 天里逐周排，而不是整个 horizon 只排一次', () => {
+    const out = solve(input({
+      horizon_days: 90,
+      task_defs: [task({ key: 'leg', duration_min: 60, frequency: { type: 'per_week', count: 1 } })],
+      constraints: [active()],
+    }));
+    const weekOf = (b: Block) => Math.floor((Date.parse(`${localDay(b.start_utc, TZ)}T00:00:00Z`) - Date.parse(`${START}T00:00:00Z`)) / (7 * 86400000));
+    expect(out.blocks).toHaveLength(13);
+    expect(new Set(out.blocks.map(weekOf)).size).toBe(13);
+    expect(out.violations).toHaveLength(0);
+  });
+
+  it('E14c per_week 每周 3 次：90 天里每周都有 3 次', () => {
+    const out = solve(input({
+      horizon_days: 90,
+      task_defs: [task({ key: 'run', duration_min: 45, frequency: { type: 'per_week', count: 3 } })],
+      constraints: [active()],
+    }));
+    const byWeek = new Map<number, number>();
+    for (const b of out.blocks) {
+      const w = Math.floor((Date.parse(`${localDay(b.start_utc, TZ)}T00:00:00Z`) - Date.parse(`${START}T00:00:00Z`)) / (7 * 86400000));
+      byWeek.set(w, (byWeek.get(w) ?? 0) + 1);
+    }
+    expect(out.blocks).toHaveLength(39);
+    expect(byWeek.size).toBe(13);
+    for (const n of byWeek.values()) expect(n).toBe(3);
+  });
+
   it('E15 DST：America/New_York 跨 2026-03-08 本地边界不漂移', () => {
     const out = solve(input({
       horizon_start: '2026-03-06', timezone: 'America/New_York',

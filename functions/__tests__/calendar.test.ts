@@ -48,6 +48,7 @@ describe('共享日历：忙时实例化为公共块', () => {
     const hash = await resultHash(solve({ engine_version: 1, ...input, pinned_blocks: [] }).blocks);
     const committed = await (await app(ctx('POST', '/api/plans/commit', { preview_id: 'busy-1', plan_id: null, input, result_hash: hash, engine_version: 1 }))).json();
     expect(committed.blocks.length).toBeGreaterThan(0);
+    expect(committed.blocks.every((b: any) => typeof b.task_key === 'string' && b.task_key.length > 0)).toBe(true);
     for (const b of committed.blocks) {
       if (!isWorkday(b.start_utc)) continue;
       expect(hhmm(b.start_utc) < '17:30' && hhmm(b.end_utc) > '09:00').toBe(false);
