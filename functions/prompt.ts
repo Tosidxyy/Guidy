@@ -1,5 +1,6 @@
 import type { PlanState } from '../shared/types.ts';
 import type { ConstraintSetArtifact } from '../shared/schemas.ts';
+import type { PlanConflict } from '../shared/engine/conflicts.ts';
 import { taskSummary, constraintText } from '../lib/describe.ts';
 import { localDay, localMinutes, minToHHmm } from '../shared/engine/time.ts';
 
@@ -90,7 +91,14 @@ export function buildSystemPrompt(): string {
   ].join('\n');
 }
 
-export function buildUserMessage(input: { message: string; plan: PlanState | null; history: { role: string; content: string }[]; today?: string; timezone?: string }): string {
+export function buildUserMessage(input: {
+  message: string;
+  plan: PlanState | null;
+  history: { role: string; content: string }[];
+  today?: string;
+  timezone?: string;
+  conflicts?: PlanConflict[];
+}): string {
   const lines: string[] = [];
   const timezone = input.plan?.plan.timezone ?? input.timezone ?? 'Asia/Shanghai';
   const today = input.today ?? new Date().toISOString().slice(0, 10);
@@ -110,6 +118,19 @@ export function buildUserMessage(input: { message: string; plan: PlanState | nul
       lines.push(`- ${b.id}｜${b.title}｜${day} ${start}–${end}`);
     }
     if (input.plan.blocks.length > 60) lines.push(`- …共 ${input.plan.blocks.length} 个时间块，仅列前 60 个`);
+    if (input.conflicts?.length) {
+      lines.push('【共享日历：跨计划时间重叠】（来自用户的其他计划，仅供提醒，不要自行修改）');
+      for (const c of input.conflicts.slice(0, 6)) {
+        const other = c.a.planId === input.plan.plan.id ? { title: c.b.block.title, plan: c.b.planTitle } : { title: c.a.block.title, plan: c.a.planTitle };
+        const mine = c.a.planId === input.plan.plan.id ? c.a.block.title : c.b.block.title;
+        const day = localDay(c.start_utc, timezone);
+        const start = minToHHmm(localMinutes(c.start_utc, timezone));
+        const end = minToHHmm(localMinutes(c.end_utc, timezone));
+        lines.push(`- ${day} ${start}–${end}：当前「${mine}」×「${other.title}」（${other.plan}），重叠 ${c.overlap_min} 分钟`);
+      }
+      if (input.conflicts.length > 6) lines.push(`- …另有 ${input.conflicts.length - 6} 处重叠`);
+      lines.push('若与用户当前请求相关，用一句话提醒他们可能撞时间；合并由用户在日历上点「合并」完成，你不要输出修改其他计划的 patch。');
+    }
     lines.push('当前计划已保存；用户要求修改时输出 patch。');
   } else {
     lines.push('当前还没有计划。');

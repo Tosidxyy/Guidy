@@ -135,6 +135,37 @@ describe('chatSend', () => {
     expect(msgs.some((m: any) => m.kind === 'progress' || m.content === 'WebSearch')).toBe(false);
   });
 });
+describe('跨计划冲突进入 prompt', () => {
+  const taskDefs = [{ key: 'math', title: '数学真题', category: 'study', duration_min: 60, frequency: { type: 'daily' }, priority: 'mid', splittable: false, sort_order: 0 }];
+  async function seed(d: Deps, title: string, activeStart: string, activeEnd: string) {
+    const { solve } = await import('../engine');
+    const { resultHash } = await import('../engine');
+    const input = {
+      title, horizon_start: '2026-11-18', horizon_days: 7, timezone: 'Asia/Shanghai',
+      task_defs: [taskDefs[0]],
+      constraints: [{ id: crypto.randomUUID(), payload: { type: 'active_window', start: activeStart, end: activeEnd }, source: 'user', enabled: true }],
+    };
+    const out = solve({ engine_version: 1, ...input, pinned_blocks: [] });
+    const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: crypto.randomUUID(), plan_id: null, input, result_hash: await resultHash(out.blocks), engine_version: 1 }));
+    return (await res.json()).plan;
+  }
+
+  it('活动计划与其他计划重叠时，prompt 含冲突段与对方计划名', async () => {
+    const d = deps({ openStream: async () => ({ body: upstreamStream(replyFrames), close() {} }) });
+    const app = application(d);
+    const a = await seed(d, '考研计划', '07:00', '09:00');
+    await seed(d, '健身计划', '07:30', '08:30');
+    let sent = '';
+    const withCapture = {
+      ...d,
+      qca: { ...d.qca, sendEvents: async (_session: string, text: string) => { sent = text; return { eventIds: ['e1'] }; } },
+    } as Deps;
+    await collect(await application(withCapture)(ctx('POST', '/api/chat/send', { text: '今天先做什么？', plan_id: a.id })));
+    expect(sent).toContain('【共享日历：跨计划时间重叠】');
+    expect(sent).toContain('健身计划');
+  });
+});
+
 describe('chatHistory / interrupt', () => {
   it('history 跨访客 → 403', async () => {
     const d = deps();
