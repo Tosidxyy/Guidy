@@ -38,6 +38,9 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
   if (!parsed.success) fail('validation_failed', 422, parsed.error.flatten());
   const { preview_id, plan_id, base_version, ops, result_hash, engine_version } = parsed.data;
   if (engine_version !== ENGINE_VERSION) fail('engine_version_mismatch', 409);
+  // 跨计划 op 由客户端拆到各自请求；带上来的 plan_id 必须与请求一致，防止发错计划。
+  const mismatched = ops.find((op) => (op.op === 'add_block' || op.op === 'update_plan') && op.plan_id && op.plan_id !== plan_id);
+  if (mismatched) fail('op_plan_mismatch', 422, { op: mismatched.op, plan_id: mismatched.op === 'add_block' || mismatched.op === 'update_plan' ? mismatched.plan_id : null });
   const plan = await getOwnedPlan(deps.db, visitor, plan_id);
 
   const existing = rows(await deps.db.from('commit_log').select('plan_id').eq('preview_id', preview_id).eq('visitor_id', visitor).limit(1))[0];

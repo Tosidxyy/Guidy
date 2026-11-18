@@ -1,5 +1,5 @@
 import { CATEGORY_MAP, PERIOD_LABEL } from '../shared/constants.ts';
-import type { ConstraintPayload, Frequency, PatchOp, TaskDef } from '../shared/types.ts';
+import type { ApplyOp, ConstraintPayload, Frequency, TaskDef } from '../shared/types.ts';
 
 const WEEKDAY_LABEL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -64,7 +64,7 @@ export function daysUntil(dateStr: string): number {
   return Math.round((target.getTime() - now.getTime()) / 86400000);
 }
 
-export function patchOpText(op: PatchOp, taskTitle?: (key: string) => string): string {
+export function patchOpText(op: ApplyOp, taskTitle?: (key: string) => string): string {
   const title = (key: string) => taskTitle?.(key) ?? key;
   switch (op.op) {
     case 'add_task_def':
@@ -91,5 +91,13 @@ export function patchOpText(op: PatchOp, taskTitle?: (key: string) => string): s
       return `重新排程（${op.scope === 'all' ? '全部' : '受影响部分'}）`;
     case 'clear_plan':
       return '清空当前计划（全部任务、时间块与约束）';
+    case 'update_plan': {
+      const parts: string[] = [];
+      if (op.patch.title !== undefined) parts.push(`标题→${op.patch.title}`);
+      if (op.patch.horizon_start !== undefined) parts.push(`开始日→${op.patch.horizon_start}`);
+      if (op.patch.horizon_days !== undefined) parts.push(`跨度→${op.patch.horizon_days} 天`);
+      if (op.patch.timezone !== undefined) parts.push(`时区→${op.patch.timezone}`);
+      return `调整计划：${parts.join('，')}`;
+    }
   }
 }

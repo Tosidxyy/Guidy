@@ -29,6 +29,7 @@ export const MESSAGES: Record<string, string> = {
   plan_not_saved: '当前还没有保存的计划，无法应用调整；请先确认并生成计划',
   conversation_plan_mismatch: '当前对话尚未关联该计划，请新建计划后再生成',
   patch_target_missing: 'AI 调整引用的任务或时间块已不存在，请刷新后重试',
+  op_plan_mismatch: '这条调整指向了另一个计划，请刷新后重试',
 };
 export function fail(code: string, status: number, details?: unknown): never {
   throw new AppError(code, status, details);

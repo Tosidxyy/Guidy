@@ -71,7 +71,9 @@ export function buildSystemPrompt(): string {
     'weekday：0=周日、1=周一 … 6=周六。所有时间用 HH:mm 本地时区。',
     '',
     '【patch 契约】用户要求修改已有计划时输出 {type:"patch", summary≤200, ops:[Op](1–30)}。',
-    'op ∈ add_task_def{value:TaskDef} | update_task_def{key,patch} | remove_task_def{key} | add_constraint{value:Payload} | update_constraint{id,patch} | remove_constraint{id} | add_block{value:ManualBlock} | update_block{id,patch} | move_block{id,start_utc,end_utc(ISO datetime)} | remove_block{id} | reschedule{scope?:"affected_only"|"all",keep_pinned:true} | clear_plan{}。',
+    'op ∈ add_task_def{value:TaskDef} | update_task_def{key,patch} | remove_task_def{key} | add_constraint{value:Payload} | update_constraint{id,patch} | remove_constraint{id} | add_block{value:ManualBlock,client_id?,plan_id?} | update_block{id,patch} | move_block{id,start_utc,end_utc(ISO datetime)} | remove_block{id} | reschedule{scope?:"affected_only"|"all",keep_pinned:true} | clear_plan{} | update_plan{plan_id?,patch:{title?,horizon_start?,horizon_days?,timezone?}}。',
+    'plan_id 只在跨计划操作时填写（取「共享日历中的其他计划」里的 plan id）；不填即当前计划。',
+    'ManualBlock = {title:≤60 字, category, start_utc:"YYYY-MM-DDTHH:mm:ss.sssZ"(UTC), end_utc:同上, priority?:"high"|"mid"|"low", pinned?:boolean, notes?≤500}。时间必须写成 UTC ISO；用户说的本地时间要按计划时区换算（Asia/Shanghai = UTC+8，21:00 本地 = 13:00Z）。',
     '',
     '【patch 输出格式，必须逐字遵守】',
     '{"type":"patch","summary":"≤200 字","ops":[{"op":"...", ...}]}',
@@ -99,7 +101,7 @@ export function buildUserMessage(input: {
   today?: string;
   timezone?: string;
   conflicts?: PlanConflict[];
-  others?: { id: string; title: string; blocks: Block[] }[];
+  others?: { id: string; title: string; horizon_start: string; horizon_days: number; timezone: string; blocks: Block[] }[];
 }): string {
   const lines: string[] = [];
   const timezone = input.plan?.plan.timezone ?? input.timezone ?? 'Asia/Shanghai';
@@ -121,9 +123,9 @@ export function buildUserMessage(input: {
     }
     if (input.plan.blocks.length > 60) lines.push(`- …共 ${input.plan.blocks.length} 个时间块，仅列前 60 个`);
     if (input.others?.length) {
-      lines.push('【共享日历中的其他计划】只能按块 id 修改其中的块（不提供其他计划的任务与约束上下文）：');
+      lines.push('【共享日历中的其他计划】按 id 修改其中的块；新建块或改计划元数据要带该计划的 plan id（不提供其他计划的任务与约束上下文）：');
       for (const other of input.others.slice(0, 3)) {
-        lines.push(`- 计划「${other.title}」（plan id ${other.id}）`);
+        lines.push(`- 计划「${other.title}」（plan id ${other.id}，开始日 ${other.horizon_start}，跨度 ${other.horizon_days} 天，时区 ${other.timezone}）`);
         for (const b of other.blocks.slice(0, 12)) {
           const day = localDay(b.start_utc, timezone);
           const start = minToHHmm(localMinutes(b.start_utc, timezone));
@@ -132,8 +134,10 @@ export function buildUserMessage(input: {
         }
         if (other.blocks.length > 12) lines.push(`  - …共 ${other.blocks.length} 个时间块，仅列前 12 个`);
       }
-      lines.push('修改其他计划：move_block / update_block / remove_block 直接使用上面的块 id。');
-      lines.push('新建块、增删任务定义、改约束的新增、清空计划、重新排程只作用于当前计划；任务 key 只在当前计划内有效。');
+      lines.push('修改其他计划的块：move_block / update_block / remove_block 直接使用上面的块 id。');
+      lines.push('在其他计划新建块：add_block 的 value 照旧，另加 "plan_id":"<对方计划 id>"。');
+      lines.push('改其他计划元数据：update_plan 带 "plan_id":"<对方计划 id>"，patch 里写 title / horizon_start / horizon_days / timezone。仅在用户明确要求时使用。');
+      lines.push('增删任务定义、改约束、清空计划、重新排程只作用于当前计划；任务 key 只在当前计划内有效。');
     }
     if (input.conflicts?.length) {
       lines.push('【共享日历：跨计划时间重叠】（来自用户的其他计划，仅供提醒，不要自行修改）');

@@ -46,7 +46,17 @@ async function loadRelatedPlans(db: Deps['db'], visitor: string, active: PlanSta
     const blocks = rows(await db.from('blocks').select('*').eq('plan_id', p.id));
     if (blocks.length) sources.push({ id: p.id, title: p.title, blocks });
   }
-  const rest = sources.filter((s) => s.id !== active.plan.id).map((s) => ({ id: s.id, title: s.title, blocks: s.blocks }));
+  const rest = sources.filter((s) => s.id !== active.plan.id).map((s) => {
+    const row = others.find((p) => p.id === s.id);
+    return {
+      id: s.id,
+      title: s.title,
+      horizon_start: row?.horizon_start ?? active.plan.horizon_start,
+      horizon_days: row?.horizon_days ?? active.plan.horizon_days,
+      timezone: row?.timezone ?? active.plan.timezone,
+      blocks: s.blocks,
+    };
+  });
   const conflicts = sources.length > 1 ? findConflicts(sources, { onlyPlanId: active.plan.id }) : [];
   return { conflicts, others: rest };
 }

@@ -46,6 +46,19 @@ describe('schemas', () => {
     expect(r.success).toBe(true); // Schema 层通过，业务校验（validatePlacement）拒绝 end<=start
   });
 
+  it('S10 AI patch 可带跨计划 plan_id 与 update_plan', () => {
+    const pid = '11111111-1111-4111-8111-111111111111';
+    const ok = PatchArtifactSchema.safeParse({
+      type: 'patch', summary: 's',
+      ops: [
+        { op: 'add_block', plan_id: pid, value: { title: '拉伸', category: 'rest', start_utc: '2026-11-20T12:00:00.000Z', end_utc: '2026-11-20T12:15:00.000Z', priority: 'mid', pinned: false } },
+        { op: 'update_plan', plan_id: pid, patch: { horizon_days: 14 } },
+      ],
+    });
+    expect(ok.success).toBe(true);
+    expect(PatchArtifactSchema.safeParse({ type: 'patch', summary: 's', ops: [{ op: 'update_plan', patch: {} }] }).success).toBe(false);
+  });
+
   it('S10 clarifications ≤2', () => {
     const base = {
       type: 'constraint_set', plan_title: 't', horizon_days: 7,

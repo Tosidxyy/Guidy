@@ -12,7 +12,10 @@ const plan: PlanState = {
   constraints: [],
   blocks: [block('a1', '数学真题', '2026-11-19T23:00:00.000Z', '2026-11-20T00:00:00.000Z')],
 };
-const other = { id: 'p2', title: '健身', blocks: [block('b1', '核心训练', '2026-11-19T23:30:00.000Z', '2026-11-20T00:30:00.000Z')] };
+const other = {
+  id: 'p2', title: '健身', horizon_start: '2026-11-18', horizon_days: 7, timezone: 'Asia/Shanghai',
+  blocks: [block('b1', '核心训练', '2026-11-19T23:30:00.000Z', '2026-11-20T00:30:00.000Z')],
+};
 
 describe('buildUserMessage — 跨计划上下文', () => {
   it('有冲突时列出时段、双方标题与其他计划名，并说明合并由用户完成', () => {
@@ -33,10 +36,15 @@ describe('buildUserMessage — 跨计划上下文', () => {
   it('其他计划的块 id 与跨计划规则进入上下文', () => {
     const text = buildUserMessage({ message: '把健身计划周三的训练挪到晚上', plan, history: [], today: '2026-11-18', others: [other] });
     expect(text).toContain('【共享日历中的其他计划】');
-    expect(text).toContain('只能按块 id 修改其中的块');
+    expect(text).toContain('按 id 修改其中的块');
+    expect(text).toContain('新建块或改计划元数据要带该计划的 plan id');
+    expect(text).toContain('plan id p2');
+    expect(text).toContain('开始日 2026-11-18');
     expect(text).toContain('b1');
     expect(text).toContain('健身');
     expect(text).toContain('move_block / update_block / remove_block 直接使用上面的块 id');
+    expect(text).toContain('add_block 的 value 照旧，另加 "plan_id"');
+    expect(text).toContain('update_plan 带 "plan_id"');
     expect(text).toContain('任务 key 只在当前计划内有效');
   });
 

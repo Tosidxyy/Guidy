@@ -219,6 +219,48 @@ describe('applyPatchRoute', () => {
     }))).json();
     expect(after.blocks.find((b: any) => b.id === block.id)).toMatchObject({ title, pinned: true, start_utc: start, end_utc: end });
   });
+  it('add_block.plan_id 与请求计划一致时正常落库，不一致 → 422 op_plan_mismatch', async () => {
+    const d = deps();
+    const plan = await seedPlan(d);
+    const app = application(d);
+    const ok = await app(ctx('POST', '/api/patches/apply', {
+      preview_id: 'op-plan-1', plan_id: plan.id, base_version: plan.version,
+      ops: [{ op: 'add_block', plan_id: plan.id, value: { title: '拉伸', category: 'rest', start_utc: '2026-11-20T12:00:00.000Z', end_utc: '2026-11-20T12:15:00.000Z', priority: 'mid', pinned: false } }],
+      result_hash: null, engine_version: 1,
+    }));
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).blocks.some((b: any) => b.title === '拉伸')).toBe(true);
+
+    const bad = await app(ctx('POST', '/api/patches/apply', {
+      preview_id: 'op-plan-2', plan_id: plan.id, base_version: plan.version + 1,
+      ops: [{ op: 'add_block', plan_id: crypto.randomUUID(), value: { title: '拉伸', category: 'rest', start_utc: '2026-11-20T12:00:00.000Z', end_utc: '2026-11-20T12:15:00.000Z', priority: 'mid', pinned: false } }],
+      result_hash: null, engine_version: 1,
+    }));
+    expect(bad.status).toBe(422);
+    expect((await bad.json()).error.code).toBe('op_plan_mismatch');
+  });
+  it('update_plan 可由 AI patch 发起（携带 plan_id 时须与请求计划一致）', async () => {
+    const d = deps();
+    const plan = await seedPlan(d);
+    const app = application(d);
+    const res = await app(ctx('POST', '/api/patches/apply', {
+      preview_id: 'ai-plan-1', plan_id: plan.id, base_version: plan.version,
+      ops: [{ op: 'update_plan', plan_id: plan.id, patch: { title: 'AI 改名' } }],
+      result_hash: null, engine_version: 1,
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.plan.title).toBe('AI 改名');
+    expect(body.inverse_ops).toContainEqual({ op: 'update_plan', patch: { title: plan.title } });
+
+    const bad = await app(ctx('POST', '/api/patches/apply', {
+      preview_id: 'ai-plan-2', plan_id: plan.id, base_version: body.version,
+      ops: [{ op: 'update_plan', plan_id: crypto.randomUUID(), patch: { title: 'x' } }],
+      result_hash: null, engine_version: 1,
+    }));
+    expect(bad.status).toBe(422);
+    expect((await bad.json()).error.code).toBe('op_plan_mismatch');
+  });
   it('preview_id 回放不重复落库', async () => {
     const d = deps();
     const plan = await seedPlan(d);

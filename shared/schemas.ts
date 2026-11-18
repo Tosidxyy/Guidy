@@ -107,7 +107,7 @@ export const PatchOpSchema = z.discriminatedUnion('op', [
     }),
   }),
   z.object({ op: z.literal('remove_constraint'), id: z.string() }),
-  z.object({ op: z.literal('add_block'), value: ManualBlockSchema, client_id: z.string().uuid().optional() }),
+  z.object({ op: z.literal('add_block'), value: ManualBlockSchema, client_id: z.string().uuid().optional(), plan_id: z.string().uuid().optional() }),
   z.object({ op: z.literal('update_block'), id: z.string(), patch: ManualBlockSchema.partial() }),
   z.object({ op: z.literal('move_block'), id: z.string(), start_utc: z.string().datetime(), end_utc: z.string().datetime() }),
   z.object({ op: z.literal('remove_block'), id: z.string() }),
@@ -115,15 +115,10 @@ export const PatchOpSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('clear_plan') }),
 ]);
 
-export const PatchArtifactSchema = z.object({
-  type: z.literal('patch'),
-  summary: z.string().max(200),
-  ops: z.array(PatchOpSchema).min(1).max(30),
-});
-
-// 人工编辑与撤销可用的操作：在 AI artifact 之外额外允许改计划元数据。
+// 计划元数据：人工编辑、撤销与 AI 都能发起；plan_id 缺省表示当前计划。
 export const UpdatePlanOpSchema = z.object({
   op: z.literal('update_plan'),
+  plan_id: z.string().uuid().optional(),
   patch: z
     .object({
       title: z.string().min(1).max(60).optional(),
@@ -135,6 +130,12 @@ export const UpdatePlanOpSchema = z.object({
 });
 
 export const ApplyOpSchema = z.union([PatchOpSchema, UpdatePlanOpSchema]);
+
+export const PatchArtifactSchema = z.object({
+  type: z.literal('patch'),
+  summary: z.string().max(200),
+  ops: z.array(ApplyOpSchema).min(1).max(30),
+});
 
 export const ConstraintSetArtifactSchema = z.object({
   type: z.literal('constraint_set'),
