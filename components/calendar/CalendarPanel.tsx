@@ -96,7 +96,7 @@ export function CalendarPanel() {
   const { switchPlan } = usePlanManager();
   const lastForeignDrag = useRef(0);
   const [pendingSwitch, setPendingSwitch] = useState<{ id: string; title: string } | null>(null);
-  const [foreignTarget, setForeignTarget] = useState<{ planId: string; planTitle: string; blockTitle: string } | null>(null);
+  const [foreignTarget, setForeignTarget] = useState<{ planId: string; planTitle: string; blockTitle: string; drag: boolean } | null>(null);
   const [editingShared, setEditingShared] = useState<Block | null>(null);
 
   const foreign = useMemo(() => collectForeignBlocks(state.blocks, layers), [state.blocks, layers]);
@@ -401,18 +401,18 @@ export function CalendarPanel() {
       item.el.style.transition = item.transition;
     }
     setChip(null);
+    // 其他计划的块只读：点击或拖动都弹「转到该计划」，绝不在当前会话里直接改。
+    if (drag.foreign) {
+      lastForeignDrag.current = Date.now();
+      if (drag.planId) setForeignTarget({ planId: drag.planId, planTitle: drag.planLabel ?? '', blockTitle: drag.block.title, drag: true });
+      return;
+    }
     if (!drag.moved) {
       if (drag.shared) { setEditingShared(drag.block); return; }
-      if (drag.foreign) {
-        lastForeignDrag.current = Date.now();
-        if (drag.planId) setForeignTarget({ planId: drag.planId, planTitle: drag.planLabel ?? '', blockTitle: drag.block.title });
-        return;
-      }
       if (drag.additive) toggleSelected(drag.block.id);
       else select(drag.block.id);
       return;
     }
-    if (drag.foreign) lastForeignDrag.current = Date.now();
     void applyMoveOps(drag);
   }, [applyMoveOps, onDragMove, requestSwitchPlan, select, toggleSelected]);
 
@@ -618,7 +618,7 @@ export function CalendarPanel() {
             ? () => setEditingShared(p.block)
             : foreignInfo ? () => {
               if (Date.now() - lastForeignDrag.current < 400) return;
-              setForeignTarget({ planId: foreignInfo.planId, planTitle: foreignInfo.planLabel, blockTitle: p.block.title });
+              setForeignTarget({ planId: foreignInfo.planId, planTitle: foreignInfo.planLabel, blockTitle: p.block.title, drag: false });
             } : undefined}
         />
       );
@@ -814,7 +814,9 @@ export function CalendarPanel() {
           <AlertDialogHeader>
             <AlertDialogTitle className="font-display">「{foreignTarget?.blockTitle}」属于「{foreignTarget?.planTitle}」</AlertDialogTitle>
             <AlertDialogDescription>
-              当前会话只能编辑自己计划的任务块。转到该计划后即可修改或删除它。
+              {foreignTarget?.drag
+                ? '已取消这次拖动。当前会话只能编辑自己计划的任务块，转到该计划后即可修改或删除它。'
+                : '当前会话只能编辑自己计划的任务块。转到该计划后即可修改或删除它。'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
