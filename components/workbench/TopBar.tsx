@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
-import { CalendarDays, ChevronLeft, ChevronRight, ListChecks, Moon, Redo2, Save, Settings2, ShieldCheck, Sun, Undo2, Users } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, ListChecks, Moon, Redo2, Settings2, ShieldCheck, Sun, Undo2, Users } from 'lucide-react';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { useBlockHistory } from '@/store/useBlockHistory';
-import { peekUndo, renamePlanAction, saveDraftAction, undoActivePlan } from '@/lib/planActions';
+import { peekUndo, renamePlanAction, undoActivePlan } from '@/lib/planActions';
 import { cn } from '@/lib/utils';
 import { todayStr } from '@/lib/seed';
 import { Logo } from '@/components/brand/Logo';
@@ -35,9 +35,6 @@ export function TopBar() {
   const tz = usePlanStore((s) => s.state.plan.timezone);
   const today = todayStr(tz);
   const anchorDate = dayAnchor ?? today;
-  const unsaved = usePlanStore((s) => s.state.plan.id === null);
-  const hasContent = usePlanStore((s) => s.state.task_defs.length + s.state.constraints.length + s.state.blocks.length > 0);
-  const [saving, setSaving] = useState(false);
   const openDrawer = useUiStore((s) => s.openDrawer);
 
   const [renaming, setRenaming] = useState(false);
@@ -62,26 +59,6 @@ export function TopBar() {
       >
         <span className="max-w-[220px] truncate">{title}</span>
       </button>
-
-      {unsaved && hasContent && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="ml-1 h-8 gap-1 px-2 text-xs"
-          disabled={saving}
-          onClick={() => {
-            setSaving(true);
-            void saveDraftAction().then((r) => {
-              setSaving(false);
-              if (r.ok) toast.success('计划已保存到云端');
-              else toast.error(r.reason ?? '保存失败');
-            });
-          }}
-        >
-          <Save className="h-3.5 w-3.5" />
-          {saving ? '保存中…' : '保存计划'}
-        </Button>
-      )}
 
       <div className="mx-auto flex items-center gap-1">
         <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={view === 'day' ? '前一天' : '上一周'} onClick={() => setDayAnchor(shiftDate(anchorDate, view === 'day' ? -1 : -7))}>

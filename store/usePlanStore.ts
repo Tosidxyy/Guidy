@@ -60,6 +60,8 @@ interface PlanStore {
 
   renamePlan: (title: string) => void;
   importState: (state: PlanState) => void;
+  /** 草稿卡片的就地编辑：只替换状态并本地持久化，不重置撤销栈（草稿没有服务端历史）。 */
+  applyDraftState: (state: PlanState) => void;
   resetAll: () => void;
 }
 
@@ -340,6 +342,11 @@ export const usePlanStore = create<PlanStore>((set, get) => {
 
     importState: (state) => {
       set({ state, undoStack: [], redoStack: [], preview: null, dirty: false });
+      save(state);
+    },
+
+    applyDraftState: (state) => {
+      set({ state });
       save(state);
     },
 
