@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
-import { CalendarDays, ChevronLeft, ChevronRight, ListChecks, Moon, Redo2, Settings2, ShieldCheck, Sun, Undo2, Users } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, ListChecks, Moon, Redo2, Save, Settings2, ShieldCheck, Sun, Undo2, Users } from 'lucide-react';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { useBlockHistory } from '@/store/useBlockHistory';
@@ -65,8 +65,9 @@ export function TopBar() {
 
       {unsaved && hasContent && (
         <Button
+          variant="outline"
           size="sm"
-          className="ml-1 h-8 px-2 text-xs"
+          className="ml-1 h-8 gap-1 px-2 text-xs"
           disabled={saving}
           onClick={() => {
             setSaving(true);
@@ -77,6 +78,7 @@ export function TopBar() {
             });
           }}
         >
+          <Save className="h-3.5 w-3.5" />
           {saving ? '保存中…' : '保存计划'}
         </Button>
       )}
@@ -85,12 +87,12 @@ export function TopBar() {
         <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={view === 'day' ? '前一天' : '上一周'} onClick={() => setDayAnchor(shiftDate(anchorDate, view === 'day' ? -1 : -7))}>
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <input
+        <Input
           type="date"
           aria-label="选择日期"
           value={anchorDate}
           onChange={(e) => { if (e.target.value) setDayAnchor(e.target.value); }}
-          className="tabular h-8 rounded-md border border-site-line bg-site-surface px-2 text-xs text-site-ink"
+          className="tabular h-8 w-[150px] text-xs"
         />
         <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setDayAnchor(today)} aria-label="回到今天">今天</Button>
         <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={view === 'day' ? '后一天' : '下一周'} onClick={() => setDayAnchor(shiftDate(anchorDate, view === 'day' ? 1 : 7))}>

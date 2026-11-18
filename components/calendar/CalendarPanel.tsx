@@ -641,8 +641,8 @@ export function CalendarPanel() {
                 <span className={cn('font-display tabular text-sm font-semibold', isToday ? 'dawn-text' : 'text-site-ink')}>
                   {format(parseISO(d), 'M/d')}
                 </span>
-                {holidayOn(d) && <span className="rounded bg-site-danger/10 px-1 text-[9px] text-site-danger">{holidayOn(d)}</span>}
-                {!holidayOn(d) && makeupWorkdayOn(d) && <span className="rounded bg-site-warning/15 px-1 text-[9px] text-site-warning-text">调休</span>}
+                {holidayOn(d) && <span className="rounded-full bg-site-danger/10 px-1.5 py-px text-[9px] font-medium text-site-danger">{holidayOn(d)}</span>}
+                {!holidayOn(d) && makeupWorkdayOn(d) && <span className="rounded-full bg-site-warning/15 px-1.5 py-px text-[9px] font-medium text-site-warning-text">调休</span>}
               </button>
             );
           })}
