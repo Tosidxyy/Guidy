@@ -13,8 +13,8 @@ import { cn } from '@/lib/utils';
 const WINDOW_TYPES = ['busy_window', 'active_window', 'fixed_block'];
 
 /**
- * 「核对约束方案」卡片的主体：开始日期 + 任务 + 约束。
- * AI 确认卡与聊天框上方的方案卡共用这一份，两处都可直接编辑。
+ * 方案卡主体：开始日期 + 任务 + 约束。
+ * AI 提案、当前计划与 AI 的任务/约束 patch 都落在这同一份可编辑内容上。
  */
 export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
   draft: ConstraintSetArtifact;
