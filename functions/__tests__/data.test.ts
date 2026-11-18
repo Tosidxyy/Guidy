@@ -30,7 +30,11 @@ function fullSeed() {
       { id: 'p1', owner_visitor_id: 'visitor-a', title: '我的计划', horizon_start: '2026-11-16', horizon_days: 7, timezone: 'Asia/Shanghai', version: 1 },
       { id: 'p2', owner_visitor_id: 'visitor-x', title: '第三方', horizon_start: '2026-11-16', horizon_days: 7, timezone: 'Asia/Shanghai', version: 1 },
     ],
-    blocks: [{ id: 'b1', plan_id: 'p1', title: '块', start_utc: '2026-11-16T01:00:00Z', end_utc: '2026-11-16T02:00:00Z' }],
+    blocks: [
+      { id: 'b1', plan_id: 'p1', title: '块', start_utc: '2026-11-16T01:00:00Z', end_utc: '2026-11-16T02:00:00Z' },
+      { id: 'bp1', plan_id: null, owner_visitor_id: 'visitor-a', title: '上班', start_utc: '2026-11-16T01:00:00Z', end_utc: '2026-11-16T09:30:00Z' },
+      { id: 'bp2', plan_id: null, owner_visitor_id: 'visitor-x', title: '他人的忙时', start_utc: '2026-11-16T01:00:00Z', end_utc: '2026-11-16T09:30:00Z' },
+    ],
     task_defs: [{ id: 't1', plan_id: 'p1', key: 'k', title: '任务', category: 'study', duration_min: 60, frequency: { type: 'daily' } }],
     constraints: [{ id: 'k1', plan_id: 'p1', type: 'active_window', start: '07:00', end: '23:00' }],
     conversations: [{ id: 'cv1', owner_visitor_id: 'visitor-a', plan_id: 'p1', qca_session_id: 's1', last_seq: 0, last_event_id: null }],
@@ -50,7 +54,7 @@ describe('POST /api/data/delete-all', () => {
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(body.deleted).toEqual({
-      messages: 1, dispatch_intents: 1, blocks: 1, task_defs: 1, constraints: 1,
+      messages: 1, dispatch_intents: 1, blocks: 2, task_defs: 1, constraints: 1,
       commit_log: 1, conversations: 1, plans: 1, quotas: 1, recovery_codes: 1,
     });
     expect(db.tables.plans.map((p) => p.id)).toEqual(['p2']);
@@ -58,7 +62,7 @@ describe('POST /api/data/delete-all', () => {
     expect(db.tables.conversations).toHaveLength(0);
     expect(db.tables.quotas).toHaveLength(0);
     expect(db.tables.recovery_codes).toHaveLength(0);
-    expect(db.tables.blocks).toHaveLength(0);
+    expect(db.tables.blocks.map((b) => b.id)).toEqual(['bp2']);
     expect(db.tables.task_defs).toHaveLength(0);
     expect(db.tables.constraints).toHaveLength(0);
     expect(db.tables.dispatch_intents).toHaveLength(0);

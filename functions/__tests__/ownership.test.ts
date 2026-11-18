@@ -8,7 +8,11 @@ function seedDb() {
       { id: 'p1', owner_visitor_id: 'o', title: '旧计划', horizon_start: '2026-11-16', horizon_days: 7, timezone: 'Asia/Shanghai', version: 1 },
       { id: 'p2', owner_visitor_id: 'x', title: '第三方', horizon_start: '2026-11-16', horizon_days: 7, timezone: 'Asia/Shanghai', version: 1 },
     ],
-    blocks: [{ id: 'b1', plan_id: 'p1', title: '块', start_utc: '2026-11-16T01:00:00Z', end_utc: '2026-11-16T02:00:00Z' }],
+    blocks: [
+      { id: 'b1', plan_id: 'p1', title: '块', start_utc: '2026-11-16T01:00:00Z', end_utc: '2026-11-16T02:00:00Z' },
+      { id: 'bp1', plan_id: null, owner_visitor_id: 'o', title: '上班', start_utc: '2026-11-16T01:00:00Z', end_utc: '2026-11-16T09:30:00Z' },
+      { id: 'bp2', plan_id: null, owner_visitor_id: 'x', title: '他人的忙时', start_utc: '2026-11-16T01:00:00Z', end_utc: '2026-11-16T09:30:00Z' },
+    ],
     task_defs: [{ id: 't1', plan_id: 'p1', key: 'k', title: '任务', category: 'study', duration_min: 60, frequency: { type: 'daily' } }],
     constraints: [{ id: 'k1', plan_id: 'p1', type: 'active_window', start: '07:00', end: '23:00' }],
     conversations: [
@@ -34,7 +38,7 @@ describe('deleteVisitorData', () => {
     const db = seedDb();
     const counts = await deleteVisitorData(db, 'o');
     expect(counts).toEqual({
-      messages: 1, dispatch_intents: 1, blocks: 1, task_defs: 1, constraints: 1,
+      messages: 1, dispatch_intents: 1, blocks: 2, task_defs: 1, constraints: 1,
       commit_log: 1, conversations: 1, plans: 1, quotas: 1, recovery_codes: 1,
     });
     expect(db.tables.plans.map((p) => p.id)).toEqual(['p2']);
@@ -45,7 +49,7 @@ describe('deleteVisitorData', () => {
     expect(db.tables.recovery_codes).toHaveLength(0);
     expect(db.tables.dispatch_intents).toHaveLength(0);
     expect(db.tables.commit_log).toHaveLength(0);
-    expect(db.tables.blocks).toHaveLength(0);
+    expect(db.tables.blocks.map((b) => b.id)).toEqual(['bp2']);
     expect(db.tables.task_defs).toHaveLength(0);
     expect(db.tables.constraints).toHaveLength(0);
   });
@@ -65,6 +69,8 @@ describe('transferOwnership', () => {
     expect(db.tables.plans.find((p) => p.id === 'p1').owner_visitor_id).toBe('c');
     expect(db.tables.conversations.find((c) => c.id === 'cv1').owner_visitor_id).toBe('c');
     expect(db.tables.blocks[0].plan_id).toBe('p1');
+    expect(db.tables.blocks.find((b) => b.id === 'bp1').owner_visitor_id).toBe('c');
+    expect(db.tables.blocks.find((b) => b.id === 'bp2').owner_visitor_id).toBe('x');
     expect(db.tables.messages.find((m) => m.id === 'm1').conversation_id).toBe('cv1');
     expect(db.tables.quotas.find((q) => q.visitor_id === 'c').chat_turns).toBe(5);
     expect(db.tables.dispatch_intents[0].visitor_id).toBe('c');
