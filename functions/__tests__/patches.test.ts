@@ -54,6 +54,52 @@ describe('applyPatchRoute', () => {
     expect(res.status).toBe(409);
     expect((await res.json()).error.code).toBe('engine_version_mismatch');
   });
+  it('move_block 手动移动 → 200，version+1，返回可逆 ops', async () => {
+    const d = deps();
+    const plan = await seedPlan(d);
+    const block = d.db.tables.blocks[0];
+    const nextStart = new Date(new Date(block.start_utc).getTime() + 3600000).toISOString();
+    const nextEnd = new Date(new Date(block.end_utc).getTime() + 3600000).toISOString();
+    const res = await application(d)(ctx('POST', '/api/patches/apply', {
+      preview_id: 'mv1', plan_id: plan.id, base_version: plan.version,
+      ops: [{ op: 'move_block', id: block.id, start_utc: nextStart, end_utc: nextEnd }],
+      result_hash: null, engine_version: 1,
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.version).toBe(plan.version + 1);
+    expect(body.blocks.find((b: any) => b.id === block.id).start_utc).toBe(nextStart);
+    expect(body.inverse_ops[0]).toMatchObject({ op: 'move_block', id: block.id, start_utc: block.start_utc, end_utc: block.end_utc });
+  });
+  it('clear_plan → 200，任务/约束/块清空，version+1', async () => {
+    const d = deps();
+    const plan = await seedPlan(d);
+    const res = await application(d)(ctx('POST', '/api/patches/apply', {
+      preview_id: 'clear1', plan_id: plan.id, base_version: plan.version,
+      ops: [{ op: 'clear_plan' }], result_hash: null, engine_version: 1,
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.version).toBe(plan.version + 1);
+    expect(body.task_defs).toHaveLength(0);
+    expect(body.constraints).toHaveLength(0);
+    expect(body.blocks).toHaveLength(0);
+  });
+  it('引用不存在的 task key → 422 patch_target_missing，不落库', async () => {
+    const d = deps();
+    const plan = await seedPlan(d);
+    const res = await application(d)(ctx('POST', '/api/patches/apply', {
+      preview_id: 'miss1', plan_id: plan.id, base_version: plan.version,
+      ops: [{ op: 'remove_task_def', key: 'dynamic_warmup' }, { op: 'remove_task_def', key: 'core_stability' }],
+      result_hash: null, engine_version: 1,
+    }));
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe('patch_target_missing');
+    expect(body.error.details.targets).toHaveLength(2);
+    expect(d.db.tables.plans[0].version).toBe(plan.version);
+    expect(d.db.tables.task_defs).toHaveLength(1);
+  });
   it('preview_id 回放不重复落库', async () => {
     const d = deps();
     const plan = await seedPlan(d);

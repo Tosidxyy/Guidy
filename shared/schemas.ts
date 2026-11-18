@@ -96,6 +96,7 @@ export const PatchOpSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('move_block'), id: z.string(), start_utc: z.string().datetime(), end_utc: z.string().datetime() }),
   z.object({ op: z.literal('remove_block'), id: z.string() }),
   z.object({ op: z.literal('reschedule'), scope: z.enum(['affected_only', 'all']).default('affected_only'), keep_pinned: z.literal(true) }),
+  z.object({ op: z.literal('clear_plan') }),
 ]);
 
 export const PatchArtifactSchema = z.object({

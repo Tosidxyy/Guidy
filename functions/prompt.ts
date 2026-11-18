@@ -1,6 +1,7 @@
 import type { PlanState } from '../shared/types.ts';
 import type { ConstraintSetArtifact } from '../shared/schemas.ts';
 import { taskSummary, constraintText } from '../lib/describe.ts';
+import { localDay, localMinutes, minToHHmm } from '../shared/engine/time.ts';
 
 // 范例是 AI 看到的唯一具体模板，必须与引擎/确认卡消费的 schema 逐字段一致；由 prompt 契约测试保证可解析。
 export const CONSTRAINT_SET_EXAMPLE: ConstraintSetArtifact = {
@@ -21,6 +22,12 @@ export const CONSTRAINT_SET_EXAMPLE: ConstraintSetArtifact = {
   ],
   clarifications_needed: ['周三兼职的具体时间段是 18:00–22:00 吗？'],
 };
+
+export const ARTIFACT_REPAIR = [
+  '【修正要求】上一次输出无法解析。',
+  'patch 必须是 {"type":"patch","summary":"...","ops":[...]}；ops 每项的字段名是 "op"（不是 "type"）；清空当前计划用 {"op":"clear_plan"}。',
+  '不要把 ops 数组直接作为顶层输出。请只输出修正后的 JSON，不要解释。',
+].join('');
 
 export function buildSystemPrompt(): string {
   return [
@@ -62,7 +69,17 @@ export function buildSystemPrompt(): string {
     'weekday：0=周日、1=周一 … 6=周六。所有时间用 HH:mm 本地时区。',
     '',
     '【patch 契约】用户要求修改已有计划时输出 {type:"patch", summary≤200, ops:[Op](1–30)}。',
-    'op ∈ add_task_def{value:TaskDef} | update_task_def{key,patch} | remove_task_def{key} | add_constraint{value:Payload} | update_constraint{id,patch} | remove_constraint{id} | add_block{value:ManualBlock} | update_block{id,patch} | move_block{id,start_utc,end_utc(ISO datetime)} | remove_block{id} | reschedule{scope?:"affected_only"|"all",keep_pinned:true}。',
+    'op ∈ add_task_def{value:TaskDef} | update_task_def{key,patch} | remove_task_def{key} | add_constraint{value:Payload} | update_constraint{id,patch} | remove_constraint{id} | add_block{value:ManualBlock} | update_block{id,patch} | move_block{id,start_utc,end_utc(ISO datetime)} | remove_block{id} | reschedule{scope?:"affected_only"|"all",keep_pinned:true} | clear_plan{}。',
+    '',
+    '【patch 输出格式，必须逐字遵守】',
+    '{"type":"patch","summary":"≤200 字","ops":[{"op":"...", ...}]}',
+    '每个 op 的字段名是 "op"，不是 "type"；不要把 ops 数组直接作为顶层输出。',
+    '清空当前计划的唯一推荐写法：{"type":"patch","summary":"清空当前计划","ops":[{"op":"clear_plan"}]}。不要逐个枚举 block/task/constraint。',
+    '',
+    '【标识与破坏性操作】',
+    '- patch 里的 task key、constraint id、block id 必须逐字取自下方「当前计划」上下文，禁止根据标题猜测。',
+    '- 用户要求清空当前计划：先确认范围；确认后输出单个 clear_plan op，不要发明 key 或枚举全部块。',
+    '- 用户要求删除/清空所有计划（跨计划）：不要输出 patch；说明当前对话只能清空当前计划，删除全部计划需在设置中确认「删除我的全部数据」。',
     '',
     '【规则】产物里 clarifications_needed 最多 2 个，仅用于残留的次要歧义；主要追问走自然语言聊天，不要臆造用户未给出的硬性时间。',
     '',
@@ -81,9 +98,18 @@ export function buildUserMessage(input: { message: string; plan: PlanState | nul
   lines.push(`今天是 ${today}（${weekday}，${timezone}）。`);
   if (input.plan) {
     lines.push(`当前计划「${input.plan.plan.title}」，horizon_start=${input.plan.plan.horizon_start}，timezone=${input.plan.plan.timezone}。`);
-    lines.push('任务：' + input.plan.task_defs.map((t) => `${t.title}（${taskSummary(t)}）`).join('；'));
-    lines.push('约束：' + (input.plan.constraints.map((c) => constraintText(c.payload)).join('；') || '无'));
-    lines.push(`已有 ${input.plan.blocks.length} 个时间块。`);
+    lines.push('任务（key 用于 patch，必须逐字使用）：');
+    for (const t of input.plan.task_defs) lines.push(`- ${t.key}｜${t.title}（${taskSummary(t)}）`);
+    lines.push('约束（id 用于 patch，必须逐字使用）：');
+    for (const c of input.plan.constraints) lines.push(`- ${c.id}｜${constraintText(c.payload)}`);
+    lines.push('时间块（id 用于 patch；时间为计划本地时区）：');
+    for (const b of input.plan.blocks.slice(0, 60)) {
+      const day = localDay(b.start_utc, timezone);
+      const start = minToHHmm(localMinutes(b.start_utc, timezone));
+      const end = minToHHmm(localMinutes(b.end_utc, timezone));
+      lines.push(`- ${b.id}｜${b.title}｜${day} ${start}–${end}`);
+    }
+    if (input.plan.blocks.length > 60) lines.push(`- …共 ${input.plan.blocks.length} 个时间块，仅列前 60 个`);
     lines.push('当前计划已保存；用户要求修改时输出 patch。');
   } else {
     lines.push('当前还没有计划。');

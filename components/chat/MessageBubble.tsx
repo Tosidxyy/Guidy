@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
+import remarkGfm from 'remark-gfm';
 import { Sparkles } from 'lucide-react';
 import type { ChatMessage } from '@/store/useChatStore';
 import { sanitizeSchema } from '@/lib/markdown';
@@ -34,7 +35,7 @@ export function MessageBubble({ message, streaming, clarificationPending }: { me
           <div className="max-w-[85%] rounded-2xl border border-site-line bg-site-surface px-3.5 py-2.5 text-sm leading-relaxed text-site-ink">
             {prose && (
               <div className="guidy-prose break-words">
-                <ReactMarkdown rehypePlugins={[[rehypeSanitize, sanitizeSchema]]} skipHtml>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeSanitize, sanitizeSchema]]} skipHtml>
                   {prose}
                 </ReactMarkdown>
               </div>
@@ -61,7 +62,7 @@ export function MessageBubble({ message, streaming, clarificationPending }: { me
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
         ) : (
           <div className="guidy-prose break-words">
-            <ReactMarkdown rehypePlugins={[[rehypeSanitize, sanitizeSchema]]} skipHtml>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeSanitize, sanitizeSchema]]} skipHtml>
               {message.content}
             </ReactMarkdown>
             {streaming && <StreamingCursor />}

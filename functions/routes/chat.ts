@@ -7,7 +7,7 @@ import { beginDispatch, markDispatch } from '../qca/dispatch.ts';
 import { ensureConversation, getOwnedConversation, ensureQcaSession } from '../qca/sessions.ts';
 import { createProjector } from '../qca/project.ts';
 import { parseModelText } from '../artifacts.ts';
-import { buildUserMessage } from '../prompt.ts';
+import { buildUserMessage, ARTIFACT_REPAIR } from '../prompt.ts';
 import { appFrame, insertMessage, appendAssistant, advanceCursor, sha256Hex } from '../sse-app.ts';
 import { readSSE } from '../qca/sse.mjs';
 import { LIMITS } from '../../shared/constants.ts';
@@ -72,7 +72,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           const projector = createProjector(nextSeq, assistantSeq);
           const upstream = await deps.qca.openStream(sessionId, { lastEventId: conv.last_event_id ?? undefined, signal: abort.signal });
           try {
-            await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone }), `${requestId}:${attempt}`);
+            await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}` : ''), `${requestId}:${attempt}`);
             for await (const frame of readSSE(upstream.body, { signal: abort.signal })) {
               const ev = JSON.parse(frame.data);
               if (frame.id) lastEventId = frame.id;

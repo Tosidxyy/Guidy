@@ -5,7 +5,7 @@ import { CATEGORY_MAP } from '@/shared/constants';
 import { minToHHmm } from '@/shared/engine';
 import { cn } from '@/lib/utils';
 
-export type BlockVisualState = 'normal' | 'selected' | 'invalid' | 'soft' | 'ghost-added' | 'ghost-removed' | 'ghost-moved' | 'dimmed';
+export type BlockVisualState = 'normal' | 'selected' | 'invalid' | 'soft' | 'foreign' | 'ghost-added' | 'ghost-removed' | 'ghost-moved' | 'dimmed';
 
 interface Props {
   block: Block;
@@ -17,14 +17,16 @@ interface Props {
   widthPct: number;
   visual: BlockVisualState;
   compact: boolean;
+  planLabel?: string;
   onPointerDown?: (e: React.PointerEvent, block: Block) => void;
   onResizeDown?: (e: React.PointerEvent, block: Block) => void;
   onOpen?: (block: Block) => void;
+  onClick?: () => void;
 }
 
 export const BlockCard = memo(function BlockCard({
   block, startMin, endMin, top, height, leftPct, widthPct, visual, compact,
-  onPointerDown, onResizeDown, onOpen,
+  planLabel, onPointerDown, onResizeDown, onOpen, onClick,
 }: Props) {
   const cat = CATEGORY_MAP[block.category] ?? CATEGORY_MAP.other;
   const ghost = visual.startsWith('ghost');
@@ -35,11 +37,12 @@ export const BlockCard = memo(function BlockCard({
       data-block-id={block.id}
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
-      aria-label={`${block.title} ${minToHHmm(startMin)} 到 ${minToHHmm(endMin)}`}
+      aria-label={`${block.title} ${minToHHmm(startMin)} 到 ${minToHHmm(endMin)}${planLabel ? `，${planLabel}` : ''}`}
       className={cn(
         'group absolute select-none overflow-hidden rounded-md border text-left',
         'transition-shadow duration-150',
         interactive && 'cursor-grab active:cursor-grabbing touch-none',
+        visual === 'foreign' && 'border-dashed border-site-line opacity-45 hover:opacity-80',
         visual === 'normal' && 'border-transparent shadow-sm hover:shadow-md',
         visual === 'selected' && 'border-site-brand shadow-md ring-2 ring-site-brand/30',
         visual === 'invalid' && 'border-site-danger ring-2 ring-site-danger/40 animate-guidy-shake',
@@ -57,11 +60,16 @@ export const BlockCard = memo(function BlockCard({
           : `color-mix(in srgb, ${cat.color} 13%, var(--site-surface))`,
         borderLeftWidth: 3,
         borderLeftColor: cat.color,
-        zIndex: visual === 'selected' ? 20 : 10,
+        zIndex: visual === 'selected' ? 20 : visual === 'foreign' ? 5 : 10,
       }}
       onPointerDown={interactive ? (e) => onPointerDown?.(e, block) : undefined}
-      onDoubleClick={interactive ? () => onOpen?.(block) : undefined}
-      onKeyDown={interactive ? (e) => { if (e.key === 'Enter') onOpen?.(block); } : undefined}
+      onClick={interactive && visual === 'foreign' ? onClick : undefined}
+      onDoubleClick={interactive && visual !== 'foreign' ? () => onOpen?.(block) : undefined}
+      onKeyDown={interactive ? (e) => {
+        if (e.key !== 'Enter') return;
+        if (visual === 'foreign') onClick?.();
+        else onOpen?.(block);
+      } : undefined}
     >
       <div className={cn('flex h-full flex-col px-1.5', compact ? 'justify-center py-0' : 'py-1')}>
         <div className="flex items-center gap-1 min-w-0">
@@ -70,6 +78,7 @@ export const BlockCard = memo(function BlockCard({
           </span>
           {block.pinned && <Pin className="h-3 w-3 shrink-0" style={{ color: cat.color }} aria-label="已钉住" />}
           {block.origin === 'fixed' && <Lock className="h-3 w-3 shrink-0 text-site-ink-soft" aria-label="固定" />}
+          {planLabel && <span className="ml-auto max-w-[55%] truncate rounded bg-site-surface/85 px-1 text-[9px] leading-tight text-site-ink-soft">{planLabel}</span>}
           {visual === 'ghost-removed' && <span className="ml-auto text-[10px] text-site-danger">移除</span>}
           {visual === 'ghost-added' && <span className="ml-auto text-[10px] text-site-success">新增</span>}
         </div>

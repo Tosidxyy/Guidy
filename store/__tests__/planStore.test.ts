@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { usePlanStore } from '../usePlanStore';
-import { localDay } from '@/shared/engine';
+import { localDay, utcAt } from '@/shared/engine';
 import type { PlanState } from '@/shared/types';
 import type { ConstraintSetArtifact, PatchArtifact } from '@/shared/schemas';
 
@@ -50,6 +50,50 @@ describe('previewArtifact 开始日期', () => {
     expect(s.plan.horizon_days).toBe(7);
     expect(s.blocks.length).toBeGreaterThan(0);
     expect(s.blocks.every((b) => localDay(b.start_utc, s.plan.timezone) >= '2026-11-23')).toBe(true);
+  });
+});
+
+const multi: PlanState = {
+  plan: { id: 'p2', title: '多选', horizon_start: '2026-11-23', horizon_days: 7, timezone: 'Asia/Shanghai', status: 'active', version: 1, created_at: '', updated_at: '' },
+  task_defs: [],
+  constraints: [{ id: 'c1', payload: { type: 'active_window', start: '08:00', end: '22:00' }, source: 'user', enabled: true }],
+  blocks: [
+    { id: 'b1', title: '数学', category: 'study', start_utc: utcAt('2026-11-23', 9 * 60, 'Asia/Shanghai'), end_utc: utcAt('2026-11-23', 10 * 60, 'Asia/Shanghai'), priority: 'mid', pinned: false, origin: 'engine' },
+    { id: 'b2', title: '英语', category: 'study', start_utc: utcAt('2026-11-23', 11 * 60, 'Asia/Shanghai'), end_utc: utcAt('2026-11-23', 12 * 60, 'Asia/Shanghai'), priority: 'mid', pinned: false, origin: 'engine' },
+  ],
+};
+
+describe('整组移动与删除', () => {
+  it('moveBlocks 一次提交移动全部，撤销一次全部还原', () => {
+    usePlanStore.getState().importState(multi);
+    const r = usePlanStore.getState().moveBlocks(['b1', 'b2'], 1, 60);
+    expect(r.ok).toBe(true);
+    const s = usePlanStore.getState();
+    expect(s.undoStack).toHaveLength(1);
+    const b1 = s.state.blocks.find((b) => b.id === 'b1')!;
+    const b2 = s.state.blocks.find((b) => b.id === 'b2')!;
+    expect(localDay(b1.start_utc, 'Asia/Shanghai')).toBe('2026-11-24');
+    expect(localDay(b2.start_utc, 'Asia/Shanghai')).toBe('2026-11-24');
+    usePlanStore.getState().undo();
+    const restored = usePlanStore.getState().state.blocks;
+    expect(localDay(restored.find((b) => b.id === 'b1')!.start_utc, 'Asia/Shanghai')).toBe('2026-11-23');
+    expect(localDay(restored.find((b) => b.id === 'b2')!.start_utc, 'Asia/Shanghai')).toBe('2026-11-23');
+  });
+
+  it('moveBlocks 校验失败不提交、不动 undo 栈', () => {
+    usePlanStore.getState().importState(multi);
+    const r = usePlanStore.getState().moveBlocks(['b1'], 0, -3 * 60);
+    expect(r.ok).toBe(false);
+    expect(usePlanStore.getState().undoStack).toHaveLength(0);
+  });
+
+  it('deleteBlocks 一次删除多个，撤销一次全部还原', () => {
+    usePlanStore.getState().importState(multi);
+    usePlanStore.getState().deleteBlocks(['b1', 'b2']);
+    expect(usePlanStore.getState().state.blocks).toHaveLength(0);
+    expect(usePlanStore.getState().undoStack).toHaveLength(1);
+    usePlanStore.getState().undo();
+    expect(usePlanStore.getState().state.blocks).toHaveLength(2);
   });
 });
 

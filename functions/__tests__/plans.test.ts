@@ -161,6 +161,28 @@ describe('commitPlan conversation binding', () => {
     expect(res.status).toBe(200);
     expect(d.db.tables.plans).toHaveLength(1);
   });
+  it('未绑定对话 + 已有 plan_id → 409，禁止覆盖旧计划', async () => {
+    const d = deps();
+    const plan = await seedPlan(d);
+    const ins = await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: '新对话', plan_id: null, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' });
+    const result_hash = await hashFor({ ...baseInput, title: '另一个计划' });
+    const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'b5', plan_id: plan.id, conversation_id: ins.data[0].id, input: { ...baseInput, title: '另一个计划' }, result_hash, engine_version: 1 }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe('conversation_plan_mismatch');
+    expect(d.db.tables.plans).toHaveLength(1);
+    expect(d.db.tables.plans[0].title).toBe('考研');
+    expect(d.db.tables.plans[0].version).toBe(plan.version);
+  });
+  it('对话绑定 A + 提交 plan_id B → 409', async () => {
+    const d = deps();
+    const a = await seedPlan(d);
+    const b = await seedPlan(d);
+    const ins = await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: 'A 的对话', plan_id: a.id, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' });
+    const result_hash = await hashFor(baseInput);
+    const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'b6', plan_id: b.id, conversation_id: ins.data[0].id, input: baseInput, result_hash, engine_version: 1 }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe('conversation_plan_mismatch');
+  });
 });
 
 describe('plan quota (F)', () => {

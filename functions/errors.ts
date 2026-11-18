@@ -27,6 +27,8 @@ export const MESSAGES: Record<string, string> = {
   recovery_rate_limited: '今日恢复尝试次数已用完，请明天再来',
   plan_quota_exceeded: '计划数量已达上限（20 个），删除旧计划后再新建',
   plan_not_saved: '当前还没有保存的计划，无法应用调整；请先确认并生成计划',
+  conversation_plan_mismatch: '当前对话尚未关联该计划，请新建计划后再生成',
+  patch_target_missing: 'AI 调整引用的任务或时间块已不存在，请刷新后重试',
 };
 export function fail(code: string, status: number, details?: unknown): never {
   throw new AppError(code, status, details);

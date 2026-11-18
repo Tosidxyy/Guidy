@@ -61,6 +61,24 @@ describe('chatSend', () => {
     const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '排计划' })));
     expect(out.some((f) => f.event === 'artifact' && f.data.kind === 'constraint_set')).toBe(true);
   });
+  it('artifact_invalid 重试时附带修正要求，并接受修正后的 clear_plan', async () => {
+    let opens = 0;
+    const sends: string[] = [];
+    const d = deps({
+      openStream: async () => {
+        opens += 1;
+        const frames = opens === 1
+          ? [{ type: 'agent.message', id: 'e1', content: [{ type: 'text', text: '```json\n{"type":"patch","summary":"x","ops":"nope"}\n```' }] }, { type: 'session.status', status: 'idle' }]
+          : [{ type: 'agent.message', id: 'e1', content: [{ type: 'text', text: '```json\n{"type":"patch","summary":"清空","ops":[{"op":"clear_plan"}]}\n```' }] }, { type: 'session.status', status: 'idle' }];
+        return { body: upstreamStream(frames), close() {} };
+      },
+      sendEvents: async (_sessionId: string, text: string) => { sends.push(text); return { eventIds: ['evt'] }; },
+    });
+    const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '清空计划' })));
+    expect(sends).toHaveLength(2);
+    expect(sends[1]).toContain('修正要求');
+    expect(out.some((f) => f.event === 'artifact' && f.data.kind === 'patch')).toBe(true);
+  });
   it('today/timezone 注入用户消息，供模型换算「下周」等相对日期', async () => {
     let sent = '';
     const d = deps({

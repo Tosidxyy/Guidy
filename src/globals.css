@@ -324,3 +324,6 @@
 .guidy-prose :where(p, ul, ol) { margin: 0.25rem 0; }
 .guidy-prose :where(ul, ol) { padding-left: 1.1rem; }
 .guidy-prose :where(code) { font-size: 0.85em; background: var(--site-surface-2); padding: 0 0.25rem; border-radius: 0.25rem; }
+.guidy-prose :where(table) { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0.5rem 0; font-size: 0.85em; }
+.guidy-prose :where(th, td) { border: 1px solid var(--site-line); padding: 0.3rem 0.5rem; text-align: left; vertical-align: top; white-space: nowrap; }
+.guidy-prose :where(th) { background: var(--site-surface-2); font-weight: 600; }

@@ -89,5 +89,7 @@ export function patchOpText(op: PatchOp, taskTitle?: (key: string) => string): s
       return `删除日程 ${op.id}`;
     case 'reschedule':
       return `重新排程（${op.scope === 'all' ? '全部' : '受影响部分'}）`;
+    case 'clear_plan':
+      return '清空当前计划（全部任务、时间块与约束）';
   }
 }

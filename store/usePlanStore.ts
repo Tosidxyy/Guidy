@@ -4,6 +4,7 @@ import { diffBlocks, solve, validatePlacement, applyPatch } from '@/shared/engin
 import type { Block, Constraint, ConstraintPayload, DiffResult, PlanState, SolveOutput, TaskDef } from '@/shared/types';
 import { buildEmptyPlan } from '@/lib/seed';
 import { solveArtifact } from '@/lib/preview';
+import { moveSelection } from '@/lib/moveSelection';
 import { loadPersisted, persist } from '@/lib/storage';
 
 interface UndoEntry {
@@ -33,9 +34,11 @@ interface PlanStore {
   redo: () => string | null;
 
   moveBlock: (id: string, startUtc: string, endUtc: string) => { ok: boolean; reason?: string };
+  moveBlocks: (ids: string[], dayDelta: number, minuteDelta: number) => { ok: boolean; reason?: string };
   updateBlock: (id: string, patch: Partial<Block>) => void;
   addBlock: (block: Omit<Block, 'id' | 'origin'>) => { ok: boolean; reason?: string };
   deleteBlock: (id: string) => void;
+  deleteBlocks: (ids: string[]) => void;
   togglePin: (id: string) => void;
 
   addConstraint: (payload: ConstraintPayload) => void;
@@ -148,6 +151,24 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       return { ok: true };
     },
 
+    moveBlocks: (ids, dayDelta, minuteDelta) => {
+      const { state } = get();
+      const result = moveSelection(state, ids, dayDelta, minuteDelta);
+      if (!result.ok) return { ok: false, reason: result.reason };
+      const one = ids.length === 1 ? state.blocks.find((b) => b.id === ids[0]) : undefined;
+      const label = one ? `移动「${one.title}」` : `移动 ${ids.length} 个任务块`;
+      get().commit(label, (draft) => {
+        const byId = new Map(result.moves.map((m) => [m.id, m]));
+        for (const b of draft.blocks) {
+          const m = byId.get(b.id);
+          if (!m) continue;
+          b.start_utc = m.start_utc;
+          b.end_utc = m.end_utc;
+        }
+      });
+      return { ok: true };
+    },
+
     updateBlock: (id, patch) => {
       const { state } = get();
       const block = state.blocks.find((b) => b.id === id);
@@ -176,6 +197,17 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       if (!block) return;
       get().commit(`删除「${block.title}」`, (draft) => {
         draft.blocks = draft.blocks.filter((b) => b.id !== id);
+      });
+    },
+
+    deleteBlocks: (ids) => {
+      const { state } = get();
+      const remove = new Set(ids);
+      const targets = state.blocks.filter((b) => remove.has(b.id));
+      if (!targets.length) return;
+      const label = targets.length === 1 ? `删除「${targets[0].title}」` : `删除 ${targets.length} 个任务块`;
+      get().commit(label, (draft) => {
+        draft.blocks = draft.blocks.filter((b) => !remove.has(b.id));
       });
     },
 

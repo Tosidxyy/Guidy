@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { MessageSquarePlus, Sparkles } from 'lucide-react';
+import { PanelLeftOpen, Sparkles } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useChat } from '@/lib/useChat';
 import { useChatStore, cursorAfterMessages, shouldAutoRestore } from '@/store/useChatStore';
 import { usePlanStore } from '@/store/usePlanStore';
+import { useUiStore } from '@/store/useUiStore';
 import { conversationForPlan } from '@/lib/planConversation';
 import { restoreChat } from '@/lib/restoreChat';
 import { useCommitPlan } from '@/lib/useCommitPlan';
@@ -40,6 +41,7 @@ export function ChatPanel() {
 
   const [confirmedDraft, setConfirmedDraft] = useState<ConstraintSetArtifact | null>(null);
   const [confirmedPatch, setConfirmedPatch] = useState<PatchArtifact | null>(null);
+  const openDrawer = useUiStore((s) => s.openDrawer);
 
   const me = useQuery({ queryKey: ['me'], queryFn: () => api.me(), retry: false });
   const conversations = useQuery({ queryKey: ['conversations'], queryFn: () => api.conversations(), retry: false });
@@ -85,6 +87,7 @@ export function ChatPanel() {
   };
 
   const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant' && m.kind === 'text');
+  const lastMessage = messages[messages.length - 1];
   const lastConstraintSeq = [...messages].reverse().find((m) => m.kind === 'constraint_set')?.seq;
 
   const chatRemaining = me.data?.quotas.chat_remaining;
@@ -93,12 +96,14 @@ export function ChatPanel() {
   return (
     <aside className="guidy-noise flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-site-line bg-site-bg shadow-sm" aria-label="AI 对话排程">
       <div className="flex items-center justify-between border-b border-site-line px-3 py-2">
+        <div className="flex items-center gap-1">
+        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="对话列表" title="对话与计划" onClick={() => openDrawer('plans')}>
+          <PanelLeftOpen className="h-4 w-4" />
+        </Button>
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-site-ink"><Sparkles className="h-4 w-4 text-site-brand" /> AI 对话排程</h2>
+      </div>
         <div className="flex items-center gap-1">
           {me.data && <span className="tabular text-[10px] text-site-ink-soft">今日剩余 {me.data.quotas.chat_remaining}</span>}
-          <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="新建对话" onClick={() => { chat.newConversation(); setConfirmedDraft(null); setConfirmedPatch(null); }}>
-            <MessageSquarePlus className="h-4 w-4" />
-          </Button>
         </div>
       </div>
 
@@ -168,6 +173,9 @@ export function ChatPanel() {
           </p>
         )}
         {connection === 'connecting' && <p className="px-1 text-[11px] text-site-ink-soft">正在连接…</p>}
+        {streaming && lastMessage?.role === 'user' && (
+          <p className="animate-pulse px-1 text-[11px] text-site-ink-soft">Guidy 正在思考…</p>
+        )}
         {searching && streaming && <p className="px-1 text-[11px] text-site-ink-soft">正在联网检索…</p>}
       </div>
 

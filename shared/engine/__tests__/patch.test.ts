@@ -21,11 +21,28 @@ describe('applyPatch — task_def / constraint ops', () => {
     expect(r.state.task_defs.map((t) => t.key)).toEqual(['math', 'eng']);
     expect(r.inverse_ops).toContainEqual({ op: 'remove_task_def', key: 'eng' });
   });
+  it('clear_plan 清空全部任务/约束/块，不产生逆操作', () => {
+    const r = applyPatch(base, [{ op: 'clear_plan' }]);
+    expect(r.state.task_defs).toHaveLength(0);
+    expect(r.state.constraints).toHaveLength(0);
+    expect(r.state.blocks).toHaveLength(0);
+    expect(r.inverse_ops).toHaveLength(0);
+    expect(r.requiresReschedule).toBe(false);
+  });
   it('remove_task_def 删任务及其非钉住块', () => {
     const r = applyPatch(base, [{ op: 'remove_task_def', key: 'math' }]);
     expect(r.state.task_defs).toHaveLength(0);
     expect(r.state.blocks).toHaveLength(0);
     expect(r.inverse_ops.some((o) => o.op === 'add_task_def')).toBe(true);
+  });
+  it('引用不存在的 key/id 记录 missing，不静默成功', () => {
+    const r = applyPatch(base, [
+      { op: 'remove_task_def', key: 'nope' },
+      { op: 'remove_block', id: 'nope-block' },
+    ]);
+    expect(r.missing).toEqual(['task:nope', 'block:nope-block']);
+    expect(r.state.task_defs).toHaveLength(1);
+    expect(r.state.blocks).toHaveLength(1);
   });
   it('add_constraint 生成 id、source=ai 并求逆', () => {
     const r = applyPatch(base, [{ op: 'add_constraint', value: { type: 'daily_cap', category: 'study', max_minutes: 300 } }]);

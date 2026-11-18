@@ -50,6 +50,8 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
 
   const state = await loadState(deps.db, visitor, plan_id);
   const patched = applyPatch(state, ops);
+  if (patched.missing.length) fail('patch_target_missing', 422, { targets: patched.missing });
+  const originalBlockIds = new Set(state.blocks.map((b) => b.id));
 
   const pctx = { timezone: patched.state.plan.timezone, horizon_start: patched.state.plan.horizon_start, horizon_days: patched.state.plan.horizon_days, blocks: patched.state.blocks, constraints: patched.state.constraints };
   let bSeq = 0;
@@ -88,7 +90,10 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
     await deps.db.from('constraints').insert({ plan_id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
   }
   for (const b of newBlocks) {
-    await deps.db.from('blocks').insert({ plan_id, title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc, priority: b.priority, pinned: b.pinned, origin: b.origin, notes: b.notes ?? null });
+    await deps.db.from('blocks').insert({
+      ...(originalBlockIds.has(b.id) ? { id: b.id } : {}),
+      plan_id, title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc, priority: b.priority, pinned: b.pinned, origin: b.origin, notes: b.notes ?? null,
+    });
   }
   await deps.db.from('commit_log').insertIfAbsent({ preview_id, visitor_id: visitor, plan_id }, { onConflict: 'preview_id' });
 

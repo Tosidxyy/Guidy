@@ -15,7 +15,16 @@ export function parseModelText(text: string): ParsedArtifact | null {
     return r.success ? { kind: 'constraint_set', value: r.data } : null;
   }
   if (type === 'patch') {
-    const r = PatchArtifactSchema.safeParse(obj);
+    const ops = Array.isArray((obj as { ops?: unknown }).ops)
+      ? ((obj as { ops: unknown[] }).ops).map((op) => {
+          if (!op || typeof op !== 'object' || 'op' in op) return op;
+          const legacy = op as { type?: unknown };
+          if (typeof legacy.type !== 'string') return op;
+          const { type: opName, ...rest } = legacy;
+          return { ...rest, op: opName };
+        })
+      : (obj as { ops?: unknown }).ops;
+    const r = PatchArtifactSchema.safeParse({ ...(obj as object), ops });
     return r.success ? { kind: 'patch', value: r.data } : null;
   }
   return null;

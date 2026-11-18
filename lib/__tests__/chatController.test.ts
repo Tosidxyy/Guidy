@@ -31,14 +31,25 @@ describe('chatController.send', () => {
     expect(useChatStore.getState().error?.code).toBe('quota_exceeded');
     expect(useChatStore.getState().streaming).toBe(false);
   });
-  it('send body 携带 getPlanId 返回的 plan_id', async () => {
+  it('已有会话时 send body 携带 getPlanId 返回的 plan_id', async () => {
     const stream = fakeStream();
     const fetchFn = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => ({ ok: true, status: 202 }) as Response);
     const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-p', getPlanId: () => 'plan-1' });
+    useChatStore.getState().setConversation('c1');
     c.send('把数学改成120分钟');
     await Promise.resolve();
     const [, init] = fetchFn.mock.calls[0];
     expect(JSON.parse((init as RequestInit).body as string)).toMatchObject({ text: '把数学改成120分钟', plan_id: 'plan-1' });
+  });
+  it('新会话不携带 plan_id，避免把当前计划带入新对话', async () => {
+    const stream = fakeStream();
+    const fetchFn = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => ({ ok: true, status: 202 }) as Response);
+    const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-new', getPlanId: () => 'plan-1' });
+    c.send('另做一个计划');
+    await Promise.resolve();
+    const [, init] = fetchFn.mock.calls[0];
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.plan_id).toBeUndefined();
   });
 });
 

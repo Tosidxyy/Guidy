@@ -16,6 +16,15 @@ describe('artifacts', () => {
     const r = parseModelText(JSON.stringify({ type: 'patch', summary: '移动数学', ops: [{ op: 'move_block', id: 'b1', start_utc: '2026-11-17T01:00:00Z', end_utc: '2026-11-17T02:30:00Z' }] }));
     expect(r?.kind).toBe('patch');
   });
+  it('patch 的 op 使用 type 字段时归一化为 op', () => {
+    const r = parseModelText(JSON.stringify({ type: 'patch', summary: '清空', ops: [{ type: 'clear_plan' }] }));
+    expect(r?.kind).toBe('patch');
+    if (r?.kind === 'patch') expect(r.value.ops[0].op).toBe('clear_plan');
+  });
+  it('解析 clear_plan', () => {
+    const r = parseModelText(JSON.stringify({ type: 'patch', summary: '清空', ops: [{ op: 'clear_plan' }] }));
+    expect(r?.kind).toBe('patch');
+  });
   it('普通文本 → null', () => { expect(parseModelText('你好，请告诉我你的目标')).toBeNull(); });
   it('非法 JSON → null', () => { expect(parseModelText('{bad')).toBeNull(); });
   it('schema 不合法 → null', () => { expect(parseModelText(JSON.stringify({ type: 'constraint_set', task_defs: [] }))).toBeNull(); });
@@ -61,9 +70,29 @@ describe('prompt 对话策略 — 自由对话 agent，意图分流', () => {
     expect(p).toContain('今天是 YYYY-MM-DD');
     expect(p).toContain('下一个自然周的周一');
   });
+  it('patch 契约要求 op 字段，并给出 clear_plan 示例', () => {
+    const p = buildSystemPrompt();
+    expect(p).toContain('不是 "type"');
+    expect(p).toContain('"op":"clear_plan"');
+    expect(p).toContain('不要把 ops 数组直接作为顶层输出');
+  });
   it('buildUserMessage 注入今天与星期，供模型换算相对日期', () => {
     const m = buildUserMessage({ message: '从下周开始', plan: null, history: [], today: '2026-11-18', timezone: 'Asia/Shanghai' });
     expect(m).toContain('今天是 2026-11-18（周三，Asia/Shanghai）');
+  });
+  it('计划上下文包含 task key / constraint id / block id，禁止 AI 猜 key', () => {
+    const plan = {
+      plan: { id: 'p1', title: '测试计划', horizon_start: '2026-11-23', horizon_days: 7 as const, timezone: 'Asia/Shanghai', status: 'active' as const, version: 1, created_at: '', updated_at: '' },
+      task_defs: [{ key: 'warmup', title: '热身', category: 'fitness' as const, duration_min: 5, frequency: { type: 'daily' as const }, priority: 'mid' as const, splittable: false, sort_order: 0 }],
+      constraints: [{ id: 'c-1', payload: { type: 'active_window' as const, start: '07:00', end: '23:00' }, source: 'user' as const, enabled: true }],
+      blocks: [{ id: 'blk-1', task_key: 'warmup', title: '热身', category: 'fitness' as const, start_utc: '2026-11-23T00:00:00.000Z', end_utc: '2026-11-23T00:05:00.000Z', priority: 'mid' as const, pinned: false, origin: 'engine' as const }],
+    };
+    const m = buildUserMessage({ message: '清空计划', plan, history: [] });
+    expect(m).toContain('warmup｜热身');
+    expect(m).toContain('c-1｜');
+    expect(m).toContain('blk-1｜热身｜2026-11-23');
+    expect(buildSystemPrompt()).toContain('禁止根据标题猜测');
+    expect(buildSystemPrompt()).toContain('删除全部计划');
   });
 });
 

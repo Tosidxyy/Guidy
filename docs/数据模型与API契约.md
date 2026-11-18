@@ -448,6 +448,8 @@ solve(input: SolveInput): SolveOutput   // 纯函数、确定性
 
 ### 6.3 块与约束（手动编辑直连通道，与 Patch 共用 validatePlacement）
 
+> **当前实现（P2）**：手动移动/缩放块复用 `POST /patches/apply` 的 `move_block`——带 `plan_id` + `base_version`，服务端按该计划的约束/块校验落点、version+1 落库，并返回 `inverse_ops` 供撤销。下列独立块 CRUD 端点仍为规划项。
+
 | 端点 | 说明 |
 | --- | --- |
 | `POST /plans/:id/blocks` | `{base_version, block: ManualBlock}` → 校验落点 → 201 `{block, version}`；硬违反 → 422 `placement_invalid`+reason |

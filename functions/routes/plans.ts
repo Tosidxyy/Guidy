@@ -67,6 +67,11 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
   if (!parsed.success) fail('validation_failed', 422, parsed.error.flatten());
   const { preview_id, plan_id, input, result_hash, engine_version, conversation_id } = parsed.data;
   if (engine_version !== ENGINE_VERSION) fail('engine_version_mismatch', 409);
+  const boundConv = conversation_id
+    ? rows(await deps.db.from('conversations').select('*').eq('id', conversation_id).eq('owner_visitor_id', visitor).limit(1))[0]
+    : null;
+  // 新对话未绑定计划时，禁止用一批旧 plan_id 覆盖旧计划；必须从新计划草稿开始。
+  if (plan_id && boundConv && boundConv.plan_id !== plan_id) fail('conversation_plan_mismatch', 409);
   const existingLog = rows(await deps.db.from('commit_log').select('plan_id').eq('preview_id', preview_id).eq('visitor_id', visitor).limit(1))[0];
   if (existingLog) {
     const plan = await getOwnedPlan(deps.db, visitor, existingLog.plan_id);
@@ -100,7 +105,7 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
   await deps.db.from('commit_log').insertIfAbsent({ preview_id, visitor_id: visitor, plan_id: plan.id }, { onConflict: 'preview_id' });
   // best-effort：仅本人且尚未绑定计划的对话才置位；失败不影响 commit，绝不重绑。
   if (conversation_id) {
-    const conv = rows(await deps.db.from('conversations').select('*').eq('id', conversation_id).eq('owner_visitor_id', visitor).limit(1))[0];
+    const conv = boundConv;
     if (conv && conv.plan_id === null) {
       await deps.db.from('conversations').update({ plan_id: plan.id }).eq('id', conv.id).eq('owner_visitor_id', visitor);
     }

@@ -49,14 +49,14 @@ export function PlansDrawer() {
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) closeDrawer(); }}>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
+      <SheetContent side="left" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
         <SheetHeader className="border-b border-site-line px-5 py-4">
-          <SheetTitle className="font-display flex items-center gap-2"><FolderOpen className="h-4 w-4 text-site-brand" /> 我的计划</SheetTitle>
-          <SheetDescription>切换、新建或删除计划。每个计划有独立的 AI 对话。</SheetDescription>
+          <SheetTitle className="font-display flex items-center gap-2"><FolderOpen className="h-4 w-4 text-site-brand" /> 对话与计划</SheetTitle>
+          <SheetDescription>每个对话对应一个计划；切换会切换日历的活动层。</SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 space-y-3 px-5 py-4">
-          <Button className="w-full" onClick={requestNew} disabled={busy}><Plus className="mr-1.5 h-4 w-4" /> 新建计划</Button>
+          <Button className="w-full" onClick={requestNew} disabled={busy}><Plus className="mr-1.5 h-4 w-4" /> 新建对话（新计划）</Button>
           {streaming && <p className="text-[11px] text-site-ink-soft">对话进行中，请先中断再管理计划。</p>}
           {isLoading && <p className="text-xs text-site-ink-soft">加载中…</p>}
           {isError && (
@@ -87,7 +87,7 @@ export function PlansDrawer() {
             </div>
           ))}
           {!isLoading && !isError && plans.length === 0 && currentId !== null && (
-            <p className="text-xs text-site-ink-soft">还没有已保存的计划。新建一个，或在对话中生成后保存。</p>
+            <p className="text-xs text-site-ink-soft">还没有对话。新建对话会同时创建一个新计划。</p>
           )}
         </div>
 
