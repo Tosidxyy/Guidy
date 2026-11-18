@@ -19,7 +19,7 @@ import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { ConstraintConfirmCard } from './ConstraintConfirmCard';
 import { PatchConfirmCard } from './PatchConfirmCard';
-import { ContextPeek } from './ContextPeek';
+import { PlanCardPanel } from './PlanCardPanel';
 
 export function ChatPanel() {
   const chat = useChat();
@@ -209,7 +209,7 @@ export function ChatPanel() {
           {quotaExhausted ? '今天的对话额度用完了，明天再来继续规划。' : `今日对话额度还剩 ${chatRemaining} 轮`}
         </p>
       )}
-      <ContextPeek />
+      <PlanCardPanel />
       <ChatInput streaming={streaming} disabled={quotaExhausted} onSend={(t) => { setConfirmedDraft(null); setConfirmedPatch(null); chat.send(t); }} onInterrupt={() => chat.interrupt()} />
     </aside>
   );
