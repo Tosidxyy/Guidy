@@ -33,6 +33,7 @@ describe('buildUserMessage — 跨计划上下文', () => {
   it('其他计划的块 id 与跨计划规则进入上下文', () => {
     const text = buildUserMessage({ message: '把健身计划周三的训练挪到晚上', plan, history: [], today: '2026-11-18', others: [other] });
     expect(text).toContain('【共享日历中的其他计划】');
+    expect(text).toContain('只能按块 id 修改其中的块');
     expect(text).toContain('b1');
     expect(text).toContain('健身');
     expect(text).toContain('move_block / update_block / remove_block 直接使用上面的块 id');

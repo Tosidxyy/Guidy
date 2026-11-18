@@ -121,7 +121,7 @@ export function buildUserMessage(input: {
     }
     if (input.plan.blocks.length > 60) lines.push(`- …共 ${input.plan.blocks.length} 个时间块，仅列前 60 个`);
     if (input.others?.length) {
-      lines.push('【共享日历中的其他计划】只能按 id 修改其中的块与约束：');
+      lines.push('【共享日历中的其他计划】只能按块 id 修改其中的块（不提供其他计划的任务与约束上下文）：');
       for (const other of input.others.slice(0, 3)) {
         lines.push(`- 计划「${other.title}」（plan id ${other.id}）`);
         for (const b of other.blocks.slice(0, 12)) {
