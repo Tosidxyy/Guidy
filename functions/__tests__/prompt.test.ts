@@ -59,7 +59,7 @@ describe('buildUserMessage — 跨计划上下文', () => {
     expect(text).toContain('move_block / update_block / remove_block 直接使用上面的块 id');
     expect(text).toContain('add_block 的 value 照旧，另加 "plan_id"');
     expect(text).toContain('update_plan 带 "plan_id"');
-    expect(text).toContain('任务 key 只在当前计划内有效');
+    expect(text).toContain('其他计划的任务定义是全局已知信息');
   });
 
   it('新对话（无当前计划）也注入已有计划与忙时，并禁止重复询问', () => {
@@ -100,6 +100,12 @@ describe('buildUserMessage — 跨计划上下文', () => {
     const scheduledText = buildUserMessage({ message: '把数学挪到下午', plan: scheduled, history: [], today: '2026-11-18' });
     expect(scheduledText).toContain('当前计划已有排程');
     expect(scheduledText).toContain('输出 patch（按需重排）');
+  });
+  it('其他计划的任务定义进入上下文（只读知识）', () => {
+    const withTasks = { ...other, tasks: [{ key: 'leetcode', title: '力扣', category: 'study' as const, duration_min: 60, frequency: { type: 'daily' as const }, priority: 'mid' as const, splittable: false, sort_order: 0 }] };
+    const text = buildUserMessage({ message: '另一个计划在做什么？', plan, history: [], today: '2026-11-18', others: [withTasks] });
+    expect(text).toContain('任务：leetcode｜力扣');
+    expect(text).toContain('其他计划的任务定义是全局已知信息');
   });
   it('没有其他计划时不出现该段', () => {
     const text = buildUserMessage({ message: 'hi', plan, history: [], today: '2026-11-18' });

@@ -54,9 +54,10 @@ async function loadSharedCalendar(db: Deps['db'], visitor: string): Promise<{ ot
   for (const p of plans) {
     const blocks = rows(await db.from('blocks').select('*').eq('plan_id', p.id));
     const constraints = rows(await db.from('constraints').select('*').eq('plan_id', p.id));
-    if (!blocks.length && !constraints.length) continue;
+    const tasks = rows(await db.from('task_defs').select('*').eq('plan_id', p.id));
+    if (!blocks.length && !constraints.length && !tasks.length) continue;
     sources.push({ constraints, blocks });
-    out.push({ id: p.id, title: p.title, horizon_start: p.horizon_start, horizon_days: p.horizon_days, timezone: p.timezone, blocks, windows: windowSummary(constraints) });
+    out.push({ id: p.id, title: p.title, horizon_start: p.horizon_start, horizon_days: p.horizon_days, timezone: p.timezone, blocks, tasks, windows: windowSummary(constraints) });
   }
   return { others: out, sources };
 }
@@ -76,13 +77,14 @@ async function loadRelatedPlans(db: Deps['db'], visitor: string, active: PlanSta
     if (others.length >= 3) break;
     const blocks = rows(await db.from('blocks').select('*').eq('plan_id', p.id));
     const constraints = rows(await db.from('constraints').select('*').eq('plan_id', p.id));
+    const tasks = rows(await db.from('task_defs').select('*').eq('plan_id', p.id));
     const windows = windowSummary(constraints);
     sources.push({ constraints, blocks });
     const range = horizonRange(p);
     const intersects = !(range.end <= activeRange.start || range.start >= activeRange.end);
     if (intersects && blocks.length) conflictSources.push({ id: p.id, title: p.title, blocks });
     const shownBlocks = intersects ? blocks : [];
-    if (!shownBlocks.length && !windows.length) continue;
+    if (!shownBlocks.length && !windows.length && !tasks.length) continue;
     others.push({
       id: p.id,
       title: p.title,
@@ -90,6 +92,7 @@ async function loadRelatedPlans(db: Deps['db'], visitor: string, active: PlanSta
       horizon_days: p.horizon_days,
       timezone: p.timezone,
       blocks: shownBlocks,
+      tasks,
       windows,
     });
   }

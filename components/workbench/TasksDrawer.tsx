@@ -8,6 +8,7 @@ import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { categoryColor, taskSummary } from '@/lib/describe';
 import { addTaskDefAction, deleteTaskDefAction, undoToastAction } from '@/lib/planActions';
+import { usePlanLayers } from '@/lib/usePlanLayers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,6 +21,9 @@ export function TasksDrawer() {
   const open = useUiStore((s) => s.drawer === 'tasks');
   const closeDrawer = useUiStore((s) => s.closeDrawer);
   const taskDefs = usePlanStore((s) => s.state.task_defs);
+  const planId = usePlanStore((s) => s.state.plan.id);
+  const { layers } = usePlanLayers(planId);
+  const otherTasks = layers.filter((l) => l.state.task_defs.length > 0);
   const requestReschedule = usePlanStore((s) => s.requestReschedule);
 
   const [title, setTitle] = useState('');
@@ -100,6 +104,32 @@ export function TasksDrawer() {
             <Button variant="outline" className="w-full" onClick={() => { requestReschedule('任务定义变更后重新排程'); closeDrawer(); }}>
               <RefreshCw className="mr-1.5 h-4 w-4" /> 重新排程并预览
             </Button>
+          )}
+
+          {otherTasks.length > 0 && (
+            <>
+              <Separator />
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-site-ink">其他计划的任务（只读）</h3>
+                {otherTasks.map((layer) => (
+                  <div key={layer.id} className="rounded-lg border border-site-line bg-site-bg px-2.5 py-2">
+                    <p className="text-[11px] font-medium text-site-ink-soft">{layer.title}</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {layer.state.task_defs.map((t) => (
+                        <li key={t.key} className="flex items-center gap-2 text-xs text-site-ink-soft">
+                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: categoryColor(t.category) }} />
+                          <span className="min-w-0 flex-1 truncate">{t.title}</span>
+                          <span className="shrink-0 text-[10px]">{taskSummary(t)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+                <p className="text-[10px] leading-relaxed text-site-ink-soft">
+                  任务跟随各自计划；日历上它们的时间块始终可见（半透明）。切换计划后可编辑。
+                </p>
+              </div>
+            </>
           )}
 
           <Separator />

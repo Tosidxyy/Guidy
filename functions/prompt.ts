@@ -1,5 +1,4 @@
-import type { PlanState } from '../shared/types.ts';
-import type { Block } from '../shared/types.ts';
+import type { Block, PlanState, TaskDef } from '../shared/types.ts';
 import type { ConstraintSetArtifact } from '../shared/schemas.ts';
 import type { PlanConflict } from '../shared/engine/conflicts.ts';
 import { holidaysInRange, makeupWorkdaysInRange } from '../shared/holidays.ts';
@@ -109,6 +108,8 @@ export interface OtherPlanContext {
   horizon_days: number;
   timezone: string;
   blocks: Block[];
+  /** 该计划的任务定义：全局可知，但只能通过块 id 修改其排程。 */
+  tasks?: TaskDef[];
   /** 忙时/可安排时段等只读摘要（来自该计划的约束，不可跨计划编辑）。 */
   windows?: string[];
 }
@@ -125,6 +126,10 @@ function pushOtherPlans(
   }
   for (const other of others.slice(0, 3)) {
     lines.push(`- 计划「${other.title}」（plan id ${other.id}，开始日 ${other.horizon_start}，跨度 ${other.horizon_days} 天，时区 ${other.timezone}）`);
+    if (other.tasks?.length) {
+      lines.push(`  - 任务：${other.tasks.slice(0, 8).map((t) => `${t.key}｜${t.title}（${taskSummary(t)}）`).join('；')}`);
+      if (other.tasks.length > 8) lines.push(`  - …共 ${other.tasks.length} 个任务定义，仅列前 8 个`);
+    }
     if (other.windows?.length) lines.push(`  - 已有时段：${other.windows.join('；')}`);
     const limit = opts.editing ? 12 : 6;
     for (const b of other.blocks.slice(0, limit)) {
@@ -140,7 +145,7 @@ function pushOtherPlans(
   lines.push('修改其他计划的块：move_block / update_block / remove_block 直接使用上面的块 id。');
   lines.push('在其他计划新建块：add_block 的 value 照旧，另加 "plan_id":"<对方计划 id>"。');
   lines.push('改其他计划元数据：update_plan 带 "plan_id":"<对方计划 id>"，patch 里写 title / horizon_start / horizon_days / timezone。仅在用户明确要求时使用。');
-  lines.push('增删任务定义、改约束、清空计划、重新排程只作用于当前计划；任务 key 只在当前计划内有效。');
+  lines.push('其他计划的任务定义是全局已知信息：可以引用它们的块 id 调整排程，但不要重复创建同名任务；增删任务定义、改约束、清空计划、重新排程只作用于当前计划。');
 }
 
 export function buildUserMessage(input: {
