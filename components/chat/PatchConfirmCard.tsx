@@ -37,7 +37,7 @@ export function PatchConfirmCard({ patch, onConfirm, onCancel }: {
       </ul>
       {external > 0 && (
         <p className="mt-2 rounded-lg bg-site-warning/10 px-2.5 py-1.5 text-xs text-site-warning-text">
-          其中 {external} 项作用于其他计划（共享日历），确认后会一起保存。
+          其中 {external} 项作用于其他计划或公共日历，确认后会一起保存。
         </p>
       )}
       <div className="mt-4 flex items-center justify-end gap-2">
