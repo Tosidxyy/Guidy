@@ -323,7 +323,7 @@ const PatchOp = z.discriminatedUnion('op', [
   z.object({ op: z.literal('add_constraint'), value: ConstraintPayload, client_id: z.string().uuid().optional(), source: z.enum(['user','ai','template']).optional(), enabled: z.boolean().optional() }),
   z.object({ op: z.literal('update_constraint'), id: z.string().uuid(), patch: z.object({ payload: ConstraintPayload.optional(), enabled: z.boolean().optional(), source: z.enum(['user','ai','template']).optional() }) }),
   z.object({ op: z.literal('remove_constraint'), id: z.string().uuid() }),
-  z.object({ op: z.literal('add_block'), value: ManualBlock, client_id: z.string().uuid().optional() }),   // §4.5
+  z.object({ op: z.literal('add_block'), value: ManualBlock, client_id: z.string().uuid().optional(), plan_id: z.string().uuid().optional() }),   // §4.5
   z.object({ op: z.literal('update_block'), id: z.string().uuid(), patch: ManualBlock.partial() }),
   z.object({ op: z.literal('move_block'), id: z.string().uuid(), start_utc: z.string().datetime(), end_utc: z.string().datetime() }),
   z.object({ op: z.literal('remove_block'), id: z.string().uuid() }),
@@ -340,7 +340,7 @@ const ApplyOp = z.union([
 const PatchArtifact = z.object({
   type: z.literal('patch'),
   summary: z.string().max(200),
-  ops: z.array(PatchOp).min(1).max(30),
+  ops: z.array(ApplyOp).min(1).max(30),   // ApplyOp = PatchOp | update_plan
 });
 ```
 
@@ -460,7 +460,9 @@ solve(input: SolveInput): SolveOutput   // 纯函数、确定性
 
 > **P2b 扩展**：块级新增/删除/移动/缩放/字段编辑统一走 `POST /patches/apply`。`add_block` 可带 `client_id`（UUID），服务端按该 ID 落库；删除的逆操作携带原 ID，撤销恢复同一块。客户端以每计划 `serverVersion` 作为 `base_version`；`409 version_conflict` 回滚乐观更新并重新拉取，不自动重放。清空当前计划使用 `{"op":"clear_plan"}`，其逆操作会重放任务、约束与块，可撤销。
 >
-> **P2c 扩展**：任务定义、约束与计划元数据同样走该端点。`add_constraint` 可带 `client_id`（UUID），服务端按该 ID 落库并在整表重写时保留，撤销删除后 ID 不变。计划标题/开始日/时区/horizon 使用 `{"op":"update_plan","patch":{...}}`（`ApplyOp`，AI artifact 不可用）；改 horizon 或时区会触发重排。元数据编辑同样进入 per-plan 撤销栈。
+> **P4 扩展**：AI patch 的 ops 与人工操作同用 ApplyOp，可带 plan_id 指向其他计划（add_block、update_plan）；跨计划 op 由客户端拆成各自计划的请求，服务端对 plan_id 与请求计划不一致的 op 返回 422 op_plan_mismatch。
+>
+> **P2c 扩展**：任务定义、约束与计划元数据同样走该端点。`add_constraint` 可带 `client_id`（UUID），服务端按该 ID 落库并在整表重写时保留，撤销删除后 ID 不变。计划标题/开始日/时区/horizon 使用 `{"op":"update_plan","patch":{...}}`（`ApplyOp`；P4 起 AI artifact 也可发起）；改 horizon 或时区会触发重排。元数据编辑同样进入 per-plan 撤销栈。
 
 | 端点 | 说明 |
 | --- | --- |

@@ -26,8 +26,7 @@
 ### 非目标
 
 - 跨计划原子事务：每个计划一个 version，跨计划是多次 patch。
-- AI 在其他计划里**新建**块/任务/约束：没有 id 无法定位目标计划；仍只作用于当前计划。
-- AI 修改其他计划的计划元数据（标题/horizon）：留给用户操作。
+- 任务定义与约束的跨计划编辑：其他计划只暴露块 id 与计划元数据，任务 key 只在计划内唯一。
 - 权限模型变化：仍是同一访客的计划，路由照旧校验归属。
 
 ## 3. 寻址规则
@@ -37,7 +36,8 @@
 | `move_block` / `update_block` / `remove_block` | 按块 id 在全量层中查找 |
 | `update_constraint` / `remove_constraint` | 按约束 id 查找 |
 | `update_task_def` / `remove_task_def` | 只作用于当前计划（task key 只在计划内唯一） |
-| `add_*` / `reschedule` / `clear_plan` / `update_plan` | 只作用于当前计划 |
+| `add_block` / `update_plan` | 按 op 自带的 `plan_id`；缺省为当前计划 |
+| `add_task_def` / `add_constraint` / `reschedule` / `clear_plan` | 只作用于当前计划 |
 
 块 id 与约束 id 都是 UUID，跨计划唯一；task key 可能重名，所以不参与跨计划寻址。查不到 id 的 op 归当前计划，让服务端按原逻辑返回 `422`，而不是静默丢弃。
 
@@ -47,9 +47,11 @@
 
 `buildUserMessage` 增加 `others`：与当前计划 horizon 相交的其他计划（最多 3 个，每计划最多 12 个块），逐条给出 `块 id｜标题｜日期 时间`，并声明：
 
-- 只能按块 id 修改其他计划的块；其他计划的任务定义与约束不进入上下文，也不参与跨计划寻址；
-- 任务 key 只对当前计划有效；
-- 新建块、清空、重排只作用于当前计划。
+- 按块 id 修改其他计划的块；新建块用 `add_block` + `plan_id`；
+- 其他计划的标题/开始日/跨度/时区以 `update_plan` + `plan_id` 修改，只在用户明确要求时使用；
+- 其他计划的任务定义与约束不进入上下文，任务 key 只对当前计划有效；清空、重排仍只作用于当前计划。
+
+System prompt 同时补上 `ManualBlock` 的字段契约（`start_utc/end_utc` 必须是 UTC ISO），否则模型会写成本地 `date/start/end` 而被 schema 拒绝——这是本次实测踩到的坑。
 
 `functions/routes/chat.ts` 的跨计划加载同时产出 conflicts 与 others，避免两次扫库。
 

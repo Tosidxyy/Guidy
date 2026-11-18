@@ -45,9 +45,9 @@ P2b 已让**块级编辑**走 `POST /patches/apply`，但元数据仍只写本�
 | B. 新增 `PATCH /plans/:id` 与 `/plans/:id/tasks`、`/constraints` 独立路由 | 不采用。多入口多版本号，撤销需要拼装多次请求，失败半途会留下不一致状态。 |
 | C. 全计划快照提交（`commit`） | 不采用。`commit` 会重跑求解并整体替换，会把用户手放的位置抹掉；它仍是 AI 建规划的通道。 |
 
-### 3.1 `update_plan` 只对客户端开放
+### 3.1 `update_plan` 的可见性
 
-`update_plan` 放在新的 `ApplyOpSchema`（服务端 apply 的入参）里，**不进** `PatchOpSchema`（AI artifact 的 ops）。AI 仍不能改标题、horizon、时区；人工操作与撤销可以。
+`update_plan` 放在 `ApplyOpSchema`（服务端 apply 的入参）里。P2c 阶段它不进 AI artifact，AI 不能改标题、horizon、时区；**P4 起** `PatchArtifact` 的 ops 改用 `ApplyOpSchema`，AI 可以发起 `update_plan`（需用户确认卡片，可指定 `plan_id` 改其他计划）。
 
 ## 4. 服务端契约
 
