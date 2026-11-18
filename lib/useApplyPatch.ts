@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { buildPatchBody } from '@/lib/patchInput';
 import { usePlanStore, type ReschedulePreview } from '@/store/usePlanStore';
+import { usePlanSync } from '@/store/usePlanSync';
 import type { PatchArtifact } from '@/shared/schemas';
 import type { PlanState } from '@/shared/types';
 
@@ -52,6 +53,8 @@ export function useApplyPatch() {
         blocks: resp.blocks,
       };
       store.replaceStateKeepUndo(next);
+      const planId = store.state.plan.id;
+      if (planId) usePlanSync.getState().setServerVersion(planId, resp.version);
       qc.invalidateQueries({ queryKey: ['plans'] });
       toast.success(resp.server_authoritative ? '已按服务端结果保存调整' : '调整已保存到云端');
     },

@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import { usePlanStore } from '@/store/usePlanStore';
+import { usePlanSync } from '@/store/usePlanSync';
 import { useChatStore } from '@/store/useChatStore';
 import { chatController } from '@/lib/chatRuntime';
 import { createPlanManager } from '@/lib/planManagerCore';
@@ -48,7 +49,11 @@ export function usePlanManager() {
     isLoading: query.isLoading,
     isError: query.isError,
     refetch: query.refetch,
-    switchPlan: (id: string) => run(() => manager.switchPlan(id)),
+    switchPlan: (id: string) => run(async () => {
+      await manager.switchPlan(id);
+      const plan = usePlanStore.getState().state.plan;
+      if (plan.id === id) usePlanSync.getState().setServerVersion(id, plan.version);
+    }),
     newPlan: () => run(() => manager.newPlan()),
     deletePlan: (id: string) => run(async () => {
       await manager.deletePlan(id);

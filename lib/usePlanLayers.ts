@@ -1,5 +1,7 @@
+import { useEffect, useRef } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { usePlanSync } from '@/store/usePlanSync';
 import type { PlanLayerSource } from '@/lib/calendarLayers';
 import type { PlanState } from '@/shared/types';
 
@@ -21,6 +23,13 @@ export function usePlanLayers(activePlanId: string | null) {
     const state = details[i]?.data;
     if (state) layers.push({ id: p.id, title: state.plan.title, state });
   });
+
+  const versionKey = layers.map((l) => `${l.id}:${l.state.plan.version}`).join('|');
+  const layersRef = useRef(layers);
+  layersRef.current = layers;
+  useEffect(() => {
+    for (const layer of layersRef.current) usePlanSync.getState().setServerVersion(layer.id, layer.state.plan.version);
+  }, [versionKey]);
 
   return { plans, layers, isLoading: list.isLoading || details.some((d) => d.isLoading) };
 }

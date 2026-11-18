@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { buildCommitInput } from '@/lib/commitInput';
 import { usePlanStore, type ReschedulePreview } from '@/store/usePlanStore';
+import { usePlanSync } from '@/store/usePlanSync';
 import { useChatStore } from '@/store/useChatStore';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 import type { PlanState } from '@/shared/types';
@@ -55,6 +56,7 @@ export function useCommitPlan() {
       };
       store.importState(next);
       usePlanStore.setState({ preview: null });
+      usePlanSync.getState().setServerVersion(serverPlan.plan.id, serverPlan.plan.version);
       qc.invalidateQueries({ queryKey: ['plans'] });
       qc.invalidateQueries({ queryKey: ['conversations'] });
       toast.success(serverPlan.server_authoritative ? '已按服务端结果保存计划' : '计划已保存到云端');
