@@ -67,7 +67,7 @@ findConflicts(plans, opts?: { onlyPlanId?: string }): PlanConflict[]
 mergeConflictOps(c): { planId: string; ops: ApplyOp[] }[]
 ```
 
-每侧一个 `update_block`：`{ title: merged_title, start_utc: c.start_utc, end_utc: c.end_utc }`。
+每侧一个 `update_block`：`{ title: merged_title, start_utc: c.start_utc, end_utc: c.end_utc, pinned: true }`。钉住的原因见 §9：合并是用户认可的时间窗，后续重排不应把它打散。
 
 - 先写**非活动计划**，再写活动计划：非活动侧失败时，用户当前看到的计划还没被改。
 - 每侧沿用 P2b/P2c 的 `planController.apply`（乐观更新 → 服务端校验 → 历史记录）。
@@ -129,8 +129,11 @@ mergeConflictOps(c): { planId: string; ops: ApplyOp[] }[]
 - 已合并不重复提示；
 - 既有 344 测试保持全绿。
 
-## 9. 已知边界
+## 9. 合并结果与重排的关系
 
-合并是对**块**的编辑，不是任务定义。因此改任务/约束触发重排时，服务端按任务重新生成块，合并后的时间窗与「A + B」标题都会消失，两块回到各自任务的位置；若仍重叠，冲突提示会重新出现。
+合并会把两侧的块**钉住**（`pinned: true`）：合并是用户明确认可的时间窗，后续改任务/约束触发的重排不应把它重新打散。求解器把钉住块当作固定占用，在它周围安排其余任务；实测改约束后，合并块的标题、时间窗与钉住状态都保留，其他块重新排布。
 
-要保留合并结果，需要把合并建模成任务级或钉住块，成本和语义都不同，留到后续版本再评估。
+仍有两点要知道：
+
+- 合并窗口取并集，可能落在某个计划自己的允许时段之外（例如对方只有 19:00–22:00 可用）。此时该侧的 `update_block` 会被落点校验拒绝，界面提示「一侧已合并，另一侧失败」，不会假装成功。
+- 你可以照常拖动或取消钉住合并块；一旦两侧不再同时间同标题，「已合并」判据失效，冲突会重新提示。

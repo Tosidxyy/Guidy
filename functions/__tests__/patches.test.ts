@@ -197,6 +197,28 @@ describe('applyPatchRoute', () => {
     expect(body.blocks).toHaveLength(beforeBlocks);
     expect(new Set(body.blocks.map((b: any) => b.start_utc)).size).toBe(body.blocks.length);
   });
+  it('合并后的钉住块在重排后保留标题与时间窗', async () => {
+    const d = deps();
+    const plan = await seedPlan(d);
+    const app = application(d);
+    const block = d.db.tables.blocks[0];
+    const title = '数学真题 + 核心训练';
+    const start = block.start_utc;
+    const end = block.end_utc;
+    const merged = await (await app(ctx('POST', '/api/patches/apply', {
+      preview_id: 'merge-pin-1', plan_id: plan.id, base_version: plan.version,
+      ops: [{ op: 'update_block', id: block.id, patch: { title, start_utc: start, end_utc: end, pinned: true } }],
+      result_hash: null, engine_version: 1,
+    }))).json();
+    expect(merged.blocks.find((b: any) => b.id === block.id)).toMatchObject({ title, pinned: true });
+
+    const after = await (await app(ctx('POST', '/api/patches/apply', {
+      preview_id: 'merge-pin-2', plan_id: plan.id, base_version: merged.version,
+      ops: [{ op: 'add_constraint', value: { type: 'buffer', minutes: 5 } }],
+      result_hash: null, engine_version: 1,
+    }))).json();
+    expect(after.blocks.find((b: any) => b.id === block.id)).toMatchObject({ title, pinned: true, start_utc: start, end_utc: end });
+  });
   it('preview_id 回放不重复落库', async () => {
     const d = deps();
     const plan = await seedPlan(d);

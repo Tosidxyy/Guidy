@@ -82,7 +82,8 @@ export function findConflicts(plans: ConflictPlan[], opts: { onlyPlanId?: string
 }
 
 export function mergeConflictOps(conflict: PlanConflict): { planId: string; ops: ApplyOp[] }[] {
-  const patch = { title: conflict.merged_title, start_utc: conflict.start_utc, end_utc: conflict.end_utc };
+  // 钉住两侧：合并是用户明确认可的时间窗，后续重排不应把它重新打散。
+  const patch = { title: conflict.merged_title, start_utc: conflict.start_utc, end_utc: conflict.end_utc, pinned: true };
   return [
     { planId: conflict.a.planId, ops: [{ op: 'update_block', id: conflict.a.block.id, patch }] },
     { planId: conflict.b.planId, ops: [{ op: 'update_block', id: conflict.b.block.id, patch }] },

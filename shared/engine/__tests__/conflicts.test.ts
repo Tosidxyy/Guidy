@@ -66,17 +66,17 @@ describe('findConflicts', () => {
 });
 
 describe('mergeConflictOps', () => {
-  it('两侧各一个 update_block，携带并集窗口与追加标题', () => {
+  it('两侧各一个 update_block，携带并集窗口、追加标题并钉住', () => {
     const [c] = findConflicts([A, B]);
     const parts = mergeConflictOps(c);
     expect(parts).toHaveLength(2);
     expect(parts[0]).toEqual({
       planId: 'p1',
-      ops: [{ op: 'update_block', id: 'a1', patch: { title: '数学真题 + 核心训练', start_utc: c.start_utc, end_utc: c.end_utc } }],
+      ops: [{ op: 'update_block', id: 'a1', patch: { title: '数学真题 + 核心训练', start_utc: c.start_utc, end_utc: c.end_utc, pinned: true } }],
     });
     expect(parts[1]).toEqual({
       planId: 'p2',
-      ops: [{ op: 'update_block', id: 'b1', patch: { title: '数学真题 + 核心训练', start_utc: c.start_utc, end_utc: c.end_utc } }],
+      ops: [{ op: 'update_block', id: 'b1', patch: { title: '数学真题 + 核心训练', start_utc: c.start_utc, end_utc: c.end_utc, pinned: true } }],
     });
   });
 
