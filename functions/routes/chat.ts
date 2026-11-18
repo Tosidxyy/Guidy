@@ -57,32 +57,36 @@ async function loadSharedCalendar(db: Deps['db'], visitor: string): Promise<Othe
   }
   return out;
 }
-// 只扫与活动计划 horizon 相交的其他计划，避免每轮对话全库扫描。
+// 其他计划：块只取与活动计划 horizon 相交的（控制 token），
+// 但「已有时段」（忙时/可安排）是每周重复的安排，与 horizon 无关，始终带上。
 async function loadRelatedPlans(db: Deps['db'], visitor: string, active: PlanState) {
-  const others = rows(await db.from('plans').select('*').eq('owner_visitor_id', visitor));
+  const plans = rows(await db.from('plans').select('*').eq('owner_visitor_id', visitor).order('updated_at', { ascending: false }));
   const activeRange = horizonRange(active.plan);
   const sources: ConflictPlan[] = [{ id: active.plan.id, title: active.plan.title, blocks: active.blocks }];
-  const windowsById = new Map<string, string[]>();
-  for (const p of others) {
+  const others: OtherPlanContext[] = [];
+  for (const p of plans) {
     if (p.id === active.plan.id) continue;
-    const range = horizonRange(p);
-    if (range.end <= activeRange.start || range.start >= activeRange.end) continue;
+    if (others.length >= 3) break;
     const blocks = rows(await db.from('blocks').select('*').eq('plan_id', p.id));
-    if (blocks.length) sources.push({ id: p.id, title: p.title, blocks });
+    const constraints = rows(await db.from('constraints').select('*').eq('plan_id', p.id));
+    const windows = windowSummary(constraints);
+    const range = horizonRange(p);
+    const intersects = !(range.end <= activeRange.start || range.start >= activeRange.end);
+    if (intersects && blocks.length) sources.push({ id: p.id, title: p.title, blocks });
+    const shownBlocks = intersects ? blocks : [];
+    if (!shownBlocks.length && !windows.length) continue;
+    others.push({
+      id: p.id,
+      title: p.title,
+      horizon_start: p.horizon_start,
+      horizon_days: p.horizon_days,
+      timezone: p.timezone,
+      blocks: shownBlocks,
+      windows,
+    });
   }
-  const rest = sources.filter((s) => s.id !== active.plan.id).map((s) => {
-    const row = others.find((p) => p.id === s.id);
-    return {
-      id: s.id,
-      title: s.title,
-      horizon_start: row?.horizon_start ?? active.plan.horizon_start,
-      horizon_days: row?.horizon_days ?? active.plan.horizon_days,
-      timezone: row?.timezone ?? active.plan.timezone,
-      blocks: s.blocks,
-    };
-  });
   const conflicts = sources.length > 1 ? findConflicts(sources, { onlyPlanId: active.plan.id }) : [];
-  return { conflicts, others: rest };
+  return { conflicts, others };
 }
 
 export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {

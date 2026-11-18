@@ -104,7 +104,7 @@ resolvePatchTargets(ops, active: PlanState, layers: PlanState[]): PlanTarget[]
 用户开新对话时 `plan_id` 为空，此前模型只看到「当前还没有计划」，于是反复追问「你什么时候有空」。现在：
 
 - `chatSend` 在没有活动计划时加载访客最近 3 个计划的块与约束摘要，作为 `others` 传给 `buildUserMessage`；
-- 每个计划附带 `windows`（busy_window / active_window / fixed_block 的只读文本），供模型直接沿用已有忙时与可用时段；
-- prompt 明确：不要重复问空闲时间，只需确认是否追加忙时或避开某些时段；并且只能引用列出的内容，不得编造。
+- 每个计划附带 `windows`（busy_window / active_window / fixed_block 的只读文本）。忙时是每周重复的安排，**不受 horizon 限制**：其他计划的块只取与活动计划期相交的，`windows` 则总是带上（最多 3 个计划），否则跨月开工时会丢失「上班 09:00–17:30」这类信息；
+- prompt 明确：不要重复问空闲时间，只需确认是否追加忙时或避开某些时段；当前计划存在时也要求「安排时避开这些忙时，不要重复问用户什么时候有空」；并且只能引用列出的内容，不得编造。
 
 约束仍然只读：跨计划编辑能力不变（块按 id，计划元数据按 plan_id）。

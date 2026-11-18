@@ -243,6 +243,21 @@ describe('对话与计划绑定', () => {
     expect(sent).toContain('兼职');
     expect(sent).toContain('不要再问「你什么时候有空」');
   });
+  it('活动计划存在时，其他计划的忙时也进入上下文（只有约束、没有块）', async () => {
+    const d = deps({ openStream: async () => ({ body: upstreamStream(replyFrames), close() {} }) });
+    const app = application(d);
+    const active = await (await app(ctx('POST', '/api/plans/save', { plan_id: null, input: { title: '健身', horizon_start: '2026-11-18', horizon_days: 7, timezone: 'Asia/Shanghai', task_defs: [], constraints: [{ id: crypto.randomUUID(), payload: { type: 'active_window', start: '07:00', end: '23:00' }, source: 'user', enabled: true }], blocks: [] } }))).json();
+    await (await app(ctx('POST', '/api/plans/save', { plan_id: null, input: { title: '工作日程', horizon_start: '2026-10-01', horizon_days: 7, timezone: 'Asia/Shanghai', task_defs: [], constraints: [{ id: crypto.randomUUID(), payload: { type: 'busy_window', weekday: 1, start: '09:00', end: '17:30', label: '上班' }, source: 'user', enabled: true }], blocks: [] } }))).json();
+    let sent = '';
+    const withCapture = {
+      ...d,
+      qca: { ...d.qca, sendEvents: async (_session: string, text: string) => { sent = text; return { eventIds: ['e1'] }; } },
+    } as Deps;
+    await collect(await application(withCapture)(ctx('POST', '/api/chat/send', { text: '帮我排训练', plan_id: active.plan.id })));
+    expect(sent).toContain('工作日程');
+    expect(sent).toContain('上班');
+    expect(sent).toContain('已有时段');
+  });
 describe('chatHistory / interrupt', () => {
   it('history 跨访客 → 403', async () => {
     const d = deps();

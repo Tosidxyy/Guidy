@@ -131,6 +131,7 @@ function pushOtherPlans(
     if (other.blocks.length > limit) lines.push(`  - …共 ${other.blocks.length} 个时间块，仅列前 ${limit} 个`);
   }
   if (!opts.editing) return;
+  lines.push('其他计划的「已有时段」是只读的既有安排：安排当前计划时要避开这些忙时，不要重复问用户什么时候有空。');
   lines.push('修改其他计划的块：move_block / update_block / remove_block 直接使用上面的块 id。');
   lines.push('在其他计划新建块：add_block 的 value 照旧，另加 "plan_id":"<对方计划 id>"。');
   lines.push('改其他计划元数据：update_plan 带 "plan_id":"<对方计划 id>"，patch 里写 title / horizon_start / horizon_days / timezone。仅在用户明确要求时使用。');

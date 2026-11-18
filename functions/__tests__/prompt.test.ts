@@ -71,6 +71,12 @@ describe('buildUserMessage — 跨计划上下文', () => {
     expect(text).toContain('不要再问「你什么时候有空」');
     expect(text).toContain('追加新的忙时');
   });
+  it('当前计划存在时，其他计划的已有时段也进入上下文', () => {
+    const withWindows = { ...other, windows: ['周三 18:00–22:00 兼职'] };
+    const text = buildUserMessage({ message: '帮我安排', plan, history: [], today: '2026-11-18', others: [withWindows] });
+    expect(text).toContain('已有时段：周三 18:00–22:00 兼职');
+    expect(text).toContain('不要重复问用户什么时候有空');
+  });
   it('没有其他计划时不出现该段', () => {
     const text = buildUserMessage({ message: 'hi', plan, history: [], today: '2026-11-18' });
     expect(text).not.toContain('【共享日历中的其他计划】');
