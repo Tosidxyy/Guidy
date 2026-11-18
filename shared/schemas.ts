@@ -29,6 +29,11 @@ export const TaskDefSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
+// update_task_def 的 patch：可选字段可以传 null 清除（例如 preferred_period）。
+export const TaskDefPatchSchema = TaskDefSchema.partial().extend({
+  preferred_period: PeriodEnum.nullable().optional(),
+});
+
 const weekdayOrDate = { weekday: Weekday.optional(), date: z.string().date().optional() };
 const exactlyOneAnchor = (c: { weekday?: number; date?: string }) =>
   (c.weekday === undefined) !== (c.date === undefined);
@@ -104,7 +109,7 @@ export const PlanBlockSchema = z.object({
 
 export const PatchOpSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('add_task_def'), value: TaskDefSchema }),
-  z.object({ op: z.literal('update_task_def'), key: z.string(), patch: TaskDefSchema.partial() }),
+  z.object({ op: z.literal('update_task_def'), key: z.string(), patch: TaskDefPatchSchema }),
   z.object({ op: z.literal('remove_task_def'), key: z.string() }),
   z.object({
     op: z.literal('add_constraint'),

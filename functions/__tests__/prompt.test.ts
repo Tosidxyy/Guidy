@@ -18,6 +18,12 @@ const other = {
 };
 
 describe('buildUserMessage — 跨计划上下文', () => {
+  it('没有作息上下文时明确提示不要假设上班时间或默认排到晚上', () => {
+    const text = buildUserMessage({ message: '下周开始健身', plan: null, history: [], today: '2026-11-18' });
+    expect(text).toContain('【作息未知】');
+    expect(text).toContain('不要假设用户白天在上班/上课');
+    expect(buildSystemPrompt()).toContain('不要假设用户白天要上班/上课');
+  });
   it('公共日历块带 id 与写规则进入上下文', () => {
     const text = buildUserMessage({
       message: '明天请假',

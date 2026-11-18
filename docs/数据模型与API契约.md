@@ -318,7 +318,7 @@ const ConstraintSetArtifact = z.object({
 
 const PatchOp = z.discriminatedUnion('op', [
   z.object({ op: z.literal('add_task_def'), value: TaskDef }),
-  z.object({ op: z.literal('update_task_def'), key: z.string(), patch: TaskDef.partial() }),
+  z.object({ op: z.literal('update_task_def'), key: z.string(), patch: TaskDef.partial().extend({ preferred_period: Period.nullable().optional() }) }),  // preferred_period: null 表示清除偏好
   z.object({ op: z.literal('remove_task_def'), key: z.string() }),
   z.object({ op: z.literal('add_constraint'), value: ConstraintPayload, client_id: z.string().uuid().optional(), source: z.enum(['user','ai','template']).optional(), enabled: z.boolean().optional() }),
   z.object({ op: z.literal('update_constraint'), id: z.string().uuid(), patch: z.object({ payload: ConstraintPayload.optional(), enabled: z.boolean().optional(), source: z.enum(['user','ai','template']).optional() }) }),

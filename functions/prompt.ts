@@ -41,6 +41,8 @@ export function buildSystemPrompt(): string {
     '- 目标明确且信息足够，或用户明确要求生成：才输出 constraint_set（一个 JSON 对象，可用 ```json 代码块包裹），下方确认卡会自动出现。',
     '- 规划跨度：周期性、长期任务（健身、日常学习、习惯养成）默认 horizon_days=90（三个月），让每周都有安排；有截止日期的目标（实习投递、考试）把跨度覆盖到截止日（≤90 天），任务按截止日**均匀铺开**，不要全部堆在前一两周，临近截止再自然加密；短期冲刺才用 7/14 天。',
     '- 时间基准：用户消息开头会给出「今天是 YYYY-MM-DD（周X，时区）」。用户说「下周 / 下个月 / 从某天开始」时，必须换算成具体日期写入 horizon_start；「下周」指下一个自然周的周一。用户未指定开始日时省略 horizon_start。',
+    '- 作息与时段：上下文里没有「可安排时段」或公共日历块时，说明用户还没提供作息。此时不要假设用户白天要上班/上课，也不要凭推测设置 preferred_period 或把任务排到晚上；需要时段偏好时用 question_card 问「工作日一般几点后方便」「周末全天可以吗」，或者干脆不写 preferred_period，让任务在 07:00–23:00 里均匀铺开。',
+    '- 用户已提供忙时/固定日程（上下文里的公共日历块或计划约束）时，按这些时段避让；不要重复问用户什么时候有空。',
     '- 用户要求修改已有计划：「当前计划」已有时间块时输出 patch；还没有时间块（草稿）时也用 patch 补齐任务与约束（不要 reschedule），由用户点「生成排程」；只有当前对话还没有计划时才输出 constraint_set。',
     '- 如果方案还只是未确认的 constraint_set（上下文显示「当前还没有计划」），用户的修改要求仍输出更新后的完整 constraint_set，不要输出 patch；已解决的 clarifications 要清空。',
     '- 结构化产物一旦输出，字段名、类型、枚举必须与下方契约逐字一致，不要自创字段、不要改用近义词或把对象写成字符串。',
@@ -59,7 +61,7 @@ export function buildSystemPrompt(): string {
     '- category ∈ study|fitness|reading|work|life|creative|rest|other。',
     '- frequency 是对象，三选一：{type:"daily"} | {type:"once"} | {type:"per_week",count:1–14 整数}。不要写成字符串 "daily"。',
     '- priority ∈ high|mid|low（默认 mid；不要用 medium，也不要用数字）。',
-    '- splittable：boolean（默认 false）；preferred_period ∈ morning|afternoon|evening|night（可选）；sort_order：整数（默认 0）；notes：≤500 字（执行细节，可选）。',
+    '- splittable：boolean（默认 false）；preferred_period ∈ morning|afternoon|evening|night（可选，仅在用户说明时段偏好时填写，否则省略）；sort_order：整数（默认 0）；notes：≤500 字（执行细节，可选）。',
     '',
     '【question_card 契约】信息不足时输出（不创建计划）：',
     '{type:"question_card", title?:≤40, questions:[{text:≤140, options?:[2–4 个选项，每个≤40]}]}，questions 1–3 个。',
@@ -71,7 +73,7 @@ export function buildSystemPrompt(): string {
     '- active_window：{type:"active_window", start:"HH:mm", end:"HH:mm"(须晚于 start), weekdays?:[0–6]}。',
     '- daily_cap：{type:"daily_cap", category, max_minutes:30–960 整数}。字段名是 max_minutes，不是 max_minutes_per_day。',
     '- mutex：{type:"mutex", subjects:{kind:"category"|"task", values:[两个不同的字符串]}, mode:"no_adjacent"|"no_same_day", strength?:"soft"|"hard"(默认 soft)}。不要用 task_keys/scope。',
-    '- preferred_period：{type:"preferred_period", task_key 或 category（二选一）, period, strength:"soft"}。strength 只能是 soft。',
+    '- preferred_period：{type:"preferred_period", task_key 或 category（二选一）, period, strength:"soft"}。strength 只能是 soft。只在用户明确说过时段偏好时使用。',
     '- buffer：{type:"buffer", minutes:0–120 整数}。',
     '- fixed_block：{type:"fixed_block", title≤60, category, weekday 或 date（二选一）, start:"HH:mm", end:"HH:mm"(须晚于 start)}。',
     '- deadline：{type:"deadline", date:"YYYY-MM-DD", label≤30}。',
@@ -81,6 +83,7 @@ export function buildSystemPrompt(): string {
     'op ∈ add_task_def{value:TaskDef} | update_task_def{key,patch} | remove_task_def{key} | add_constraint{value:Payload} | update_constraint{id,patch} | remove_constraint{id} | add_block{value:ManualBlock,client_id?,plan_id?} | update_block{id,patch} | move_block{id,start_utc,end_utc(ISO datetime)} | remove_block{id} | reschedule{scope?:"affected_only"|"all",keep_pinned:true} | clear_plan{} | update_plan{plan_id?,patch:{title?,horizon_start?,horizon_days?,timezone?}}。',
     'plan_id 只在跨计划操作时填写（取「共享日历中的其他计划」里的 plan id）；不填即当前计划。',
     'ManualBlock = {title:≤60 字, category, start_utc:"YYYY-MM-DDTHH:mm:ss.sssZ"(UTC), end_utc:同上, priority?:"high"|"mid"|"low", pinned?:boolean, notes?≤500}。时间必须写成 UTC ISO；用户说的本地时间要按计划时区换算（Asia/Shanghai = UTC+8，21:00 本地 = 13:00Z）。',
+    '取消任务的时段偏好：update_task_def 的 patch 里写 "preferred_period": null；用户说「不要固定在晚上/重新按空闲排」时这样清除并 reschedule。',
     '',
     '【patch 输出格式，必须逐字遵守】',
     '{"type":"patch","summary":"≤200 字","ops":[{"op":"...", ...}]}',
@@ -172,6 +175,8 @@ export function buildUserMessage(input: {
   if (input.availability) {
     lines.push(`【可安排时段（按共享日历计算，已扣除忙时与既有安排）】${input.availability}`);
     lines.push('追问的选项必须落在这些可安排时段内；生成计划时如无其他依据，active_window 要与之一致，不要排进忙时或既有块。');
+  } else {
+    lines.push('【作息未知】用户还没有提供忙时、固定日程或空闲偏好。不要假设用户白天在上班/上课，也不要凭推测设置 preferred_period、把任务默认排到晚上；需要时段偏好时在追问里问（例如工作日几点后方便、周末是否全天可以）。');
   }
   if (input.sharedBlocks?.length) {
     lines.push('【公共日历块（所有计划共享的忙时/固定日程）】带块 id，按 id 直接改：');

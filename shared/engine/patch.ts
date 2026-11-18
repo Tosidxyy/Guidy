@@ -48,7 +48,12 @@ export function applyPatch(state: PlanState, ops: ApplyOp[]): PatchResult {
         const t = next.task_defs.find((x) => x.key === op.key);
         if (!t) { missing.push(`task:${op.key}`); break; }
         const old: Record<string, unknown> = {};
-        for (const k of Object.keys(op.patch)) { old[k] = clone((t as any)[k]); (t as any)[k] = clone((op.patch as any)[k]); }
+        for (const k of Object.keys(op.patch)) {
+          old[k] = clone((t as any)[k]);
+          const value = (op.patch as Record<string, unknown>)[k];
+          if (k === 'preferred_period' && value === null) delete (t as any).preferred_period;
+          else (t as any)[k] = clone(value);
+        }
         inverse.push({ op: 'update_task_def', key: op.key, patch: old as Partial<TaskDef> });
         requiresReschedule = true;
         break;

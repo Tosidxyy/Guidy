@@ -16,6 +16,17 @@ describe('applyPatch — task_def / constraint ops', () => {
     expect(r.requiresReschedule).toBe(true);
     expect(r.inverse_ops).toContainEqual({ op: 'update_task_def', key: 'math', patch: { duration_min: 90 } });
   });
+  it('update_task_def 传 preferred_period: null 可清除时段偏好', async () => {
+    const withPref: PlanState = {
+      ...base,
+      task_defs: [{ ...base.task_defs[0], preferred_period: 'evening' }],
+    };
+    const r = applyPatch(withPref, [{ op: 'update_task_def', key: 'math', patch: { preferred_period: null } }]);
+    expect(r.state.task_defs[0].preferred_period).toBeUndefined();
+    expect(r.inverse_ops).toContainEqual({ op: 'update_task_def', key: 'math', patch: { preferred_period: 'evening' } });
+    const { ApplyOpSchema } = await import('../../schemas');
+    expect(ApplyOpSchema.safeParse({ op: 'update_task_def', key: 'math', patch: { preferred_period: null } }).success).toBe(true);
+  });
   it('add_task_def 追加并求逆', () => {
     const r = applyPatch(base, [{ op: 'add_task_def', value: { key: 'eng', title: '英语', category: 'study', duration_min: 60, frequency: { type: 'daily' }, priority: 'mid', splittable: false, sort_order: 1 } }]);
     expect(r.state.task_defs.map((t) => t.key)).toEqual(['math', 'eng']);
