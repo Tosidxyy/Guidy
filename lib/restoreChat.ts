@@ -16,7 +16,7 @@ export interface RestoredChat {
 }
 
 // jsonb 回读会重排对象键，直接 JSON.stringify 比较会误判，故先规范化键序。
-function canonical(value: unknown): string {
+export function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (value && typeof value === 'object') {
     const obj = value as Record<string, unknown>;

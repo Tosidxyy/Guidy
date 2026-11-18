@@ -8,6 +8,7 @@ import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { conversationForPlan } from '@/lib/planConversation';
 import { restoreChat } from '@/lib/restoreChat';
+import { appliedPatches } from '@/lib/appliedPatches';
 import { useCommitPlan } from '@/lib/useCommitPlan';
 import { useApplyPatch } from '@/lib/useApplyPatch';
 import type { ConstraintSetArtifact, PatchArtifact } from '@/shared/schemas';
@@ -131,8 +132,13 @@ export function ChatPanel() {
         {artifact && clarifications.length === 0 && !confirmedDraft && (
           <ConstraintConfirmCard artifact={artifact} onConfirm={onConfirm} onCancel={() => useChatStore.setState({ artifact: null })} />
         )}
-        {patch && planId && !confirmedPatch && (
+        {patch && planId && !confirmedPatch && !appliedPatches.isApplied(conversationId, patch) && (
           <PatchConfirmCard patch={patch} onConfirm={onConfirmPatch} onCancel={() => useChatStore.setState({ patch: null })} />
+        )}
+        {patch && planId && !confirmedPatch && appliedPatches.isApplied(conversationId, patch) && (
+          <p className="rounded-lg border border-site-line bg-site-surface px-3 py-2 text-[11px] text-site-ink-soft">
+            这条调整已经应用过，如需再次修改请直接告诉我。
+          </p>
         )}
         {patch && !planId && (
           <div className="rounded-lg border border-site-warning/40 bg-site-warning/5 p-3">

@@ -6,6 +6,8 @@ import { buildPatchBody } from '@/lib/patchInput';
 import { applyPatch } from '@/shared/engine';
 import { planController } from '@/lib/planRuntime';
 import { resolvePatchTargets } from '@/lib/patchTargets';
+import { appliedPatches } from '@/lib/appliedPatches';
+import { useChatStore } from '@/store/useChatStore';
 import { usePlanStore, type ReschedulePreview } from '@/store/usePlanStore';
 import { usePlanSync } from '@/store/usePlanSync';
 import type { PatchArtifact } from '@/shared/schemas';
@@ -76,9 +78,10 @@ export function useApplyPatch() {
       const e = err instanceof ApiError ? err : new ApiError('service_unavailable', 503, '提交失败，请重试');
       toast.error(e.message, { description: e.diagnosticId ? `诊断 ID：${e.diagnosticId}` : undefined });
     },
-    onSuccess: ({ resp, foreignOps }: { resp: any; foreignOps: number }) => {
+    onSuccess: ({ resp, foreignOps }: { resp: any; foreignOps: number }, patch: PatchArtifact) => {
       const store = usePlanStore.getState();
       pendingPreview.current = null;
+      appliedPatches.mark(useChatStore.getState().conversationId, patch);
       if (resp) {
         const next: PlanState = {
           plan: { ...store.state.plan, version: resp.version, updated_at: new Date().toISOString() },
