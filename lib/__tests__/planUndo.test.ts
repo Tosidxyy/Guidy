@@ -65,4 +65,15 @@ describe('createPlanUndo', () => {
       optimistic: expect.objectContaining({ plan: expect.objectContaining({ title: '' }) }),
     }));
   });
+
+  it('undoDetailed 在服务端拒绝时返回原因（供跨计划撤销逐个回报）', async () => {
+    useBlockHistory.setState({ entries: {}, redo: {} });
+    useBlockHistory.getState().push('p1', { at: 1, label: '合并', forwardOps: [], inverseOps: [{ op: 'remove_block', id: 'b1' }] });
+    const apply = vi.fn(async () => ({ ok: false, reason: '计划已被更新，请刷新后重试' }));
+    const undo = createPlanUndo({ apply, getPlanState: () => plan });
+    const r = await undo.undoDetailed('p1');
+    expect(r.label).toBeNull();
+    expect(r.reason).toContain('计划已被更新');
+    expect(useBlockHistory.getState().entries.p1).toHaveLength(1);
+  });
 });

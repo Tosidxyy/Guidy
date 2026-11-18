@@ -101,6 +101,19 @@ export function CalendarPanel() {
     return findConflicts(plans, { onlyPlanId: state.plan.id }).filter((c) => !ignoredConflicts.includes(c.key));
   }, [state.plan.id, state.plan.title, state.blocks, layers, ignoredConflicts]);
 
+  const undoAction = useCallback((ids: string[]) => ({
+    label: '撤销',
+    onClick: () => {
+      void undoMergedPlans(ids).then(({ undone, failures }) => {
+        if (failures.length) {
+          toast.error(`已撤销 ${undone} 次，${failures.length} 次失败：${failures[0]}`);
+          return;
+        }
+        if (undone) toast.success(`已撤销 ${undone} 次合并`);
+      });
+    },
+  }), []);
+
   const runMerge = useCallback(async (targets: PlanConflict[]) => {
     if (!targets.length) return;
     const merged: string[] = [];
@@ -111,18 +124,14 @@ export function CalendarPanel() {
       if (!r.ok) {
         toast.error(r.reason ?? '合并失败');
         if (r.planIds.length) {
-          toast(`已合并部分冲突`, {
-            action: { label: '撤销', onClick: () => { void undoMergedPlans(planIds).then((l) => { if (l) toast.success(`已撤销：${l}`); }); } },
-          });
+          toast('已合并部分冲突', { action: undoAction(planIds) });
         }
         return;
       }
       merged.push(conflict.merged_title);
     }
-    toast.success(merged.length > 1 ? `已合并 ${merged.length} 处重叠` : `已合并「${merged[0]}」`, {
-      action: { label: '撤销', onClick: () => { void undoMergedPlans(planIds).then((l) => { if (l) toast.success(`已撤销：${l}`); }); } },
-    });
-  }, []);
+    toast.success(merged.length > 1 ? `已合并 ${merged.length} 处重叠` : `已合并「${merged[0]}」`, { action: undoAction(planIds) });
+  }, [undoAction]);
 
   const requestSwitchPlan = useCallback((id: string, title: string) => {
     if (id === state.plan.id) return;

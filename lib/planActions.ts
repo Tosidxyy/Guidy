@@ -132,14 +132,16 @@ export async function mergeConflictAction(conflict: PlanConflict): Promise<{ ok:
   return { ok: true, planIds: done };
 }
 
-/** 撤销一次跨计划合并：按合并顺序倒序撤销两侧的该条历史。 */
-export async function undoMergedPlans(planIds: string[]): Promise<string | null> {
-  let last: string | null = null;
+/** 撤销一次跨计划合并：按合并顺序倒序撤销两侧的该条历史，逐个计划回报失败原因。 */
+export async function undoMergedPlans(planIds: string[]): Promise<{ undone: number; failures: string[] }> {
+  let undone = 0;
+  const failures: string[] = [];
   for (const planId of [...planIds].reverse()) {
-    const label = await planController.undo(planId);
-    if (label) last = label;
+    const r = await planController.undoDetailed(planId);
+    if (r.label) undone += 1;
+    else if (r.reason) failures.push(r.reason);
   }
-  return last;
+  return { undone, failures: Array.from(new Set(failures)) };
 }
 
 /** 应用「重新排程」预览：已保存计划走服务端 reschedule，未保存计划保持本地应用。 */
