@@ -56,7 +56,7 @@ describe('prompt 对话策略 — 自由对话 agent，意图分流', () => {
   it('buildUserMessage 无计划时不强制生成产物', () => {
     const m = buildUserMessage({ message: '你是什么模型', plan: null, history: [] });
     expect(m).not.toContain('请生成 constraint_set');
-    expect(m).toContain('当前还没有计划');
+    expect(m).toContain('当前对话还没有计划');
   });
   it('方案未落库时的修改仍要求完整 constraint_set，不输出 patch', () => {
     expect(buildSystemPrompt()).toContain('不要输出 patch');

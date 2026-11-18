@@ -12,6 +12,8 @@ import { appFrame, insertMessage, appendAssistant, advanceCursor, sha256Hex } fr
 import { readSSE } from '../qca/sse.mjs';
 import { LIMITS } from '../../shared/constants.ts';
 import { findConflicts, type ConflictPlan } from '../../shared/engine/conflicts.ts';
+import { constraintText } from '../../lib/describe.ts';
+import type { OtherPlanContext } from '../prompt.ts';
 import type { Deps, RouteCtx, AppEvent } from '../types.ts';
 import type { PlanState } from '../../shared/types.ts';
 
@@ -34,11 +36,33 @@ function horizonRange(p: { horizon_start: string; horizon_days: number }) {
   return { start, end: start + p.horizon_days * DAY_MS };
 }
 
+const WINDOW_TYPES = new Set(['busy_window', 'active_window', 'fixed_block']);
+
+function windowSummary(constraints: any[]): string[] {
+  return constraints
+    .filter((c) => c.enabled !== false && WINDOW_TYPES.has(c.payload?.type))
+    .slice(0, 6)
+    .map((c) => constraintText(c.payload));
+}
+
+// 新对话（草稿）没有活动计划：给一份只读的共享日历摘要，避免让用户重复说空闲时间。
+async function loadSharedCalendar(db: Deps['db'], visitor: string): Promise<OtherPlanContext[]> {
+  const plans = rows(await db.from('plans').select('*').eq('owner_visitor_id', visitor).order('updated_at', { ascending: false }).limit(3));
+  const out: OtherPlanContext[] = [];
+  for (const p of plans) {
+    const blocks = rows(await db.from('blocks').select('*').eq('plan_id', p.id));
+    const constraints = rows(await db.from('constraints').select('*').eq('plan_id', p.id));
+    if (!blocks.length && !constraints.length) continue;
+    out.push({ id: p.id, title: p.title, horizon_start: p.horizon_start, horizon_days: p.horizon_days, timezone: p.timezone, blocks, windows: windowSummary(constraints) });
+  }
+  return out;
+}
 // 只扫与活动计划 horizon 相交的其他计划，避免每轮对话全库扫描。
 async function loadRelatedPlans(db: Deps['db'], visitor: string, active: PlanState) {
   const others = rows(await db.from('plans').select('*').eq('owner_visitor_id', visitor));
   const activeRange = horizonRange(active.plan);
   const sources: ConflictPlan[] = [{ id: active.plan.id, title: active.plan.title, blocks: active.blocks }];
+  const windowsById = new Map<string, string[]>();
   for (const p of others) {
     if (p.id === active.plan.id) continue;
     const range = horizonRange(p);
@@ -85,7 +109,9 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const fingerprint = await sha256Hex(`${visitor}:${text}`);
   const { replay, intent } = await beginDispatch(deps.db, { request_id: requestId, visitor_id: visitor, conversation_id: conv.id, payload_fingerprint: fingerprint });
   const planState = await loadPlanState(deps.db, visitor, body.plan_id ?? null);
-  const related = planState ? await loadRelatedPlans(deps.db, visitor, planState as PlanState) : { conflicts: [], others: [] };
+  const related = planState
+    ? await loadRelatedPlans(deps.db, visitor, planState as PlanState)
+    : { conflicts: [], others: await loadSharedCalendar(deps.db, visitor) };
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {

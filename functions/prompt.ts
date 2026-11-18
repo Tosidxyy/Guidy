@@ -84,6 +84,7 @@ export function buildSystemPrompt(): string {
     '【标识与破坏性操作】',
     '- patch 里的 task key、constraint id、block id 必须逐字取自下方上下文（当前计划或其他计划），禁止根据标题猜测；其他计划的块只能用 id 修改，不要臆造 id。',
     '- 时间块后面的「备注」是用户补充的信息（例如具体章节、器材、地点），排程与调整时要参考，不要忽略。',
+    '- 上下文里没有列出的计划、时段、忙时一律视为不存在，不要编造；需要时用一句话追问。',
     '- 用户要求清空当前计划：先确认范围；确认后输出单个 clear_plan op，不要发明 key 或枚举全部块。',
     '- 用户要求删除/清空所有计划（跨计划）：不要输出 patch；说明当前对话只能清空当前计划，删除全部计划需在设置中确认「删除我的全部数据」。',
     '',
@@ -96,6 +97,46 @@ export function buildSystemPrompt(): string {
   ].join('\n');
 }
 
+export interface OtherPlanContext {
+  id: string;
+  title: string;
+  horizon_start: string;
+  horizon_days: number;
+  timezone: string;
+  blocks: Block[];
+  /** 忙时/可安排时段等只读摘要（来自该计划的约束，不可跨计划编辑）。 */
+  windows?: string[];
+}
+
+function pushOtherPlans(
+  lines: string[],
+  others: OtherPlanContext[] | undefined,
+  timezone: string,
+  opts: { editing: boolean },
+): void {
+  if (!others?.length) return;
+  if (opts.editing) {
+    lines.push('【共享日历中的其他计划】按 id 修改其中的块；新建块或改计划元数据要带该计划的 plan id（不提供其他计划的任务与约束上下文）：');
+  }
+  for (const other of others.slice(0, 3)) {
+    lines.push(`- 计划「${other.title}」（plan id ${other.id}，开始日 ${other.horizon_start}，跨度 ${other.horizon_days} 天，时区 ${other.timezone}）`);
+    if (other.windows?.length) lines.push(`  - 已有时段：${other.windows.join('；')}`);
+    const limit = opts.editing ? 12 : 6;
+    for (const b of other.blocks.slice(0, limit)) {
+      const day = localDay(b.start_utc, timezone);
+      const start = minToHHmm(localMinutes(b.start_utc, timezone));
+      const end = minToHHmm(localMinutes(b.end_utc, timezone));
+      lines.push(`  - ${b.id}｜${b.title}｜${day} ${start}–${end}${b.notes ? `｜备注：${b.notes.slice(0, 40)}` : ''}`);
+    }
+    if (other.blocks.length > limit) lines.push(`  - …共 ${other.blocks.length} 个时间块，仅列前 ${limit} 个`);
+  }
+  if (!opts.editing) return;
+  lines.push('修改其他计划的块：move_block / update_block / remove_block 直接使用上面的块 id。');
+  lines.push('在其他计划新建块：add_block 的 value 照旧，另加 "plan_id":"<对方计划 id>"。');
+  lines.push('改其他计划元数据：update_plan 带 "plan_id":"<对方计划 id>"，patch 里写 title / horizon_start / horizon_days / timezone。仅在用户明确要求时使用。');
+  lines.push('增删任务定义、改约束、清空计划、重新排程只作用于当前计划；任务 key 只在当前计划内有效。');
+}
+
 export function buildUserMessage(input: {
   message: string;
   plan: PlanState | null;
@@ -103,7 +144,7 @@ export function buildUserMessage(input: {
   today?: string;
   timezone?: string;
   conflicts?: PlanConflict[];
-  others?: { id: string; title: string; horizon_start: string; horizon_days: number; timezone: string; blocks: Block[] }[];
+  others?: OtherPlanContext[];
 }): string {
   const lines: string[] = [];
   const timezone = input.plan?.plan.timezone ?? input.timezone ?? 'Asia/Shanghai';
@@ -129,23 +170,7 @@ export function buildUserMessage(input: {
       lines.push(`- ${b.id}｜${b.title}｜${day} ${start}–${end}${b.notes ? `｜备注：${b.notes.slice(0, 60)}` : ''}`);
     }
     if (input.plan.blocks.length > 60) lines.push(`- …共 ${input.plan.blocks.length} 个时间块，仅列前 60 个`);
-    if (input.others?.length) {
-      lines.push('【共享日历中的其他计划】按 id 修改其中的块；新建块或改计划元数据要带该计划的 plan id（不提供其他计划的任务与约束上下文）：');
-      for (const other of input.others.slice(0, 3)) {
-        lines.push(`- 计划「${other.title}」（plan id ${other.id}，开始日 ${other.horizon_start}，跨度 ${other.horizon_days} 天，时区 ${other.timezone}）`);
-        for (const b of other.blocks.slice(0, 12)) {
-          const day = localDay(b.start_utc, timezone);
-          const start = minToHHmm(localMinutes(b.start_utc, timezone));
-          const end = minToHHmm(localMinutes(b.end_utc, timezone));
-          lines.push(`  - ${b.id}｜${b.title}｜${day} ${start}–${end}${b.notes ? `｜备注：${b.notes.slice(0, 40)}` : ''}`);
-        }
-        if (other.blocks.length > 12) lines.push(`  - …共 ${other.blocks.length} 个时间块，仅列前 12 个`);
-      }
-      lines.push('修改其他计划的块：move_block / update_block / remove_block 直接使用上面的块 id。');
-      lines.push('在其他计划新建块：add_block 的 value 照旧，另加 "plan_id":"<对方计划 id>"。');
-      lines.push('改其他计划元数据：update_plan 带 "plan_id":"<对方计划 id>"，patch 里写 title / horizon_start / horizon_days / timezone。仅在用户明确要求时使用。');
-      lines.push('增删任务定义、改约束、清空计划、重新排程只作用于当前计划；任务 key 只在当前计划内有效。');
-    }
+    pushOtherPlans(lines, input.others, timezone, { editing: true });
     if (input.conflicts?.length) {
       lines.push('【共享日历：跨计划时间重叠】（来自用户的其他计划，仅供提醒，不要自行修改）');
       for (const c of input.conflicts.slice(0, 6)) {
@@ -161,8 +186,12 @@ export function buildUserMessage(input: {
     }
     lines.push('当前计划已保存；用户要求修改时输出 patch。');
   } else {
-    lines.push('当前还没有计划。');
-    lines.push('注意：当前没有任何已保存的计划，之前的 constraint_set 也尚未落库。用户对方案的修改请输出完整 constraint_set，不要输出 patch。');
+    lines.push('当前对话还没有计划（草稿状态）；之前的 constraint_set 也尚未落库。用户对方案的修改请输出完整 constraint_set，不要输出 patch。');
+    if (input.others?.length) {
+      lines.push('【用户已有的计划（同一份共享日历）】这些安排已经存在，不要重复询问：');
+      pushOtherPlans(lines, input.others, timezone, { editing: false });
+      lines.push('新建计划时：已有的忙时与空闲时段直接沿用，不要再问「你什么时候有空」；只需确认是否还要追加新的忙时（例如新增兼职/课程）或是否要避开某些时段。只能引用上面列出的计划与时段，不要编造未列出的安排。');
+    }
   }
   for (const h of input.history.slice(-6)) lines.push(`${h.role}: ${h.content}`);
   lines.push(`user: ${input.message}`);
