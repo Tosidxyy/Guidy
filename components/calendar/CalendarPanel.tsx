@@ -3,17 +3,15 @@ import { addDays, format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { CalendarPlus } from 'lucide-react';
 import type { Block, PlanState } from '@/shared/types';
-import { dayList, hhmmToMin, localDay, localMinutes, minToHHmm, utcAt, validatePlacement, weekdayOfDay } from '@/shared/engine';
-import { useQueryClient } from '@tanstack/react-query';
+import { dayList, hhmmToMin, localDay, localMinutes, minToHHmm, utcAt, validatePlacement, weekdayOfDay, applyPatch } from '@/shared/engine';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { usePlanLayers } from '@/lib/usePlanLayers';
 import { collectForeignBlocks, sharedHorizonStart, type ForeignBlock } from '@/lib/calendarLayers';
 import { usePlanManager } from '@/lib/usePlanManager';
+import { blockController } from '@/lib/blockRuntime';
 import { moveSelection } from '@/lib/moveSelection';
 import { todayStr } from '@/lib/seed';
-import { api, ApiError } from '@/lib/api';
-import { ENGINE_VERSION } from '@/shared/constants';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -84,7 +82,6 @@ export function CalendarPanel() {
   const drawer = useUiStore((s) => s.drawer);
   const { layers } = usePlanLayers(state.plan.id);
   const { switchPlan } = usePlanManager();
-  const qc = useQueryClient();
   const lastForeignDrag = useRef(0);
   const [pendingSwitch, setPendingSwitch] = useState<{ id: string; title: string } | null>(null);
 
@@ -100,59 +97,6 @@ export function CalendarPanel() {
     }
     void switchPlan(id);
   }, [state.plan.id, switchPlan]);
-
-  const refreshPlanCache = useCallback((planId: string, resp: any) => {
-    qc.setQueryData<PlanState>(['plan', planId], (old) => old ? {
-      ...old,
-      plan: { ...old.plan, version: resp.version, updated_at: new Date().toISOString() },
-      task_defs: resp.task_defs,
-      constraints: resp.constraints,
-      blocks: resp.blocks,
-    } : old);
-    qc.invalidateQueries({ queryKey: ['plans'] });
-  }, [qc]);
-
-  const undoForeignMove = useCallback(async (planId: string, version: number, inverseOps: any, label: string) => {
-    try {
-      const resp = await api.applyPatch({
-        preview_id: crypto.randomUUID(), plan_id: planId, base_version: version,
-        ops: inverseOps, result_hash: null, engine_version: ENGINE_VERSION,
-      });
-      refreshPlanCache(planId, resp);
-      toast.success(`已撤销移动（${label}）`);
-    } catch (err) {
-      const e = err instanceof ApiError ? err : null;
-      toast.error(e?.message ?? '撤销失败，请刷新后重试');
-    }
-  }, [refreshPlanCache]);
-
-  const commitForeignMove = useCallback(async (drag: DragState, start_utc: string, end_utc: string) => {
-    const planId = drag.planId;
-    if (!planId) return;
-    const key = ['plan', planId];
-    const prev = qc.getQueryData<PlanState>(key);
-    if (!prev) {
-      toast.error('计划数据未就绪，请刷新后重试');
-      return;
-    }
-    qc.setQueryData<PlanState>(key, { ...prev, blocks: prev.blocks.map((b) => b.id === drag.block.id ? { ...b, start_utc, end_utc } : b) });
-    try {
-      const resp = await api.applyPatch({
-        preview_id: crypto.randomUUID(), plan_id: planId, base_version: drag.baseVersion,
-        ops: [{ op: 'move_block', id: drag.block.id, start_utc, end_utc }],
-        result_hash: null, engine_version: ENGINE_VERSION,
-      });
-      refreshPlanCache(planId, resp);
-      const verb = drag.mode === 'resize' ? '调整' : '移动';
-      toast.success(`已${verb}「${drag.block.title}」${drag.planLabel ? `（${drag.planLabel}）` : ''}`, {
-        action: { label: '撤销', onClick: () => { void undoForeignMove(planId, resp.version, resp.inverse_ops, drag.block.title); } },
-      });
-    } catch (err) {
-      qc.setQueryData(key, prev);
-      const e = err instanceof ApiError ? err : null;
-      toast.error(e?.message ?? '移动失败，已恢复原位置');
-    }
-  }, [qc, refreshPlanCache, undoForeignMove]);
 
   const tz = state.plan.timezone;
   const today = todayStr(tz);
@@ -233,6 +177,81 @@ export function CalendarPanel() {
       constraints: source.constraints,
     },
   ), [tz]);
+
+  const applyMoveOps = useCallback(async (drag: DragState) => {
+    const planId = drag.planId;
+    if (!planId) {
+      const r = drag.mode === 'resize'
+        ? moveBlock(drag.block.id, utcAt(days[drag.origDayIdx], drag.startMin, tz), utcAt(days[drag.origDayIdx], drag.endMin, tz))
+        : moveBlocks(drag.ids, drag.dayIdx - drag.origDayIdx, drag.startMin - drag.origStart);
+      if (!r.ok) { toast.error(r.reason ?? '无法放置到该位置'); flashInvalid(drag.ids); }
+      return;
+    }
+
+    let moves: { id: string; start_utc: string; end_utc: string }[];
+    if (drag.mode === 'resize') {
+      if (!drag.ok) { toast.error(drag.reason ?? '无法调整到该时长'); flashInvalid([drag.block.id]); return; }
+      moves = [{
+        id: drag.block.id,
+        start_utc: utcAt(days[drag.origDayIdx], drag.startMin, tz),
+        end_utc: utcAt(days[drag.origDayIdx], drag.endMin, tz),
+      }];
+    } else {
+      const result = moveSelection(drag.source, drag.ids, drag.dayIdx - drag.origDayIdx, drag.startMin - drag.origStart);
+      if (!result.ok) { toast.error(result.reason ?? '无法放置到该位置'); flashInvalid(drag.ids); return; }
+      moves = result.moves;
+    }
+
+    const ops = moves.map((m) => ({ op: 'move_block' as const, id: m.id, start_utc: m.start_utc, end_utc: m.end_utc }));
+    const optimisticBlocks = applyPatch(drag.source, ops).state.blocks;
+    const label = drag.ids.length > 1
+      ? `移动 ${drag.ids.length} 个任务块`
+      : drag.mode === 'resize' ? `调整「${drag.block.title}」` : `移动「${drag.block.title}」`;
+    const res = await blockController.apply({ planId, ops, label, optimisticBlocks });
+    if (!res.ok) { toast.error(res.reason ?? '移动失败'); flashInvalid(drag.ids); return; }
+
+    const done = drag.ids.length > 1
+      ? `已移动 ${drag.ids.length} 个任务块`
+      : `已${drag.mode === 'resize' ? '调整' : '移动'}「${drag.block.title}」`;
+    toast.success(done, {
+      action: { label: '撤销', onClick: () => { void blockController.undo(planId).then((l) => { if (l) toast.success(`已撤销：${l}`); }); } },
+    });
+    if (!drag.foreign) selectMany(drag.ids);
+  }, [days, flashInvalid, moveBlock, moveBlocks, selectMany, tz]);
+
+  const removeSelected = useCallback(async () => {
+    const current = usePlanStore.getState().state;
+    const planId = current.plan.id;
+    const targets = current.blocks.filter((b) => selectedIds.includes(b.id));
+    if (!targets.length) return;
+    if (!planId) {
+      deleteBlocks(selectedIds);
+      select(null);
+      toast(`已删除 ${targets.length} 个任务块`, { action: { label: '撤销', onClick: () => usePlanStore.getState().undo() } });
+      return;
+    }
+    const ops = targets.map((b) => ({ op: 'remove_block' as const, id: b.id }));
+    const optimisticBlocks = applyPatch(current, ops).state.blocks;
+    const label = targets.length > 1 ? `删除 ${targets.length} 个任务块` : `删除「${targets[0].title}」`;
+    const r = await blockController.apply({ planId, ops, label, optimisticBlocks });
+    if (!r.ok) { toast.error(r.reason ?? '删除失败'); return; }
+    select(null);
+    toast.success(`已${label}`, {
+      action: { label: '撤销', onClick: () => { void blockController.undo(planId).then((l) => { if (l) toast.success(`已撤销：${l}`); }); } },
+    });
+  }, [deleteBlocks, select, selectedIds]);
+
+  const togglePinnedBlock = useCallback(async (id: string) => {
+    const current = usePlanStore.getState().state;
+    const planId = current.plan.id;
+    const target = current.blocks.find((b) => b.id === id);
+    if (!target) return;
+    if (!planId) { togglePin(id); return; }
+    const ops = [{ op: 'update_block' as const, id, patch: { pinned: !target.pinned } }];
+    const optimisticBlocks = applyPatch(current, ops).state.blocks;
+    const r = await blockController.apply({ planId, ops, label: `${target.pinned ? '取消钉住' : '钉住'}「${target.title}」`, optimisticBlocks });
+    if (!r.ok) toast.error(r.reason ?? '操作失败');
+  }, [togglePin]);
 
   const onDragMove = useCallback((e: PointerEvent) => {
     const drag = dragRef.current;
@@ -315,32 +334,9 @@ export function CalendarPanel() {
       else select(drag.block.id);
       return;
     }
-    if (drag.foreign) {
-      lastForeignDrag.current = Date.now();
-      const day = days[drag.mode === 'resize' ? drag.origDayIdx : drag.dayIdx];
-      void commitForeignMove(drag, utcAt(day, drag.startMin, tz), utcAt(day, drag.endMin, tz));
-      return;
-    }
-    if (drag.mode === 'resize') {
-      const result = moveBlock(drag.block.id, utcAt(days[drag.origDayIdx], drag.startMin, tz), utcAt(days[drag.origDayIdx], drag.endMin, tz));
-      if (!result.ok) {
-        toast.error(result.reason ?? '无法放置到该位置');
-        flashInvalid([drag.block.id]);
-      } else {
-        toast.success(`「${drag.block.title}」调整为 ${minToHHmm(drag.startMin)}–${minToHHmm(drag.endMin)}`);
-      }
-      return;
-    }
-    const result = moveBlocks(drag.ids, drag.dayIdx - drag.origDayIdx, drag.startMin - drag.origStart);
-    if (!result.ok) {
-      toast.error(result.reason ?? '无法放置到该位置');
-      flashInvalid(drag.ids);
-      return;
-    }
-    if (drag.ids.length > 1) toast.success(`已移动 ${drag.ids.length} 个任务块`);
-    else toast.success(`「${drag.block.title}」调整为 ${minToHHmm(drag.startMin)}–${minToHHmm(drag.endMin)}`);
-    selectMany(drag.ids);
-  }, [commitForeignMove, days, flashInvalid, moveBlock, moveBlocks, onDragMove, requestSwitchPlan, select, selectMany, toggleSelected, tz]);
+    if (drag.foreign) lastForeignDrag.current = Date.now();
+    void applyMoveOps(drag);
+  }, [applyMoveOps, onDragMove, requestSwitchPlan, select, toggleSelected]);
 
   const beginDrag = useCallback((e: React.PointerEvent, block: Block, mode: 'move' | 'resize', foreignInfo?: ForeignBlock) => {
     if (e.button !== 0 || preview) return;
@@ -406,8 +402,22 @@ export function CalendarPanel() {
       const tryMove = (dIdx: number, s: number) => {
         if (dIdx < 0 || dIdx >= days.length) return;
         const ns = Math.min(visibleEnd - dur, Math.max(visibleStart, s));
-        const r = moveBlocks(selectedIds, dIdx - dayIdx, ns - start);
-        if (!r.ok) toast.error(r.reason ?? '无法移动');
+        const current = usePlanStore.getState().state;
+        const planId = current.plan.id;
+        if (!planId) {
+          const r = moveBlocks(selectedIds, dIdx - dayIdx, ns - start);
+          if (!r.ok) toast.error(r.reason ?? '无法移动');
+          return;
+        }
+        const result = moveSelection(current, selectedIds, dIdx - dayIdx, ns - start);
+        if (!result.ok) { toast.error(result.reason ?? '无法移动'); return; }
+        const ops = result.moves.map((m) => ({ op: 'move_block' as const, id: m.id, start_utc: m.start_utc, end_utc: m.end_utc }));
+        void blockController.apply({
+          planId,
+          ops,
+          label: selectedIds.length > 1 ? `移动 ${selectedIds.length} 个任务块` : `移动「${block.title}」`,
+          optimisticBlocks: applyPatch(current, ops).state.blocks,
+        }).then((r) => { if (!r.ok) toast.error(r.reason ?? '无法移动'); });
       };
 
       switch (e.key) {
@@ -419,20 +429,17 @@ export function CalendarPanel() {
         case 'Delete':
         case 'Backspace': {
           e.preventDefault();
-          const count = selectedIds.length;
-          deleteBlocks(selectedIds);
-          select(null);
-          toast(count > 1 ? `已删除 ${count} 个任务块` : `已删除「${block.title}」`, { action: { label: '撤销', onClick: () => usePlanStore.getState().undo() } });
+          void removeSelected();
           break;
         }
         case 'p':
-        case 'P': togglePin(block.id); break;
+        case 'P': void togglePinnedBlock(block.id); break;
         default: break;
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedIds, state.blocks, days, drawer, tz, moveBlocks, deleteBlocks, togglePin, openDrawer, select, visibleEnd, visibleStart]);
+  }, [selectedIds, state.blocks, days, drawer, tz, moveBlocks, openDrawer, select, visibleEnd, visibleStart, removeSelected, togglePinnedBlock]);
 
   const onColumnPointerDown = useCallback((e: React.PointerEvent) => {
     if (preview || e.button !== 0 || e.pointerType === 'touch') return;

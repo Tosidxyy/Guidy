@@ -7,7 +7,7 @@ export interface PatchResult {
   missing: string[];
 }
 
-function clone<T>(x: T): T { return JSON.parse(JSON.stringify(x)) as T; }
+function clone<T>(x: T): T { return x === undefined ? x : JSON.parse(JSON.stringify(x)) as T; }
 
 function blockToManual(b: Block): ManualBlock {
   return { title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc, priority: b.priority, pinned: b.pinned, ...(b.notes ? { notes: b.notes } : {}) };

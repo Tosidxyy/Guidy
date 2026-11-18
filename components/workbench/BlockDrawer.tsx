@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Pin, Trash2 } from 'lucide-react';
 import { CATEGORIES } from '@/shared/constants';
-import { dayList, localDay, localMinutes, minToHHmm, utcAt } from '@/shared/engine';
+import { dayList, localDay, localMinutes, minToHHmm, utcAt, applyPatch } from '@/shared/engine';
 import type { Category, Priority } from '@/shared/types';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
+import { blockController } from '@/lib/blockRuntime';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -60,20 +61,71 @@ export function BlockDrawer() {
     );
   }
 
-  const save = () => {
+  const save = async () => {
     const name = title.trim();
     if (!name) { toast.error('任务名称不能为空'); return; }
     const [h, m] = startTime.split(':').map(Number);
     const startMin = h * 60 + m;
     if (!Number.isFinite(startMin) || duration < 5) { toast.error('请填写有效的时间与时长（≥5 分钟）'); return; }
+    const startUtc = utcAt(day, startMin, tz);
+    const endUtc = utcAt(day, startMin + duration, tz);
+    const current = usePlanStore.getState().state;
+    const planId = current.plan.id;
+    if (planId) {
+      const patch = {
+        title: name.slice(0, 60), category, priority,
+        notes: notes.trim() ? notes.trim().slice(0, 500) : undefined,
+        start_utc: startUtc, end_utc: endUtc,
+      };
+      const ops = [{ op: 'update_block' as const, id: block.id, patch }];
+      const optimisticBlocks = applyPatch(current, ops).state.blocks;
+      const r = await blockController.apply({ planId, ops, label: `编辑「${block.title}」`, optimisticBlocks });
+      if (!r.ok) { toast.error(r.reason ?? '保存失败'); return; }
+      toast.success('已保存', {
+        action: { label: '撤销', onClick: () => { void blockController.undo(planId).then((label) => { if (label) toast.success(`已撤销：${label}`); }); } },
+      });
+      closeDrawer();
+      return;
+    }
     const timeChanged = day !== localDay(block.start_utc, tz) || startMin !== localMinutes(block.start_utc, tz) || duration !== localMinutes(block.end_utc, tz) - localMinutes(block.start_utc, tz);
     if (timeChanged) {
-      const r = moveBlock(block.id, utcAt(day, startMin, tz), utcAt(day, startMin + duration, tz));
+      const r = moveBlock(block.id, startUtc, endUtc);
       if (!r.ok) { toast.error(r.reason ?? '无法移动到该时间'); return; }
     }
     updateBlock(block.id, { title: name.slice(0, 60), category, priority, notes: notes.trim() ? notes.trim().slice(0, 500) : undefined });
     toast.success('已保存');
     closeDrawer();
+  };
+
+  const togglePinned = async () => {
+    const current = usePlanStore.getState().state;
+    const planId = current.plan.id;
+    if (!planId) { togglePin(block.id); return; }
+    const ops = [{ op: 'update_block' as const, id: block.id, patch: { pinned: !block.pinned } }];
+    const optimisticBlocks = applyPatch(current, ops).state.blocks;
+    const r = await blockController.apply({ planId, ops, label: `${block.pinned ? '取消钉住' : '钉住'}「${block.title}」`, optimisticBlocks });
+    if (!r.ok) toast.error(r.reason ?? '操作失败');
+  };
+
+  const remove = async () => {
+    const current = usePlanStore.getState().state;
+    const planId = current.plan.id;
+    if (!planId) {
+      deleteBlock(block.id);
+      select(null);
+      closeDrawer();
+      toast(`已删除「${block.title}」`, { action: { label: '撤销', onClick: () => usePlanStore.getState().undo() } });
+      return;
+    }
+    const ops = [{ op: 'remove_block' as const, id: block.id }];
+    const optimisticBlocks = applyPatch(current, ops).state.blocks;
+    const r = await blockController.apply({ planId, ops, label: `删除「${block.title}」`, optimisticBlocks });
+    if (!r.ok) { toast.error(r.reason ?? '删除失败'); return; }
+    select(null);
+    closeDrawer();
+    toast.success(`已删除「${block.title}」`, {
+      action: { label: '撤销', onClick: () => { void blockController.undo(planId).then((label) => { if (label) toast.success(`已撤销：${label}`); }); } },
+    });
   };
 
   return (
@@ -131,23 +183,18 @@ export function BlockDrawer() {
           </div>
           <div className="flex items-center justify-between rounded-lg border border-site-line bg-site-surface px-3 py-2.5">
             <div className="flex items-center gap-2 text-sm text-site-ink"><Pin className="h-4 w-4 text-site-brand" /> 钉住此任务块</div>
-            <Switch checked={block.pinned} onCheckedChange={() => togglePin(block.id)} aria-label="钉住此任务块" />
+            <Switch checked={block.pinned} onCheckedChange={() => { void togglePinned(); }} aria-label="钉住此任务块" />
           </div>
         </div>
 
         <div className="flex gap-2 border-t border-site-line px-5 py-4">
           <Button
             variant="outline" className="text-site-danger hover:text-site-danger"
-            onClick={() => {
-              deleteBlock(block.id);
-              select(null);
-              closeDrawer();
-              toast(`已删除「${block.title}」`, { action: { label: '撤销', onClick: () => usePlanStore.getState().undo() } });
-            }}
+            onClick={() => { void remove(); }}
           >
             <Trash2 className="mr-1.5 h-4 w-4" /> 删除
           </Button>
-          <Button className="flex-1" onClick={save}>保存</Button>
+          <Button className="flex-1" onClick={() => { void save(); }}>保存</Button>
         </div>
       </SheetContent>
     </Sheet>

@@ -35,6 +35,10 @@ describe('applyPatch — task_def / constraint ops', () => {
     expect(r.state.blocks).toHaveLength(0);
     expect(r.inverse_ops.some((o) => o.op === 'add_task_def')).toBe(true);
   });
+  it('update_block patch 含 undefined 字段不崩溃', () => {
+    const r = applyPatch(base, [{ op: 'update_block', id: 'b1', patch: { notes: undefined } }]);
+    expect(r.state.blocks[0].notes).toBeUndefined();
+  });
   it('引用不存在的 key/id 记录 missing，不静默成功', () => {
     const r = applyPatch(base, [
       { op: 'remove_task_def', key: 'nope' },

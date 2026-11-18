@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { CATEGORIES } from '@/shared/constants';
 import type { Category } from '@/shared/types';
-import { minToHHmm, utcAt } from '@/shared/engine';
+import { minToHHmm, utcAt, applyPatch } from '@/shared/engine';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
+import { blockController } from '@/lib/blockRuntime';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -33,25 +34,31 @@ export function QuickAddDialog() {
 
   if (!quickAdd) return null;
 
-  const submit = () => {
+  const submit = async () => {
     const name = title.trim();
     if (!name) {
       toast.error('给任务起个名字吧');
       return;
     }
-    const result = addBlock({
-      title: name.slice(0, 60),
-      category,
-      start_utc: utcAt(quickAdd.day, quickAdd.minutes, tz),
-      end_utc: utcAt(quickAdd.day, quickAdd.minutes + duration, tz),
-      priority: 'mid',
-      pinned: false,
-    });
-    if (!result.ok) {
-      toast.error(result.reason ?? '无法添加');
+    const startUtc = utcAt(quickAdd.day, quickAdd.minutes, tz);
+    const endUtc = utcAt(quickAdd.day, quickAdd.minutes + duration, tz);
+    const state = usePlanStore.getState().state;
+    const planId = state.plan.id;
+    if (!planId) {
+      const result = addBlock({ title: name.slice(0, 60), category, start_utc: startUtc, end_utc: endUtc, priority: 'mid', pinned: false });
+      if (!result.ok) { toast.error(result.reason ?? '无法添加'); return; }
+      toast.success(`已添加「${name}」`);
+      setQuickAdd(null);
       return;
     }
-    toast.success(`已添加「${name}」`);
+    const id = crypto.randomUUID();
+    const ops = [{ op: 'add_block' as const, client_id: id, value: { title: name.slice(0, 60), category, start_utc: startUtc, end_utc: endUtc, priority: 'mid' as const, pinned: false } }];
+    const optimisticBlocks = applyPatch(state, ops).state.blocks;
+    const r = await blockController.apply({ planId, ops, label: `新增「${name}」`, optimisticBlocks });
+    if (!r.ok) { toast.error(r.reason ?? '添加失败'); return; }
+    toast.success(`已添加「${name}」`, {
+      action: { label: '撤销', onClick: () => { void blockController.undo(planId).then((label) => { if (label) toast.success(`已撤销：${label}`); }); } },
+    });
     setQuickAdd(null);
   };
 
