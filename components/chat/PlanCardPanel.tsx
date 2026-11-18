@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronUp, Save, ShieldCheck, X } from 'lucide-react';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
-import { artifactFromPlan, planFromArtifact } from '@/lib/planCard';
-import { savePlanCardAction } from '@/lib/planActions';
+import { artifactFromPlan, canGenerateSchedule, planFromArtifact } from '@/lib/planCard';
+import { generateScheduleAction, savePlanCardAction } from '@/lib/planActions';
 import { useAutoSaveDraft } from '@/lib/useAutoSaveDraft';
 import { useCommitPlan } from '@/lib/useCommitPlan';
 import { usePlanStore } from '@/store/usePlanStore';
@@ -36,6 +36,7 @@ export function PlanCardPanel() {
   });
 
   const unsaved = state.plan.id === null;
+  const needsSchedule = canGenerateSchedule(state);
   const enabled = state.constraints.filter((c) => c.enabled).length;
 
   // AI 给出方案时直接展开到这张卡，不再另起一张聊天卡片。
@@ -90,6 +91,14 @@ export function PlanCardPanel() {
     if (!draft) return;
     previewArtifact(draft);
     setPreviewing(true);
+  };
+
+  const generate = async () => {
+    setSaving(true);
+    const r = await generateScheduleAction();
+    setSaving(false);
+    if (!r.ok) { toast.error(r.reason ?? '生成排程失败'); return; }
+    toast.success('已生成排程');
   };
 
   const saveSaved = async () => {
@@ -172,7 +181,12 @@ export function PlanCardPanel() {
                   ) : (
                     <>
                       <Button variant="outline" size="sm" onClick={close}>关闭</Button>
-                      {!unsaved && (
+                      {needsSchedule && (
+                        <Button size="sm" className="dawn-gradient text-white" disabled={saving} onClick={() => { void generate(); }}>
+                          {saving ? '生成中…' : '生成排程'}
+                        </Button>
+                      )}
+                      {!unsaved && !needsSchedule && (
                         <Button size="sm" className="dawn-gradient text-white" disabled={saving} onClick={() => { void saveSaved(); }}>
                           <Save className="mr-1 h-4 w-4" /> {saving ? '保存中…' : '保存修改'}
                         </Button>

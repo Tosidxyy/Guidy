@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { artifactFromPlan, diffPlanCard, planFromArtifact } from '@/lib/planCard';
+import { artifactFromPlan, canGenerateSchedule, diffPlanCard, planFromArtifact } from '@/lib/planCard';
 import type { PlanState } from '@/shared/types';
 
 const plan: PlanState = {
@@ -81,5 +81,13 @@ describe('diffPlanCard', () => {
   it('开始日期变化 → update_plan', () => {
     const draft = { ...artifactFromPlan(plan), horizon_start: '2026-11-20' };
     expect(diffPlanCard(plan, draft)).toEqual([{ op: 'update_plan', patch: { horizon_start: '2026-11-20' } }]);
+  });
+});
+
+describe('canGenerateSchedule', () => {
+  it('有任务且还没有块时为 true，其余为 false', () => {
+    expect(canGenerateSchedule(plan)).toBe(true);
+    expect(canGenerateSchedule({ ...plan, task_defs: [] })).toBe(false);
+    expect(canGenerateSchedule({ ...plan, blocks: [{ id: 'b', title: 'x', category: 'study', start_utc: '2026-11-18T01:00:00.000Z', end_utc: '2026-11-18T02:00:00.000Z', priority: 'mid', pinned: false, origin: 'engine' }] })).toBe(false);
   });
 });

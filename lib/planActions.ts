@@ -232,3 +232,22 @@ export async function savePlanCardAction(draft: ConstraintSetArtifact): Promise<
   });
   return { ok: r.ok, planId: state.plan.id, reason: r.reason };
 }
+
+/** 方案卡里的「生成排程」：任务与约束先在计划里，用户按需产出时间块。 */
+export async function generateScheduleAction(): Promise<ActionResult> {
+  const store = usePlanStore.getState();
+  if (!store.state.plan.id) {
+    const saved = await saveDraftAction();
+    if (!saved.ok) return { ok: false, planId: null, reason: saved.reason };
+  }
+  const current = usePlanStore.getState().state;
+  const planId = current.plan.id;
+  if (!planId) return { ok: false, planId: null, reason: '计划尚未保存' };
+  const r = await planController.apply({
+    planId,
+    ops: [{ op: 'reschedule', scope: 'all', keep_pinned: true }],
+    label: '生成排程',
+    optimistic: {},
+  });
+  return r.ok ? { ok: true, planId } : { ok: false, planId, reason: r.reason };
+}

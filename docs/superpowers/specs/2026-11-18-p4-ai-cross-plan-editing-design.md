@@ -126,4 +126,4 @@ resolvePatchTargets(ops, active: PlanState, layers: PlanState[]): PlanTarget[]
 1. **忙时是全局日历数据，不做复制**：`busy_window` / `fixed_block` 描述的是「这个人的日历」，不属于某一个计划。服务端在 commit 求解、patch 落点校验与重排时，把**访客所有计划的这两类约束**并入求解输入（按 payload 去重，最多 12 条）；客户端 `usePlanLayers` 把其他计划的这两类约束汇总到 `useSharedCalendar`，本地预览、拖拽校验、日历忙时底色都用合并后的约束。
    - 这样切换对话不需要复制数据，也不会出现「A 计划改上班时间、B 计划还是旧的」。
    - 删除某个计划时，它贡献的忙时随之消失（其他计划若也定义过同一条，仍保留）。
-2. **草稿用 constraint_set，已确认计划才用 patch**：自动保存会把新对话写成 `status: 'draft'` 的计划。`savePlan` 新建为 draft、更新保留原状态；`commit` 才置为 active。prompt 明确：draft 状态下用户补充或回答追问后输出**完整 constraint_set**（由方案卡确认生成），只有 active 计划才输出 patch。
+2. **按「有没有时间块」决定写入方式**：当前对话还没有计划时输出 constraint_set（新建）；有当前计划但**还没有任何时间块**时，用 patch 的 add_task_def / add_constraint 把任务与约束加进这张计划，服务端此时不跑求解；用户在方案卡点「生成排程」才产出时间块。已有时间块的计划才按普通 patch（含重排）处理。方案卡在有任务、无时间块时显示「生成排程」。

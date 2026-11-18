@@ -90,3 +90,8 @@ export function diffPlanCard(current: PlanState, draft: ConstraintSetArtifact): 
   }
   return ops;
 }
+
+/** 有任务、但还没有任何时间块：方案卡提供「生成排程」。 */
+export function canGenerateSchedule(state: PlanState): boolean {
+  return state.task_defs.length > 0 && state.blocks.length === 0;
+}

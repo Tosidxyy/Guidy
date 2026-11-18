@@ -261,6 +261,18 @@ describe('applyPatchRoute', () => {
     expect(bad.status).toBe(422);
     expect((await bad.json()).error.code).toBe('op_plan_mismatch');
   });
+    it('空计划加任务不自动生成时间块，显式 reschedule 才生成', async () => {
+    const d = deps();
+    const app = application(d);
+    const plan = await (await app(ctx('POST', '/api/plans/save', { plan_id: null, input: { title: '草稿', horizon_start: '2026-11-18', horizon_days: 7, timezone: 'Asia/Shanghai', task_defs: [], constraints: [], blocks: [] } }))).json();
+    const task = { key: 'run', title: '跑步', category: 'fitness', duration_min: 60, frequency: { type: 'daily' }, priority: 'mid', splittable: false, sort_order: 0 };
+    const added = await (await app(ctx('POST', '/api/patches/apply', { preview_id: 'empty-1', plan_id: plan.plan.id, base_version: plan.version, ops: [{ op: 'add_task_def', value: task }], result_hash: null, engine_version: 1 }))).json();
+    expect(added.task_defs).toHaveLength(1);
+    expect(added.blocks).toHaveLength(0);
+
+    const generated = await (await app(ctx('POST', '/api/patches/apply', { preview_id: 'empty-2', plan_id: plan.plan.id, base_version: added.version, ops: [{ op: 'reschedule', scope: 'all', keep_pinned: true }], result_hash: null, engine_version: 1 }))).json();
+    expect(generated.blocks.length).toBeGreaterThan(0);
+  });
   it('preview_id 回放不重复落库', async () => {
     const d = deps();
     const plan = await seedPlan(d);

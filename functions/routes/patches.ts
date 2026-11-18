@@ -77,7 +77,10 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
   let newBlocks = patched.state.blocks;
   let compromises: any[] = [];
   let server_authoritative = false;
-  if (patched.requiresReschedule) {
+  // 空计划（还没有任何时间块）只落任务与约束，等用户点「生成排程」；显式 reschedule 仍然立即求解。
+  const explicitReschedule = ops.some((op) => op.op === 'reschedule');
+  const shouldReschedule = patched.requiresReschedule && (state.blocks.length > 0 || explicitReschedule);
+  if (shouldReschedule) {
     const pinned = patched.state.blocks.filter((b) => b.pinned || b.origin === 'manual');
     const out = solve({ engine_version: ENGINE_VERSION, horizon_start: patched.state.plan.horizon_start, horizon_days: patched.state.plan.horizon_days, timezone: patched.state.plan.timezone, task_defs: patched.state.task_defs, constraints: effective, pinned_blocks: pinned });
     if (out.violations.length) fail('engine_infeasible', 422, { violations: out.violations, compromises: out.compromises });
