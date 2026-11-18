@@ -5,11 +5,13 @@ import { api, ApiError } from '@/lib/api';
 import { buildPatchBody } from '@/lib/patchInput';
 import { applyPatch } from '@/shared/engine';
 import { planController } from '@/lib/planRuntime';
-import { resolvePatchTargets } from '@/lib/patchTargets';
+import { resolvePatchTargets, SHARED_PLAN_ID } from '@/lib/patchTargets';
+import { applySharedOps } from '@/lib/sharedBlocks';
 import { appliedPatches } from '@/lib/appliedPatches';
 import { useChatStore } from '@/store/useChatStore';
 import { usePlanStore, type ReschedulePreview } from '@/store/usePlanStore';
 import { usePlanSync } from '@/store/usePlanSync';
+import { useSharedCalendar } from '@/store/useSharedCalendar';
 import type { PatchArtifact } from '@/shared/schemas';
 import type { PlanState } from '@/shared/types';
 
@@ -32,9 +34,10 @@ export function useApplyPatch() {
       const activeId = store.state.plan.id;
       if (!activeId) throw new ApiError('plan_not_saved', 409, '当前计划尚未保存');
 
-      const groups = resolvePatchTargets(patch.ops, store.state, layerStates());
+      const groups = resolvePatchTargets(patch.ops, store.state, layerStates(), useSharedCalendar.getState().busyBlocks);
       const activeOps = groups.find((g) => g.planId === activeId)?.ops ?? [];
-      const foreign = groups.filter((g) => g.planId !== activeId);
+      const foreign = groups.filter((g) => g.planId !== activeId && g.planId !== SHARED_PLAN_ID);
+      const shared = groups.find((g) => g.planId === SHARED_PLAN_ID)?.ops ?? [];
 
       let resp: any = null;
       if (activeOps.length) {
@@ -48,9 +51,9 @@ export function useApplyPatch() {
         resp = await api.applyPatch(body);
       }
 
-      const foreignOps = foreign.reduce((n, g) => n + g.ops.length, 0);
+      const foreignOps = foreign.reduce((n, g) => n + g.ops.length, 0) + shared.length;
       // 全部 ops 都被丢弃（没有可定位的目标计划）时不能假装成功。
-      if (!resp && !foreign.length) throw new ApiError('patch_target_missing', 422, '这条调整没有可应用的内容，请刷新后重试');
+      if (!resp && !foreign.length && !shared.length) throw new ApiError('patch_target_missing', 422, '这条调整没有可应用的内容，请刷新后重试');
       for (const group of foreign) {
         const layer = layerStates().find((s) => s.plan.id === group.planId);
         const optimistic = layer ? { blocks: applyPatch(layer, group.ops).state.blocks } : {};
@@ -58,6 +61,13 @@ export function useApplyPatch() {
         if (!r.ok) {
           throw new ApiError('service_unavailable', 503,
             resp ? `当前计划已保存，但其他计划未保存：${r.reason ?? '未知原因'}` : `其他计划未保存：${r.reason ?? '未知原因'}`);
+        }
+      }
+      if (shared.length) {
+        const r = await applySharedOps(shared);
+        if (!r.ok) {
+          throw new ApiError('service_unavailable', 503,
+            resp ? `当前计划已保存，但公共日历未保存：${r.reason ?? '未知原因'}` : `公共日历未保存：${r.reason ?? '未知原因'}`);
         }
       }
       return { resp, foreignOps, foreignPlans: foreign.length };

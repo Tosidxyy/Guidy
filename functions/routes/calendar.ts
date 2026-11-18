@@ -1,12 +1,20 @@
+import { z } from 'npm:zod@3.25.76';
 import { rows } from '../db.ts';
 import type { Db } from '../db.ts';
+import { readJson } from '../router.ts';
+import { fail } from '../errors.ts';
 import { requireVisitor } from '../identity.ts';
+import { applyPatch } from '../engine.ts';
+import { ApplyOpSchema } from '../../shared/schemas.ts';
 import { dayList, utcAt, weekdayOfDay } from '../../shared/engine/time.ts';
 import type { Deps, RouteCtx } from '../types.ts';
+import type { ApplyOp, Block, Plan } from '../../shared/types.ts';
 
 const DAY_MS = 86400000;
 const RECURRING = new Set(['busy_window', 'fixed_block']);
 const MAX_DAYS = 120;
+const BLOCK_OPS = new Set(['add_block', 'update_block', 'move_block', 'remove_block']);
+const SharedOpsSchema = z.object({ ops: z.array(ApplyOpSchema).min(1).max(30) });
 
 function hhmmToMs(hhmm: string): number {
   const [h, m] = String(hhmm).split(':').map(Number);
@@ -92,4 +100,68 @@ export async function calendar(ctx: RouteCtx, deps: Deps): Promise<Response> {
   await materializeSharedBusy(deps.db, visitor);
   const blocks = rows(await deps.db.from('blocks').select('*').is('plan_id', null).eq('owner_visitor_id', visitor).order('start_utc', { ascending: true }));
   return Response.json({ blocks }, { headers: { 'cache-control': 'no-store' } });
+}
+
+function blockFields(b: Block): Record<string, unknown> {
+  return {
+    title: b.title.slice(0, 60),
+    category: b.category,
+    start_utc: b.start_utc,
+    end_utc: b.end_utc,
+    priority: b.priority,
+    pinned: b.pinned,
+    origin: b.origin,
+    notes: b.notes ?? null,
+  };
+}
+
+function sameBlock(a: Block, b: Block): boolean {
+  const x = blockFields(a);
+  const y = blockFields(b);
+  return Object.keys(x).every((k) => x[k] === y[k]);
+}
+
+/**
+ * 公共日历块的写通道：拖动/缩放、改名、删除（例如某天请假）。
+ * 只接受块操作，作用于 visitor 名下 plan_id 为空的块；公共块没有计划版本，所以不加锁。
+ */
+export async function applySharedBlocks(ctx: RouteCtx, deps: Deps): Promise<Response> {
+  const visitor = requireVisitor(deps, ctx);
+  const body = await readJson(ctx.request, 262144);
+  const parsed = SharedOpsSchema.safeParse(body);
+  if (!parsed.success) fail('validation_failed', 422, parsed.error.flatten());
+  const ops = parsed.data.ops
+    .filter((op) => BLOCK_OPS.has(op.op))
+    .map((op) => (op.op === 'add_block' && !op.client_id ? { ...op, client_id: crypto.randomUUID() } : op)) as ApplyOp[];
+  if (!ops.length) fail('validation_failed', 422, { reason: '公共日历只接受块的增删改移' });
+
+  const blocks = rows(await deps.db.from('blocks').select('*').is('plan_id', null).eq('owner_visitor_id', visitor).order('start_utc', { ascending: true })) as Block[];
+  const now = new Date().toISOString();
+  const plan: Plan = {
+    id: null, title: '共享日历', horizon_start: now.slice(0, 10), horizon_days: 90,
+    timezone: 'Asia/Shanghai', status: 'active', version: 1, created_at: now, updated_at: now,
+  };
+  const patched = applyPatch({ plan, task_defs: [], constraints: [], blocks }, ops);
+  if (patched.missing.length) fail('patch_target_missing', 422, { targets: patched.missing });
+  for (const b of patched.state.blocks) {
+    if (!(Date.parse(b.end_utc) > Date.parse(b.start_utc))) fail('placement_invalid', 422, { reason: '结束时间必须晚于开始时间' });
+  }
+
+  const before = new Map(blocks.map((b) => [b.id, b]));
+  const after = new Map(patched.state.blocks.map((b) => [b.id, b]));
+  for (const id of before.keys()) {
+    if (after.has(id)) continue;
+    await deps.db.from('blocks').delete().eq('id', id).is('plan_id', null).eq('owner_visitor_id', visitor);
+  }
+  for (const b of patched.state.blocks) {
+    const old = before.get(b.id);
+    if (!old) {
+      await deps.db.from('blocks').insert({ id: b.id, plan_id: null, owner_visitor_id: visitor, ...blockFields(b) });
+    } else if (!sameBlock(old, b)) {
+      await deps.db.from('blocks').update(blockFields(b)).eq('id', b.id).is('plan_id', null).eq('owner_visitor_id', visitor);
+    }
+  }
+
+  const out = rows(await deps.db.from('blocks').select('*').is('plan_id', null).eq('owner_visitor_id', visitor).order('start_utc', { ascending: true }));
+  return Response.json({ blocks: out, inverse_ops: patched.inverse_ops }, { headers: { 'cache-control': 'no-store' } });
 }

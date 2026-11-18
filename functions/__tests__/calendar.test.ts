@@ -54,3 +54,64 @@ describe('共享日历：忙时实例化为公共块', () => {
     }
   });
 });
+
+describe('共享日历：公共块可编辑（拖拽/改名/请假）', () => {
+  async function seed(app: ReturnType<typeof application>) {
+    await app(ctx('POST', '/api/plans/save', {
+      plan_id: null,
+      input: { title: '工作日程', horizon_start: '2026-11-18', horizon_days: 7, timezone: tz, task_defs: [], constraints: busy, blocks: [] },
+    }));
+    const list = await (await app(ctx('GET', '/api/calendar'))).json();
+    expect(list.blocks.length).toBeGreaterThan(0);
+    return list.blocks as any[];
+  }
+
+  it('改名与改时间落到公共块，并立即在日历里生效', async () => {
+    const app = application(deps());
+    const [first] = await seed(app);
+
+    const renamed = await app(ctx('POST', '/api/calendar/blocks', {
+      ops: [{ op: 'update_block', id: first.id, patch: { title: '上班（公司）' } }],
+    }));
+    expect(renamed.status).toBe(200);
+    const updated = (await renamed.json()).blocks.find((b: any) => b.id === first.id);
+    expect(updated.title).toBe('上班（公司）');
+
+    const moved = await app(ctx('POST', '/api/calendar/blocks', {
+      ops: [{ op: 'move_block', id: first.id, start_utc: '2026-11-18T02:00:00.000Z', end_utc: '2026-11-18T10:00:00.000Z' }],
+    }));
+    expect(moved.status).toBe(200);
+    const calendar = await (await app(ctx('GET', '/api/calendar'))).json();
+    const after = calendar.blocks.find((b: any) => b.id === first.id);
+    expect(after.start_utc).toBe('2026-11-18T02:00:00.000Z');
+    expect(after.title).toBe('上班（公司）');
+  });
+
+  it('删除某一天后不会被重新物化，其它天保留', async () => {
+    const app = application(deps());
+    const blocks = await seed(app);
+    const target = blocks[0];
+    const removed = await app(ctx('POST', '/api/calendar/blocks', { ops: [{ op: 'remove_block', id: target.id }] }));
+    expect(removed.status).toBe(200);
+    expect((await removed.json()).blocks.some((b: any) => b.id === target.id)).toBe(false);
+
+    const again = await (await app(ctx('GET', '/api/calendar'))).json();
+    expect(again.blocks.some((b: any) => b.id === target.id)).toBe(false);
+    expect(again.blocks.length).toBe(blocks.length - 1);
+  });
+
+  it('非本人的块与计划操作都被拒绝', async () => {
+    const d = deps();
+    const app = application(d);
+    const [first] = await seed(app);
+    const stranger = { ...d, requireUser: () => ({ id: 'other' }) } as Deps;
+    const other = application(stranger);
+    const denied = await other(ctx('POST', '/api/calendar/blocks', { ops: [{ op: 'remove_block', id: first.id }] }));
+    expect(denied.status).toBe(422);
+
+    const invalid = await app(ctx('POST', '/api/calendar/blocks', {
+      ops: [{ op: 'add_constraint', value: { type: 'busy_window', weekday: 1, start: '08:00', end: '09:00' } }],
+    }));
+    expect(invalid.status).toBe(422);
+  });
+});

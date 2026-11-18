@@ -159,6 +159,8 @@ export function buildUserMessage(input: {
   timezone?: string;
   conflicts?: PlanConflict[];
   others?: OtherPlanContext[];
+  /** 公共日历块（忙时/固定日程，与所有计划共享）。 */
+  sharedBlocks?: Block[];
   /** 按共享日历算出的每周可用时段（已扣除忙时与既有块）。 */
   availability?: string;
 }): string {
@@ -170,6 +172,17 @@ export function buildUserMessage(input: {
   if (input.availability) {
     lines.push(`【可安排时段（按共享日历计算，已扣除忙时与既有安排）】${input.availability}`);
     lines.push('追问的选项必须落在这些可安排时段内；生成计划时如无其他依据，active_window 要与之一致，不要排进忙时或既有块。');
+  }
+  if (input.sharedBlocks?.length) {
+    lines.push('【公共日历块（所有计划共享的忙时/固定日程）】带块 id，按 id 直接改：');
+    for (const b of input.sharedBlocks.slice(0, 24)) {
+      const day = localDay(b.start_utc, timezone);
+      const start = minToHHmm(localMinutes(b.start_utc, timezone));
+      const end = minToHHmm(localMinutes(b.end_utc, timezone));
+      lines.push(`- ${b.id}｜${b.title}｜${day} ${start}–${end}${b.notes ? `｜备注：${b.notes.slice(0, 40)}` : ''}`);
+    }
+    if (input.sharedBlocks.length > 24) lines.push(`- …另有 ${input.sharedBlocks.length - 24} 个公共日历块未列出（按周重复的同样安排）`);
+    lines.push('这些块不属于任何计划：改时间用 move_block，改标题/备注用 update_block，取消某一天用 remove_block（id 逐字取自上面）；删除就表示用户当天请假或取消该日程，不会再恢复。不要为它们新建计划，也不要臆造 id。');
   }
   if (input.plan) {
     lines.push(`当前计划「${input.plan.plan.title}」（${input.plan.plan.status === 'active' ? '已确认' : '草稿'}，已有时间块 ${input.plan.blocks.length} 个），horizon_start=${input.plan.plan.horizon_start}，timezone=${input.plan.plan.timezone}。`);

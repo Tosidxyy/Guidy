@@ -12,6 +12,7 @@ import { mergeSharedWindows } from '@/lib/sharedCalendar';
 import { useSharedCalendar } from '@/store/useSharedCalendar';
 import { usePlanManager } from '@/lib/usePlanManager';
 import { planController } from '@/lib/planRuntime';
+import { applySharedOps } from '@/lib/sharedBlocks';
 import { mergeConflictAction, undoMergedPlans } from '@/lib/planActions';
 import { moveSelection } from '@/lib/moveSelection';
 import { todayStr } from '@/lib/seed';
@@ -25,6 +26,7 @@ import { ConflictBar } from './ConflictBar';
 import { GUTTER_PX, HOUR_PX, PX_PER_MIN, SNAP_MIN, layoutDay, snap } from './layout';
 import { PreviewDiffCard } from './PreviewDiffCard';
 import { QuickAddDialog } from './QuickAddDialog';
+import { SharedBlockDialog } from './SharedBlockDialog';
 
 const WEEKDAY_LABEL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -52,6 +54,8 @@ interface DragState {
   planLabel?: string;
   baseVersion: number;
   foreign: boolean;
+  /** 公共日历块：不走计划求解，直接写 /api/calendar/blocks。 */
+  shared: boolean;
 }
 
 interface Chip {
@@ -93,6 +97,7 @@ export function CalendarPanel() {
   const lastForeignDrag = useRef(0);
   const [pendingSwitch, setPendingSwitch] = useState<{ id: string; title: string } | null>(null);
   const [foreignTarget, setForeignTarget] = useState<{ planId: string; planTitle: string; blockTitle: string } | null>(null);
+  const [editingShared, setEditingShared] = useState<Block | null>(null);
 
   const foreign = useMemo(() => collectForeignBlocks(state.blocks, layers), [state.blocks, layers]);
   const foreignMap = useMemo(() => new Map(foreign.map((f) => [f.block.id, f])), [foreign]);
@@ -229,6 +234,17 @@ export function CalendarPanel() {
 
   const applyMoveOps = useCallback(async (drag: DragState) => {
     const planId = drag.planId;
+    if (drag.shared) {
+      const r = await applySharedOps([{
+        op: 'move_block',
+        id: drag.block.id,
+        start_utc: utcAt(days[drag.dayIdx], drag.startMin, tz),
+        end_utc: utcAt(days[drag.dayIdx], drag.endMin, tz),
+      }]);
+      if (!r.ok) { toast.error(r.reason ?? '公共日历保存失败'); flashInvalid([drag.block.id]); return; }
+      toast.success(`已${drag.mode === 'resize' ? '调整' : '移动'}「${drag.block.title}」`);
+      return;
+    }
     if (!planId) {
       const r = drag.mode === 'resize'
         ? moveBlock(drag.block.id, utcAt(days[drag.origDayIdx], drag.startMin, tz), utcAt(days[drag.origDayIdx], drag.endMin, tz))
@@ -327,19 +343,31 @@ export function CalendarPanel() {
       drag.dayIdx = drag.origDayIdx;
       drag.endMin = Math.min(visibleEnd, Math.max(drag.origStart + SNAP_MIN, snap(drag.origEnd + dy / PX_PER_MIN)));
       drag.startMin = drag.origStart;
-      const check = validateFor(drag.source, drag.block, days[drag.origDayIdx], drag.startMin, drag.endMin);
-      drag.ok = check.ok;
-      drag.soft = check.ok && check.soft.length > 0;
-      drag.reason = check.hard?.reason ?? check.soft[0]?.reason;
+      if (drag.shared) {
+        drag.ok = true;
+        drag.soft = false;
+        drag.reason = undefined;
+      } else {
+        const check = validateFor(drag.source, drag.block, days[drag.origDayIdx], drag.startMin, drag.endMin);
+        drag.ok = check.ok;
+        drag.soft = check.ok && check.soft.length > 0;
+        drag.reason = check.hard?.reason ?? check.soft[0]?.reason;
+      }
       for (const item of drag.els) item.el.style.height = `${(drag.endMin - drag.origStart) * PX_PER_MIN}px`;
     } else {
       drag.dayIdx = Math.min(days.length - 1, Math.max(0, drag.origDayIdx + Math.round(dx / drag.colWidth)));
       drag.startMin = Math.min(visibleEnd - dur, Math.max(visibleStart, snap(drag.origStart + dy / PX_PER_MIN)));
       drag.endMin = drag.startMin + dur;
-      const result = moveSelection(drag.source, drag.ids, drag.dayIdx - drag.origDayIdx, drag.startMin - drag.origStart);
-      drag.ok = result.ok;
-      drag.soft = result.ok && result.soft.length > 0;
-      drag.reason = result.reason ?? result.soft[0];
+      if (drag.shared) {
+        drag.ok = true;
+        drag.soft = false;
+        drag.reason = undefined;
+      } else {
+        const result = moveSelection(drag.source, drag.ids, drag.dayIdx - drag.origDayIdx, drag.startMin - drag.origStart);
+        drag.ok = result.ok;
+        drag.soft = result.ok && result.soft.length > 0;
+        drag.reason = result.reason ?? result.soft[0];
+      }
       const tx = (drag.dayIdx - drag.origDayIdx) * drag.colWidth;
       const ty = (drag.startMin - drag.origStart) * PX_PER_MIN;
       for (const item of drag.els) item.el.style.transform = `translate(${tx}px, ${ty}px)`;
@@ -374,6 +402,7 @@ export function CalendarPanel() {
     }
     setChip(null);
     if (!drag.moved) {
+      if (drag.shared) { setEditingShared(drag.block); return; }
       if (drag.foreign) {
         lastForeignDrag.current = Date.now();
         if (drag.planId) setForeignTarget({ planId: drag.planId, planTitle: drag.planLabel ?? '', blockTitle: drag.block.title });
@@ -387,7 +416,7 @@ export function CalendarPanel() {
     void applyMoveOps(drag);
   }, [applyMoveOps, onDragMove, requestSwitchPlan, select, toggleSelected]);
 
-  const beginDrag = useCallback((e: React.PointerEvent, block: Block, mode: 'move' | 'resize', foreignInfo?: ForeignBlock) => {
+  const beginDrag = useCallback((e: React.PointerEvent, block: Block, mode: 'move' | 'resize', foreignInfo?: ForeignBlock, shared = false) => {
     if (e.button !== 0 || preview) return;
     const el = (e.currentTarget as HTMLElement).closest('[data-block-id]') as HTMLElement | null;
     const grid = gridRef.current;
@@ -399,8 +428,8 @@ export function CalendarPanel() {
     const day = localDay(block.start_utc, tz);
     const dayIdx = days.indexOf(day);
     if (dayIdx === -1) return;
-    if (!foreignInfo && mode === 'resize' && selectedIds.length > 1) select(block.id);
-    const ids = foreignInfo
+    if (!foreignInfo && !shared && mode === 'resize' && selectedIds.length > 1) select(block.id);
+    const ids = foreignInfo || shared
       ? [block.id]
       : mode === 'move' && selectedIds.includes(block.id) && selectedIds.length > 1 ? selectedIds : [block.id];
     const els = Array.from(grid.querySelectorAll<HTMLElement>('[data-block-id]'))
@@ -418,7 +447,7 @@ export function CalendarPanel() {
       dayIdx, startMin: localMinutes(block.start_utc, tz), endMin: localMinutes(block.end_utc, tz),
       ok: true, soft: false, additive: e.ctrlKey || e.metaKey,
       source, planId: foreignInfo?.planId ?? state.plan.id, planLabel: foreignInfo?.planLabel,
-      baseVersion: source.plan.version, foreign: !!foreignInfo,
+      baseVersion: source.plan.version, foreign: !!foreignInfo, shared,
     };
     for (const item of els) {
       item.el.style.zIndex = '40';
@@ -523,7 +552,10 @@ export function CalendarPanel() {
       const y0 = Math.min(startY, ev.clientY);
       const y1 = Math.max(startY, ev.clientY);
       const ids = Array.from(grid.querySelectorAll<HTMLElement>('[data-block-id]'))
-        .filter((node) => !foreignMap.has(node.getAttribute('data-block-id') ?? ''))
+        .filter((node) => {
+          const id = node.getAttribute('data-block-id') ?? '';
+          return !foreignMap.has(id) && !busyIds.has(id);
+        })
         .filter((node) => {
           const r = node.getBoundingClientRect();
           return r.left < x1 && r.right > x0 && r.top < y1 && r.bottom > y0;
@@ -534,7 +566,7 @@ export function CalendarPanel() {
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp, { once: true });
-  }, [preview, select, selectMany, foreignMap]);
+  }, [preview, select, selectMany, foreignMap, busyIds]);
 
   const onColumnDoubleClick = (e: React.MouseEvent, day: string) => {
     if (preview) return;
@@ -579,13 +611,15 @@ export function CalendarPanel() {
           visual={visual}
           planLabel={busy ? '共享日历' : foreignInfo?.planLabel}
           compact={(p.endMin - p.startMin) * PX_PER_MIN < 40}
-          onPointerDown={busy ? undefined : (e, b) => beginDrag(e, b, 'move', foreignInfo)}
-          onResizeDown={busy ? undefined : (e, b) => beginDrag(e, b, 'resize', foreignInfo)}
-          onOpen={foreignInfo ? undefined : (b) => openDrawer('block', b.id)}
-          onClick={busy ? undefined : foreignInfo ? () => {
-            if (Date.now() - lastForeignDrag.current < 400) return;
-            setForeignTarget({ planId: foreignInfo.planId, planTitle: foreignInfo.planLabel, blockTitle: p.block.title });
-          } : undefined}
+          onPointerDown={(e, b) => beginDrag(e, b, 'move', foreignInfo, busy)}
+          onResizeDown={(e, b) => beginDrag(e, b, 'resize', foreignInfo, busy)}
+          onOpen={busy || foreignInfo ? undefined : (b) => openDrawer('block', b.id)}
+          onClick={busy
+            ? () => setEditingShared(p.block)
+            : foreignInfo ? () => {
+              if (Date.now() - lastForeignDrag.current < 400) return;
+              setForeignTarget({ planId: foreignInfo.planId, planTitle: foreignInfo.planLabel, blockTitle: p.block.title });
+            } : undefined}
         />
       );
     });
@@ -773,6 +807,7 @@ export function CalendarPanel() {
 
       {preview && <PreviewDiffCard />}
       <QuickAddDialog />
+      <SharedBlockDialog block={editingShared} onClose={() => setEditingShared(null)} />
 
       <AlertDialog open={!!foreignTarget} onOpenChange={(v) => { if (!v) setForeignTarget(null); }}>
         <AlertDialogContent>

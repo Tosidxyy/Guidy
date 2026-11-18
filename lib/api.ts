@@ -26,6 +26,7 @@ export const api = {
   history: (id: string) => requestJson<{ conversation: any; messages: any[] }>(`/chat/history?conversation_id=${encodeURIComponent(id)}`),
   plans: () => requestJson<{ items: any[] }>('/plans'),
   calendar: () => requestJson<{ blocks: any[] }>('/calendar'),
+  sharedBlocks: (body: unknown) => requestJson<{ blocks: any[]; inverse_ops: any[] }>('/calendar/blocks', { method: 'POST', body }),
   plan: (id: string) => requestJson<any>(`/plans/${encodeURIComponent(id)}`),
   commit: (body: unknown) => requestJson<any>('/plans/commit', { method: 'POST', body }),
   applyPatch: (body: unknown) => requestJson<any>('/patches/apply', { method: 'POST', body }),

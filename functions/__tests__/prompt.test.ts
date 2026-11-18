@@ -18,6 +18,18 @@ const other = {
 };
 
 describe('buildUserMessage — 跨计划上下文', () => {
+  it('公共日历块带 id 与写规则进入上下文', () => {
+    const text = buildUserMessage({
+      message: '明天请假',
+      plan,
+      history: [],
+      today: '2026-11-18',
+      sharedBlocks: [block('s1', '上班', '2026-11-19T01:00:00.000Z', '2026-11-19T09:30:00.000Z')],
+    });
+    expect(text).toContain('【公共日历块');
+    expect(text).toContain('s1｜上班');
+    expect(text).toContain('remove_block');
+  });
   it('有冲突时列出时段、双方标题与其他计划名，并说明合并由用户完成', () => {
     const conflicts = findConflicts([{ id: 'p1', title: '考研', blocks: plan.blocks }, other], { onlyPlanId: 'p1' });
     const text = buildUserMessage({ message: '今天怎么安排？', plan, history: [], today: '2026-11-18', conflicts });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeOpsOnly, countExternalOps, resolvePatchTargets } from '@/lib/patchTargets';
+import { activeOpsOnly, countExternalOps, resolvePatchTargets, SHARED_PLAN_ID } from '@/lib/patchTargets';
 import type { Block, PlanState } from '@/shared/types';
 
 const block = (id: string, title: string): Block => ({
@@ -58,6 +58,17 @@ describe('resolvePatchTargets', () => {
       { op: 'remove_block' as const, id: 'b1' },
     ];
     expect(activeOpsOnly(ops, active, layers)).toEqual([{ op: 'remove_block', id: 'a1' }]);
+  });
+
+  it('公共日历块的 id 路由到伪计划，预览不包含它们', () => {
+    const ops = [
+      { op: 'remove_block' as const, id: 's1' },
+      { op: 'remove_block' as const, id: 'a1' },
+    ];
+    const shared = [{ id: 's1' }];
+    const groups = resolvePatchTargets(ops, active, layers, shared);
+    expect(groups.find((g) => g.planId === SHARED_PLAN_ID)?.ops).toEqual([{ op: 'remove_block', id: 's1' }]);
+    expect(activeOpsOnly(ops, active, layers, shared)).toEqual([{ op: 'remove_block', id: 'a1' }]);
   });
     it('草稿计划（无 id）返回空分组', () => {
     const draft = { ...active, plan: { ...active.plan, id: null } };

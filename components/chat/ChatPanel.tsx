@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { useChat } from '@/lib/useChat';
 import { useChatStore, cursorAfterMessages, shouldAutoRestore } from '@/store/useChatStore';
 import { usePlanStore } from '@/store/usePlanStore';
+import { useSharedCalendar } from '@/store/useSharedCalendar';
 import { useUiStore } from '@/store/useUiStore';
 import { conversationForPlan } from '@/lib/planConversation';
 import { restoreChat } from '@/lib/restoreChat';
@@ -93,7 +94,7 @@ export function ChatPanel() {
     const layers = qc.getQueriesData<PlanState>({ queryKey: ['plan'] })
       .map(([, data]) => data)
       .filter((s): s is PlanState => !!s?.plan?.id);
-    previewPatch({ ...p, ops: activeOpsOnly(p.ops, usePlanStore.getState().state, layers) });
+    previewPatch({ ...p, ops: activeOpsOnly(p.ops, usePlanStore.getState().state, layers, useSharedCalendar.getState().busyBlocks) });
     setConfirmedPatch(p);
   };
 

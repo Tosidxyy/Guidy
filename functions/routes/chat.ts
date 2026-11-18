@@ -18,6 +18,7 @@ import { constraintText } from '../../lib/describe.ts';
 import type { OtherPlanContext } from '../prompt.ts';
 import type { Deps, RouteCtx, AppEvent } from '../types.ts';
 import type { PlanState } from '../../shared/types.ts';
+import type { Block } from '../../shared/types.ts';
 
 export const interruptRegistry = new Map<string, AbortController>();
 const SSE_HEADERS = { 'content-type': 'text/event-stream', 'cache-control': 'no-store, no-transform' };
@@ -133,6 +134,14 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const availability = availabilitySources.length
     ? formatAvailability(weeklyAvailability(availabilitySources, planState?.plan.timezone ?? timezone ?? 'Asia/Shanghai'))
     : '';
+  // 公共块是共享日历的写目标：只把计划跨度内（草稿则未来 30 天）的块列进上下文，控制 token。
+  const sharedEnd = planState ? horizonRange(planState.plan).end : Date.parse(`${day}T00:00:00Z`) + 30 * DAY_MS;
+  const sharedForPrompt = (busyBlocks as Block[])
+    .filter((b) => {
+      const t = Date.parse(b.start_utc);
+      return t >= Date.parse(`${day}T00:00:00Z`) && t < sharedEnd;
+    })
+    .slice(0, 24);
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -162,7 +171,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           const projector = createProjector(nextSeq, assistantSeq);
           const upstream = await deps.qca.openStream(sessionId, { lastEventId: conv.last_event_id ?? undefined, signal: abort.signal });
           try {
-            await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others, availability }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}` : ''), `${requestId}:${attempt}`);
+            await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others, availability, sharedBlocks: sharedForPrompt }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}` : ''), `${requestId}:${attempt}`);
             for await (const frame of readSSE(upstream.body, { signal: abort.signal })) {
               const ev = JSON.parse(frame.data);
               if (frame.id) lastEventId = frame.id;

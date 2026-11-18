@@ -142,7 +142,7 @@ resolvePatchTargets(ops, active: PlanState, layers: PlanState[]): PlanTarget[]
 - 用户明确要求时，AI 可以用 `update_constraint` / `remove_constraint` 按 id 修改或删除忙时/固定日程，改动通过全局共享日历影响所有计划；`active_window` 默认不动；
 - 客户端路由与 patch 校验早已支持按 id 定位跨计划约束，这一层只补了上下文。
 
-**仍不支持的**：按具体日期请假（例如只取消下周三的上班）。这需要「忙时块/例外」模型——把忙时在计划期内实例化成块（`origin: fixed`），删/移某一块就是请假；代价是每个计划各存一份实例、90 天会产生大量块，且与「全局单份日历」需要额外裁决。
+**按具体日期请假**：由第 11 节的公共块模型支持——忙时已实例化成可编辑的公共块，删除某一天的块就是当天请假。
 
 ## 11. 日历全局化：忙时变成公共块
 
@@ -151,5 +151,7 @@ resolvePatchTargets(ops, active: PlanState, layers: PlanState[]): PlanTarget[]
 - `blocks.plan_id` 允许为空，`owner_visitor_id` 标记归属；`plan_id = NULL` 的块就是访客级公共块。
 - `GET /api/calendar` 首次调用时把各计划的 `busy_window` / `fixed_block` 实例化成公共块（`origin: fixed`、`pinned: true`、`owner_visitor_id`），随后**删除这些约束**，避免两套规则并存；重复调用按「标题 + 开始时间」幂等。
 - 求解：commit 与 patch 重排都把公共块并入 `pinned_blocks`，任务不会排进上班时间；可安排时段也把公共块计入扣除。
-- 客户端：`GET /api/calendar` 一次取回公共块，日历以「共享日历」半透明块渲染；它们不参与拖动（编辑入口后续补），其他计划块仍半透明。
+- 客户端：`GET /api/calendar` 一次取回公共块，日历以「共享日历」半透明块渲染，可以直接拖动/缩放（`POST /api/calendar/blocks`），也可以点开编辑对话框改名、改时间或「取消这一天」（请假）；其他计划的块仍半透明，点击只能跳转到所属计划。
+- 写通道：`POST /api/calendar/blocks` 只接受块操作（`add_block` / `update_block` / `move_block` / `remove_block`），按 `plan_id IS NULL + owner_visitor_id` 校验归属，返回最新公共块与 `inverse_ops`（供撤销）。
+- AI：公共块 id 进入 prompt 的「公共日历块」段，`resolvePatchTargets` 把公共块 id 路由到伪计划 `__shared__`，由同一路由落库；删除块即「当天请假」，因为物化已幂等且源约束已删，不会复活。
 - 块数不再有上限（schema 与 store 的上限已移除）。

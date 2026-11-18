@@ -497,6 +497,20 @@ solve(input: SolveInput): SolveOutput   // 纯函数、确定性
 
 试算（diff 预览）在**前端本地引擎**完成，无服务端 preview 端点。
 
+**POST /calendar/blocks**（公共日历块：忙时/固定日程，`plan_id = NULL`）
+
+```jsonc
+// Request
+{ "ops": [ /* 仅块操作：add_block | update_block | move_block | remove_block */ ] }
+// Response 200
+{ "blocks": [ /* 该访客的全部公共块，按 start_utc 升序 */ ],
+  "inverse_ops": [ /* 逆操作，前端用于撤销 */ ] }
+// 目标不属于本人或不存在 → 422 patch_target_missing
+// 非块操作（任务/约束/plan 元数据）→ 422 validation_failed
+```
+
+公共块没有计划版本，不使用 `base_version`；`GET /api/calendar` 会先把各计划的 `busy_window` / `fixed_block` 实例化成公共块并删除源约束（幂等），所以删除某一天的块（请假）后不会被重新生成。
+
 ### 6.5 社区模板
 
 | 端点 | 说明 |
