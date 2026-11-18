@@ -82,6 +82,12 @@ describe('buildUserMessage — 跨计划上下文', () => {
     expect(text).toContain('【question_card 契约】');
     expect(text).toContain('输出 question_card 的这一轮不要再输出 constraint_set 或 patch');
   });
+  it('注入可安排时段并约束追问选项', () => {
+    const text = buildUserMessage({ message: '帮我排训练', plan, history: [], today: '2026-11-18', availability: '周一至周五：无可安排时段；周六、周日：09:00–22:00' });
+    expect(text).toContain('【可安排时段（按共享日历计算，已扣除忙时与既有安排）】');
+    expect(text).toContain('周六、周日：09:00–22:00');
+    expect(text).toContain('追问的选项必须落在这些可安排时段内');
+  });
   it('没有其他计划时不出现该段', () => {
     const text = buildUserMessage({ message: 'hi', plan, history: [], today: '2026-11-18' });
     expect(text).not.toContain('【共享日历中的其他计划】');

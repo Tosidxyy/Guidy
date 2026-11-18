@@ -12,6 +12,7 @@ import { appFrame, insertMessage, appendAssistant, advanceCursor, sha256Hex } fr
 import { readSSE } from '../qca/sse.mjs';
 import { LIMITS } from '../../shared/constants.ts';
 import { findConflicts, type ConflictPlan } from '../../shared/engine/conflicts.ts';
+import { formatAvailability, weeklyAvailability, type AvailabilitySource } from '../../shared/engine/availability.ts';
 import { constraintText } from '../../lib/describe.ts';
 import type { OtherPlanContext } from '../prompt.ts';
 import type { Deps, RouteCtx, AppEvent } from '../types.ts';
@@ -46,33 +47,40 @@ function windowSummary(constraints: any[]): string[] {
 }
 
 // 新对话（草稿）没有活动计划：给一份只读的共享日历摘要，避免让用户重复说空闲时间。
-async function loadSharedCalendar(db: Deps['db'], visitor: string): Promise<OtherPlanContext[]> {
+async function loadSharedCalendar(db: Deps['db'], visitor: string): Promise<{ others: OtherPlanContext[]; sources: AvailabilitySource[] }> {
   const plans = rows(await db.from('plans').select('*').eq('owner_visitor_id', visitor).order('updated_at', { ascending: false }).limit(3));
   const out: OtherPlanContext[] = [];
+  const sources: AvailabilitySource[] = [];
   for (const p of plans) {
     const blocks = rows(await db.from('blocks').select('*').eq('plan_id', p.id));
     const constraints = rows(await db.from('constraints').select('*').eq('plan_id', p.id));
     if (!blocks.length && !constraints.length) continue;
+    sources.push({ constraints, blocks });
     out.push({ id: p.id, title: p.title, horizon_start: p.horizon_start, horizon_days: p.horizon_days, timezone: p.timezone, blocks, windows: windowSummary(constraints) });
   }
-  return out;
+  return { others: out, sources };
 }
 // 其他计划：块只取与活动计划 horizon 相交的（控制 token），
 // 但「已有时段」（忙时/可安排）是每周重复的安排，与 horizon 无关，始终带上。
 async function loadRelatedPlans(db: Deps['db'], visitor: string, active: PlanState) {
   const plans = rows(await db.from('plans').select('*').eq('owner_visitor_id', visitor).order('updated_at', { ascending: false }));
   const activeRange = horizonRange(active.plan);
-  const sources: ConflictPlan[] = [{ id: active.plan.id, title: active.plan.title, blocks: active.blocks }];
+  const conflictSources: ConflictPlan[] = [{ id: active.plan.id, title: active.plan.title, blocks: active.blocks }];
   const others: OtherPlanContext[] = [];
+  // 空的新计划自带的 07:00–23:00 只是默认值，不代表用户真实可用时间；
+  // 有块或任务定义后它的约束才算数。
+  const activeEstablished = active.blocks.length > 0 || active.task_defs.length > 0;
+  const sources: AvailabilitySource[] = [{ constraints: activeEstablished ? active.constraints : [], blocks: active.blocks }];
   for (const p of plans) {
     if (p.id === active.plan.id) continue;
     if (others.length >= 3) break;
     const blocks = rows(await db.from('blocks').select('*').eq('plan_id', p.id));
     const constraints = rows(await db.from('constraints').select('*').eq('plan_id', p.id));
     const windows = windowSummary(constraints);
+    sources.push({ constraints, blocks });
     const range = horizonRange(p);
     const intersects = !(range.end <= activeRange.start || range.start >= activeRange.end);
-    if (intersects && blocks.length) sources.push({ id: p.id, title: p.title, blocks });
+    if (intersects && blocks.length) conflictSources.push({ id: p.id, title: p.title, blocks });
     const shownBlocks = intersects ? blocks : [];
     if (!shownBlocks.length && !windows.length) continue;
     others.push({
@@ -85,8 +93,8 @@ async function loadRelatedPlans(db: Deps['db'], visitor: string, active: PlanSta
       windows,
     });
   }
-  const conflicts = sources.length > 1 ? findConflicts(sources, { onlyPlanId: active.plan.id }) : [];
-  return { conflicts, others };
+  const conflicts = conflictSources.length > 1 ? findConflicts(conflictSources, { onlyPlanId: active.plan.id }) : [];
+  return { conflicts, others, sources };
 }
 
 export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
@@ -115,7 +123,10 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const planState = await loadPlanState(deps.db, visitor, body.plan_id ?? null);
   const related = planState
     ? await loadRelatedPlans(deps.db, visitor, planState as PlanState)
-    : { conflicts: [], others: await loadSharedCalendar(deps.db, visitor) };
+    : await loadSharedCalendar(deps.db, visitor);
+  const availability = related.sources.length
+    ? formatAvailability(weeklyAvailability(related.sources, planState?.plan.timezone ?? timezone ?? 'Asia/Shanghai'))
+    : '';
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -145,7 +156,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           const projector = createProjector(nextSeq, assistantSeq);
           const upstream = await deps.qca.openStream(sessionId, { lastEventId: conv.last_event_id ?? undefined, signal: abort.signal });
           try {
-            await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}` : ''), `${requestId}:${attempt}`);
+            await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others, availability }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}` : ''), `${requestId}:${attempt}`);
             for await (const frame of readSSE(upstream.body, { signal: abort.signal })) {
               const ev = JSON.parse(frame.data);
               if (frame.id) lastEventId = frame.id;

@@ -63,7 +63,7 @@ export function buildSystemPrompt(): string {
     '【question_card 契约】信息不足时输出（不创建计划）：',
     '{type:"question_card", title?:≤40, questions:[{text:≤140, options?:[2–4 个选项，每个≤40]}]}，questions 1–3 个。',
     '本轮最多问 2 个最关键的；能给出具体选项就给（例如「每周 3 练 / 6 练」），不要只列问题。',
-    '输出 question_card 的这一轮不要再输出 constraint_set 或 patch。',
+    '输出 question_card 的这一轮不要再输出 constraint_set 或 patch。选项必须落在上下文「可安排时段」内；一个可行时段都没有时先说明原因再问。',
     '',
     '【constraints 每项是 payload 对象，不含 id，按 type 区分字段】',
     '- busy_window：{type:"busy_window", weekday:0–6 或 date:"YYYY-MM-DD"（二选一）, start:"HH:mm", end:"HH:mm"(须晚于 start), label?≤30}。',
@@ -151,12 +151,18 @@ export function buildUserMessage(input: {
   timezone?: string;
   conflicts?: PlanConflict[];
   others?: OtherPlanContext[];
+  /** 按共享日历算出的每周可用时段（已扣除忙时与既有块）。 */
+  availability?: string;
 }): string {
   const lines: string[] = [];
   const timezone = input.plan?.plan.timezone ?? input.timezone ?? 'Asia/Shanghai';
   const today = input.today ?? new Date().toISOString().slice(0, 10);
   const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date(`${today}T12:00:00Z`).getUTCDay()];
   lines.push(`今天是 ${today}（${weekday}，${timezone}）。`);
+  if (input.availability) {
+    lines.push(`【可安排时段（按共享日历计算，已扣除忙时与既有安排）】${input.availability}`);
+    lines.push('追问的选项必须落在这些可安排时段内；生成计划时如无其他依据，active_window 要与之一致，不要排进忙时或既有块。');
+  }
   if (input.plan) {
     lines.push(`当前计划「${input.plan.plan.title}」，horizon_start=${input.plan.plan.horizon_start}，timezone=${input.plan.plan.timezone}。`);
     const holidays = holidaysInRange(input.plan.plan.horizon_start, input.plan.plan.horizon_days);
