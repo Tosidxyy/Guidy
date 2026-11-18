@@ -164,6 +164,23 @@ describe('跨计划冲突进入 prompt', () => {
     expect(sent).toContain('【共享日历：跨计划时间重叠】');
     expect(sent).toContain('健身计划');
   });
+
+  it('其他计划的块 id 进入 prompt，便于 AI 按 id 修改', async () => {
+    const d = deps({ openStream: async () => ({ body: upstreamStream(replyFrames), close() {} }) });
+    const a = await seed(d, '考研计划', '07:00', '09:00');
+    const b = await seed(d, '健身计划', '07:30', '08:30');
+    let sent = '';
+    const withCapture = {
+      ...d,
+      qca: { ...d.qca, sendEvents: async (_session: string, text: string) => { sent = text; return { eventIds: ['e1'] }; } },
+    } as Deps;
+    await collect(await application(withCapture)(ctx('POST', '/api/chat/send', { text: '把健身计划周三的训练挪到晚上', plan_id: a.id })));
+    const { rows } = await import('../db');
+    const otherBlock = rows(await d.db.from('blocks').select('*').eq('plan_id', b.id))[0];
+    expect(sent).toContain('【共享日历中的其他计划】');
+    expect(sent).toContain(otherBlock.id);
+    expect(sent).toContain('只作用于当前计划');
+  });
 });
 
 describe('对话与计划绑定', () => {

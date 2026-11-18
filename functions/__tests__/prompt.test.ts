@@ -14,8 +14,8 @@ const plan: PlanState = {
 };
 const other = { id: 'p2', title: '健身', blocks: [block('b1', '核心训练', '2026-11-19T23:30:00.000Z', '2026-11-20T00:30:00.000Z')] };
 
-describe('buildUserMessage — 跨计划冲突上下文', () => {
-  it('有冲突时列出时段、双方标题与其他计划名，并禁止改其他计划', () => {
+describe('buildUserMessage — 跨计划上下文', () => {
+  it('有冲突时列出时段、双方标题与其他计划名，并说明合并由用户完成', () => {
     const conflicts = findConflicts([{ id: 'p1', title: '考研', blocks: plan.blocks }, other], { onlyPlanId: 'p1' });
     const text = buildUserMessage({ message: '今天怎么安排？', plan, history: [], today: '2026-11-18', conflicts });
     expect(text).toContain('【共享日历：跨计划时间重叠】');
@@ -28,5 +28,19 @@ describe('buildUserMessage — 跨计划冲突上下文', () => {
   it('无冲突时不出现该段', () => {
     const text = buildUserMessage({ message: '今天怎么安排？', plan, history: [], today: '2026-11-18', conflicts: [] });
     expect(text).not.toContain('【共享日历：跨计划时间重叠】');
+  });
+
+  it('其他计划的块 id 与跨计划规则进入上下文', () => {
+    const text = buildUserMessage({ message: '把健身计划周三的训练挪到晚上', plan, history: [], today: '2026-11-18', others: [other] });
+    expect(text).toContain('【共享日历中的其他计划】');
+    expect(text).toContain('b1');
+    expect(text).toContain('健身');
+    expect(text).toContain('move_block / update_block / remove_block 直接使用上面的块 id');
+    expect(text).toContain('任务 key 只在当前计划内有效');
+  });
+
+  it('没有其他计划时不出现该段', () => {
+    const text = buildUserMessage({ message: 'hi', plan, history: [], today: '2026-11-18' });
+    expect(text).not.toContain('【共享日历中的其他计划】');
   });
 });

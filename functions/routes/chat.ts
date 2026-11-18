@@ -35,7 +35,7 @@ function horizonRange(p: { horizon_start: string; horizon_days: number }) {
 }
 
 // 只扫与活动计划 horizon 相交的其他计划，避免每轮对话全库扫描。
-async function loadCrossPlanConflicts(db: Deps['db'], visitor: string, active: PlanState) {
+async function loadRelatedPlans(db: Deps['db'], visitor: string, active: PlanState) {
   const others = rows(await db.from('plans').select('*').eq('owner_visitor_id', visitor));
   const activeRange = horizonRange(active.plan);
   const sources: ConflictPlan[] = [{ id: active.plan.id, title: active.plan.title, blocks: active.blocks }];
@@ -46,7 +46,9 @@ async function loadCrossPlanConflicts(db: Deps['db'], visitor: string, active: P
     const blocks = rows(await db.from('blocks').select('*').eq('plan_id', p.id));
     if (blocks.length) sources.push({ id: p.id, title: p.title, blocks });
   }
-  return sources.length > 1 ? findConflicts(sources, { onlyPlanId: active.plan.id }) : [];
+  const rest = sources.filter((s) => s.id !== active.plan.id).map((s) => ({ id: s.id, title: s.title, blocks: s.blocks }));
+  const conflicts = sources.length > 1 ? findConflicts(sources, { onlyPlanId: active.plan.id }) : [];
+  return { conflicts, others: rest };
 }
 
 export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
@@ -73,7 +75,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const fingerprint = await sha256Hex(`${visitor}:${text}`);
   const { replay, intent } = await beginDispatch(deps.db, { request_id: requestId, visitor_id: visitor, conversation_id: conv.id, payload_fingerprint: fingerprint });
   const planState = await loadPlanState(deps.db, visitor, body.plan_id ?? null);
-  const conflicts = planState ? await loadCrossPlanConflicts(deps.db, visitor, planState as PlanState) : [];
+  const related = planState ? await loadRelatedPlans(deps.db, visitor, planState as PlanState) : { conflicts: [], others: [] };
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -103,7 +105,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           const projector = createProjector(nextSeq, assistantSeq);
           const upstream = await deps.qca.openStream(sessionId, { lastEventId: conv.last_event_id ?? undefined, signal: abort.signal });
           try {
-            await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}` : ''), `${requestId}:${attempt}`);
+            await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}` : ''), `${requestId}:${attempt}`);
             for await (const frame of readSSE(upstream.body, { signal: abort.signal })) {
               const ev = JSON.parse(frame.data);
               if (frame.id) lastEventId = frame.id;

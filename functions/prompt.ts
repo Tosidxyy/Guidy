@@ -1,4 +1,5 @@
 import type { PlanState } from '../shared/types.ts';
+import type { Block } from '../shared/types.ts';
 import type { ConstraintSetArtifact } from '../shared/schemas.ts';
 import type { PlanConflict } from '../shared/engine/conflicts.ts';
 import { taskSummary, constraintText } from '../lib/describe.ts';
@@ -78,7 +79,7 @@ export function buildSystemPrompt(): string {
     '清空当前计划的唯一推荐写法：{"type":"patch","summary":"清空当前计划","ops":[{"op":"clear_plan"}]}。不要逐个枚举 block/task/constraint。',
     '',
     '【标识与破坏性操作】',
-    '- patch 里的 task key、constraint id、block id 必须逐字取自下方「当前计划」上下文，禁止根据标题猜测。',
+    '- patch 里的 task key、constraint id、block id 必须逐字取自下方上下文（当前计划或其他计划），禁止根据标题猜测；其他计划的块只能用 id 修改，不要臆造 id。',
     '- 用户要求清空当前计划：先确认范围；确认后输出单个 clear_plan op，不要发明 key 或枚举全部块。',
     '- 用户要求删除/清空所有计划（跨计划）：不要输出 patch；说明当前对话只能清空当前计划，删除全部计划需在设置中确认「删除我的全部数据」。',
     '',
@@ -98,6 +99,7 @@ export function buildUserMessage(input: {
   today?: string;
   timezone?: string;
   conflicts?: PlanConflict[];
+  others?: { id: string; title: string; blocks: Block[] }[];
 }): string {
   const lines: string[] = [];
   const timezone = input.plan?.plan.timezone ?? input.timezone ?? 'Asia/Shanghai';
@@ -118,6 +120,21 @@ export function buildUserMessage(input: {
       lines.push(`- ${b.id}｜${b.title}｜${day} ${start}–${end}`);
     }
     if (input.plan.blocks.length > 60) lines.push(`- …共 ${input.plan.blocks.length} 个时间块，仅列前 60 个`);
+    if (input.others?.length) {
+      lines.push('【共享日历中的其他计划】只能按 id 修改其中的块与约束：');
+      for (const other of input.others.slice(0, 3)) {
+        lines.push(`- 计划「${other.title}」（plan id ${other.id}）`);
+        for (const b of other.blocks.slice(0, 12)) {
+          const day = localDay(b.start_utc, timezone);
+          const start = minToHHmm(localMinutes(b.start_utc, timezone));
+          const end = minToHHmm(localMinutes(b.end_utc, timezone));
+          lines.push(`  - ${b.id}｜${b.title}｜${day} ${start}–${end}`);
+        }
+        if (other.blocks.length > 12) lines.push(`  - …共 ${other.blocks.length} 个时间块，仅列前 12 个`);
+      }
+      lines.push('修改其他计划：move_block / update_block / remove_block 直接使用上面的块 id。');
+      lines.push('新建块、增删任务定义、改约束的新增、清空计划、重新排程只作用于当前计划；任务 key 只在当前计划内有效。');
+    }
     if (input.conflicts?.length) {
       lines.push('【共享日历：跨计划时间重叠】（来自用户的其他计划，仅供提醒，不要自行修改）');
       for (const c of input.conflicts.slice(0, 6)) {
