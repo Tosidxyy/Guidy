@@ -3,6 +3,9 @@ import { toast } from 'sonner';
 import { CalendarDays, MessageSquare } from 'lucide-react';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
+import { useBlockHistory } from '@/store/useBlockHistory';
+import { blockController } from '@/lib/blockRuntime';
+import { pickUndoSource } from '@/lib/undoPriority';
 import { applyPrefs, loadPrefs } from '@/lib/prefs';
 import { cn } from '@/lib/utils';
 import { Toaster } from '@/components/ui/sonner';
@@ -36,6 +39,21 @@ export default function App() {
       if (target.closest('input, textarea, select')) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
+        const activePlanId = usePlanStore.getState().state.plan.id;
+        if (activePlanId) {
+          const blockEntry = e.shiftKey
+            ? useBlockHistory.getState().redo[activePlanId]?.at(-1)
+            : useBlockHistory.getState().entries[activePlanId]?.at(-1);
+          const localEntry = e.shiftKey
+            ? usePlanStore.getState().redoStack.at(-1)
+            : usePlanStore.getState().undoStack.at(-1);
+          const source = pickUndoSource(blockEntry?.at, localEntry?.at);
+          if (source === 'block') {
+            const action = e.shiftKey ? blockController.redo(activePlanId) : blockController.undo(activePlanId);
+            void action.then((label) => { if (label) toast(e.shiftKey ? `已重做：${label}` : `已撤销：${label}`); });
+            return;
+          }
+        }
         const store = usePlanStore.getState();
         if (e.shiftKey) {
           const label = store.redo();
