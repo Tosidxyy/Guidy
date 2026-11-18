@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { solveArtifact } from '@/lib/preview';
+import { localDay } from '@/shared/engine';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 import type { Block } from '@/shared/types';
 
@@ -21,5 +22,11 @@ describe('solveArtifact', () => {
     const pinned: Block = { id: 'p1', title: '固定', category: 'work', start_utc: '2026-11-16T01:00:00.000Z', end_utc: '2026-11-16T02:00:00.000Z', priority: 'mid', pinned: true, origin: 'manual' };
     const { output } = solveArtifact(draft, plan, [pinned]);
     expect(output.blocks.some((b) => b.id === 'p1')).toBe(true);
+  });
+  it('artifact 指定开始日 → 从该日起排，并回传 horizon_start', () => {
+    const { output, horizon_start } = solveArtifact({ ...draft, horizon_start: '2026-11-23' }, plan, []);
+    expect(horizon_start).toBe('2026-11-23');
+    expect(output.blocks.every((b) => localDay(b.start_utc, 'Asia/Shanghai') >= horizon_start)).toBe(true);
+    expect(output.blocks.every((b) => localDay(b.start_utc, 'Asia/Shanghai') <= '2026-11-29')).toBe(true);
   });
 });

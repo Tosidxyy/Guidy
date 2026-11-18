@@ -31,6 +31,10 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const body = await readJson(ctx.request, 8192);
   const text = typeof body.text === 'string' ? body.text.trim() : '';
   if (!text || text.length > LIMITS.messageChars) fail('validation_failed', 422);
+  const today = typeof body.today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.today) && !Number.isNaN(new Date(`${body.today}T12:00:00Z`).getTime())
+    ? body.today
+    : undefined;
+  const timezone = typeof body.timezone === 'string' && body.timezone.length <= 64 ? body.timezone : undefined;
   const requestId = typeof body.request_id === 'string' && body.request_id ? body.request_id : crypto.randomUUID();
   const conv = await ensureConversation(deps.db, visitor, body.conversation_id ?? null, text.slice(0, 30), body.plan_id ?? null);
   const day = todayStr(deps.now?.() ?? new Date());
@@ -68,7 +72,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           const projector = createProjector(nextSeq, assistantSeq);
           const upstream = await deps.qca.openStream(sessionId, { lastEventId: conv.last_event_id ?? undefined, signal: abort.signal });
           try {
-            await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [] }), `${requestId}:${attempt}`);
+            await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone }), `${requestId}:${attempt}`);
             for await (const frame of readSSE(upstream.body, { signal: abort.signal })) {
               const ev = JSON.parse(frame.data);
               if (frame.id) lastEventId = frame.id;

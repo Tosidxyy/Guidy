@@ -63,9 +63,9 @@ export function TopBar() {
               type="button"
               onClick={() => setWeekOffset(0)}
               className={cn('tabular min-w-[64px] rounded-md px-2 py-1 text-center text-sm font-medium', weekOffset === 0 ? 'text-site-ink' : 'text-site-brand hover:bg-site-surface-2')}
-              title="回到本周"
+              title="回到计划首周"
             >
-              {weekOffset === 0 ? '本周' : `${weekOffset > 0 ? '+' : ''}${weekOffset} 周`}
+              {weekOffset === 0 ? '首周' : `${weekOffset > 0 ? '+' : ''}${weekOffset} 周`}
             </button>
             <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="下一周" onClick={() => setWeekOffset(weekOffset + 1)}>
               <ChevronRight className="h-4 w-4" />

@@ -2,7 +2,7 @@
 
 免登录的 AI 计划工作台：用自然语言说出目标与限制，Agent 提取时间窗口、互斥、每日上限等约束，确定性排程引擎生成个性化计划，落在可拖拽的日历面板上；支持手动编辑、AI 编辑预览，满意后可发布为社区模板供他人套用自己的约束重排。
 
-本分支 `Guidy-Qoder` 是面向 Qoder 天池大赛的 **Qoder Sites Web 实现**（React + Vite + Tailwind + 双端共享排程引擎）。`main` 保留早期 iOS / Cloudflare 版本，两者互不影响。
+本分支 `Guidy-Qoder` 是面向 Qoder 天池大赛的 **Qoder Sites Web 实现**（React + Vite + Tailwind + 双端共享排程引擎）。`main` 已同步到同一实现；早期 iOS / Cloudflare 版本保留在 git 历史中。
 
 ## 当前进度
 

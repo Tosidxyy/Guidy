@@ -56,6 +56,7 @@ export function useCommitPlan() {
       store.importState(next);
       usePlanStore.setState({ preview: null });
       qc.invalidateQueries({ queryKey: ['plans'] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
       toast.success(serverPlan.server_authoritative ? '已按服务端结果保存计划' : '计划已保存到云端');
     },
   });

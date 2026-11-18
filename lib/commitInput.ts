@@ -28,6 +28,7 @@ export async function buildCommitInput(args: {
   conversationId?: string | null;
 }): Promise<CommitBody> {
   const { draft, plan, blocks, previewId, planId, conversationId } = args;
+  const horizon_start = draft.horizon_start ?? plan.horizon_start;
   const constraints: Constraint[] = draft.constraints.map((payload, i) => ({
     id: `ai-${i}`, payload, source: 'ai', enabled: true,
   }));
@@ -36,7 +37,7 @@ export async function buildCommitInput(args: {
     plan_id: planId,
     input: {
       title: draft.plan_title,
-      horizon_start: plan.horizon_start,
+      horizon_start,
       horizon_days: draft.horizon_days,
       timezone: plan.timezone,
       task_defs: draft.task_defs,

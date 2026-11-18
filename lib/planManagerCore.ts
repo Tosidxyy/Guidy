@@ -1,5 +1,6 @@
 import { conversationForPlan, type ConversationLike } from '@/lib/planConversation';
 import { cursorAfterMessages, type ChatState } from '@/store/useChatStore';
+import { restoreChat } from '@/lib/restoreChat';
 import { buildEmptyPlan } from '@/lib/seed';
 import type { PlanState } from '@/shared/types';
 
@@ -9,7 +10,7 @@ export interface PlanManagerDeps {
   fetchHistory(id: string): Promise<{ conversation: any; messages: any[] }>;
   getPlanState(): PlanState;
   importState(s: PlanState): void;
-  getConversations(): ConversationLike[];
+  getConversations(): ConversationLike[] | Promise<ConversationLike[]>;
   setConversation(id: string | null, messages?: any[]): void;
   setChatState(patch: Partial<ChatState>): void;
   newConversation(): void;
@@ -21,17 +22,17 @@ export interface PlanManagerDeps {
 
 export function createPlanManager(deps: PlanManagerDeps) {
   async function restoreConversation(planId: string | null) {
-    const conv = conversationForPlan(deps.getConversations(), planId);
+    const conv = conversationForPlan(await deps.getConversations(), planId);
     if (!conv) { deps.newConversation(); return; }
     const h = await deps.fetchHistory(conv.id);
-    const msgs = h.messages.map((m: any) => ({ seq: m.seq, role: m.role, kind: m.kind, content: m.content ?? '', payload: m.payload }));
-    deps.setConversation(conv.id, msgs);
-    deps.setChatState({ cursor: cursorAfterMessages(h.messages) });
-    const lastArt = [...h.messages].reverse().find((m: any) => m.kind === 'constraint_set' || m.kind === 'patch');
-    if (lastArt?.payload) {
-      if (lastArt.kind === 'constraint_set') deps.setChatState({ artifact: lastArt.payload, clarifications: lastArt.payload.clarifications_needed ?? [], patch: null });
-      else deps.setChatState({ patch: lastArt.payload, artifact: null, clarifications: [] });
-    }
+    const restored = restoreChat(h.messages, deps.getPlanState());
+    deps.setConversation(conv.id, restored.messages);
+    deps.setChatState({
+      cursor: cursorAfterMessages(h.messages),
+      artifact: restored.artifact,
+      patch: restored.patch,
+      clarifications: restored.clarifications,
+    });
     if (conv.status === 'active') deps.resume();
   }
   async function switchPlan(id: string) {

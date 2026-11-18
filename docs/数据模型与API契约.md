@@ -309,6 +309,7 @@ const ConstraintPayload = z.discriminatedUnion('type', [
 const ConstraintSetArtifact = z.object({
   type: z.literal('constraint_set'),
   plan_title: z.string().max(60),
+  horizon_start: z.string().date().optional(),  // 用户指定开始日（「下周」等相对日期换算）；缺省沿用当前计划开始日
   horizon_days: z.union([z.literal(7), z.literal(14)]).default(7),
   task_defs: z.array(TaskDef).min(1).max(30),
   constraints: z.array(ConstraintPayload).max(40),
@@ -407,6 +408,8 @@ solve(input: SolveInput): SolveOutput   // 纯函数、确定性
 { "conversation_id": "uuid|null",   // null=新建对话（可附 plan_id）
   "plan_id": "uuid|null",
   "text": "我12月20日考研……",        // ≤2000 字符
+  "today": "2026-11-18",             // 客户端本地日期，供模型换算「下周」等相对日期
+  "timezone": "Asia/Shanghai",       // 客户端时区
   "request_id": "uuid" }            // 客户端幂等键
 // Response: 202，Content-Type: text/event-stream（事件契约见 §7）
 // 首个事件 accepted；同访客已有 pending 派发 → 409 dispatch_busy

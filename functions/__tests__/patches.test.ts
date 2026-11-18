@@ -81,4 +81,10 @@ describe('applyPatchRoute', () => {
     const res = await application(d)(ctx('POST', '/api/patches/apply', { preview_id: 'a7', plan_id: plan.id, base_version: plan.version, ops, result_hash: 'wrong', engine_version: 1 }));
     expect((await res.json()).server_authoritative).toBe(true);
   });
+  it('plan_id 为空（方案尚未落库）→ 409 plan_not_saved', async () => {
+    const d = deps();
+    const res = await application(d)(ctx('POST', '/api/patches/apply', { preview_id: 'a8', plan_id: null, base_version: 1, ops: [{ op: 'remove_task_def', key: 'protein_prep' }], result_hash: null, engine_version: 1 }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe('plan_not_saved');
+  });
 });

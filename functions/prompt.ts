@@ -30,7 +30,9 @@ export function buildSystemPrompt(): string {
     '- 闲聊、问身份/能力、或与排程无关：用一两句自然语言回答，不输出任何产物。被问「你是什么模型」等只以 Guidy 助手身份作答，不透露底层模型。',
     '- 有排程目标但信息不足：用自然语言追问，每轮最多 2 个关键问题（目标/科目/时长/频率/忙碌时间/偏好），不要臆造用户未给出的硬性时间，不要急于生成产物。',
     '- 目标明确且信息足够，或用户明确要求生成：才输出 constraint_set（一个 JSON 对象，可用 ```json 代码块包裹），下方确认卡会自动出现。',
-    '- 用户要求修改已有计划：输出 patch。',
+    '- 时间基准：用户消息开头会给出「今天是 YYYY-MM-DD（周X，时区）」。用户说「下周 / 下个月 / 从某天开始」时，必须换算成具体日期写入 horizon_start；「下周」指下一个自然周的周一。用户未指定开始日时省略 horizon_start。',
+    '- 用户要求修改已有计划：仅当上下文里已有已保存的计划（「当前计划」存在）时输出 patch。',
+    '- 如果方案还只是未确认的 constraint_set（上下文显示「当前还没有计划」），用户的修改要求仍输出更新后的完整 constraint_set，不要输出 patch；已解决的 clarifications 要清空。',
     '- 结构化产物一旦输出，字段名、类型、枚举必须与下方契约逐字一致，不要自创字段、不要改用近义词或把对象写成字符串。',
     '',
     '【研究式规划——用户不知道做什么时】',
@@ -40,7 +42,7 @@ export function buildSystemPrompt(): string {
     '- 检索不到权威资料时回退自身知识并追问，不臆造用户未给出的硬性时间；适度检索，不要过度搜索拖延回答。',
     '',
     '【constraint_set 契约】',
-    '{type:"constraint_set", plan_title:string(≤60), horizon_days:7|14, task_defs:[TaskDef](1–30), constraints:[Payload](≤40), clarifications_needed:[string(≤200)](≤2)}',
+    '{type:"constraint_set", plan_title:string(≤60), horizon_start?:"YYYY-MM-DD", horizon_days:7|14, task_defs:[TaskDef](1–30), constraints:[Payload](≤40), clarifications_needed:[string(≤200)](≤2)}',
     'TaskDef = {key, title, category, duration_min, frequency, priority?, splittable?, preferred_period?, sort_order?}',
     '- key：仅小写字母/数字/下划线，1–24 位；title：1–60 字；duration_min：5–480 的整数。',
     '- category ∈ study|fitness|reading|work|life|creative|rest|other。',
@@ -71,15 +73,21 @@ export function buildSystemPrompt(): string {
   ].join('\n');
 }
 
-export function buildUserMessage(input: { message: string; plan: PlanState | null; history: { role: string; content: string }[] }): string {
+export function buildUserMessage(input: { message: string; plan: PlanState | null; history: { role: string; content: string }[]; today?: string; timezone?: string }): string {
   const lines: string[] = [];
+  const timezone = input.plan?.plan.timezone ?? input.timezone ?? 'Asia/Shanghai';
+  const today = input.today ?? new Date().toISOString().slice(0, 10);
+  const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date(`${today}T12:00:00Z`).getUTCDay()];
+  lines.push(`今天是 ${today}（${weekday}，${timezone}）。`);
   if (input.plan) {
     lines.push(`当前计划「${input.plan.plan.title}」，horizon_start=${input.plan.plan.horizon_start}，timezone=${input.plan.plan.timezone}。`);
     lines.push('任务：' + input.plan.task_defs.map((t) => `${t.title}（${taskSummary(t)}）`).join('；'));
     lines.push('约束：' + (input.plan.constraints.map((c) => constraintText(c.payload)).join('；') || '无'));
     lines.push(`已有 ${input.plan.blocks.length} 个时间块。`);
+    lines.push('当前计划已保存；用户要求修改时输出 patch。');
   } else {
     lines.push('当前还没有计划。');
+    lines.push('注意：当前没有任何已保存的计划，之前的 constraint_set 也尚未落库。用户对方案的修改请输出完整 constraint_set，不要输出 patch。');
   }
   for (const h of input.history.slice(-6)) lines.push(`${h.role}: ${h.content}`);
   lines.push(`user: ${input.message}`);

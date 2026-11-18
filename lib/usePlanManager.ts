@@ -20,7 +20,12 @@ export function usePlanManager() {
     fetchHistory: (id) => api.history(id),
     getPlanState: () => usePlanStore.getState().state,
     importState: (s) => usePlanStore.getState().importState(s),
-    getConversations: () => conversations.data?.items ?? [],
+    getConversations: async () => {
+      // commit 会在服务端把当前对话绑定到新计划；缓存可能仍是绑定前的列表，
+      // 因此切换计划前先刷新，否则同一会话内新建的计划切回去会丢对话。
+      const r = await conversations.refetch().catch(() => null);
+      return r?.data?.items ?? conversations.data?.items ?? [];
+    },
     setConversation: (id, msgs) => useChatStore.getState().setConversation(id, msgs),
     setChatState: (patch) => useChatStore.setState(patch),
     newConversation: () => chatController.newConversation(),
@@ -45,7 +50,11 @@ export function usePlanManager() {
     refetch: query.refetch,
     switchPlan: (id: string) => run(() => manager.switchPlan(id)),
     newPlan: () => run(() => manager.newPlan()),
-    deletePlan: (id: string) => run(() => manager.deletePlan(id)),
+    deletePlan: (id: string) => run(async () => {
+      await manager.deletePlan(id);
+      // 删除后服务端已解绑该计划的对话，列表缓存须同步失效。
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    }),
     isPending: pending,
   };
 }

@@ -61,6 +61,16 @@ describe('chatSend', () => {
     const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '排计划' })));
     expect(out.some((f) => f.event === 'artifact' && f.data.kind === 'constraint_set')).toBe(true);
   });
+  it('today/timezone 注入用户消息，供模型换算「下周」等相对日期', async () => {
+    let sent = '';
+    const d = deps({
+      openStream: async () => ({ body: upstreamStream(replyFrames), close() {} }),
+      sendEvents: async (_sessionId: string, text: string) => { sent = text; return { eventIds: ['evt'] }; },
+    });
+    await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '从下周开始', today: '2026-11-18', timezone: 'Asia/Shanghai' })));
+    expect(sent).toContain('今天是 2026-11-18（周三，Asia/Shanghai）');
+    expect(sent).toContain('user: 从下周开始');
+  });
   it('持久上游流 + 真实 session.status_idle：终态后主动结束，投影 artifact 并 done（不依赖 EOF）', async () => {
     const set = { type: 'constraint_set', plan_title: '考研', horizon_days: 7, task_defs: [{ key: 'math', title: '数学', category: 'study', duration_min: 90, frequency: { type: 'daily' } }], constraints: [], clarifications_needed: [] };
     const frames = [

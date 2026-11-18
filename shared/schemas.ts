@@ -107,6 +107,7 @@ export const PatchArtifactSchema = z.object({
 export const ConstraintSetArtifactSchema = z.object({
   type: z.literal('constraint_set'),
   plan_title: z.string().max(60),
+  horizon_start: z.string().date().optional(),
   horizon_days: z.union([z.literal(7), z.literal(14)]).default(7),
   task_defs: z.array(TaskDefSchema).min(1).max(30),
   constraints: z.array(ConstraintPayloadSchema).max(40),

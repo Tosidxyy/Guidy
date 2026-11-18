@@ -6,6 +6,7 @@ import { ConstraintSchema, TaskDefSchema } from '@/shared/schemas';
 import type { PlanState } from '@/shared/types';
 import { api } from '@/lib/api';
 import { buildIcs, icsFileName } from '@/lib/ics';
+import { isPersistedPlanState } from '@/lib/storage';
 import { useRecovery } from '@/lib/useRecovery';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useChatStore } from '@/store/useChatStore';
@@ -90,7 +91,7 @@ export function SettingsDrawer() {
     try {
       const parsed = JSON.parse(await file.text()) as { state?: PlanState };
       const s = parsed.state;
-      if (!s?.plan?.id || !Array.isArray(s.blocks) || !Array.isArray(s.task_defs) || !Array.isArray(s.constraints)) {
+      if (!isPersistedPlanState(s)) {
         toast.error('文件格式不正确：缺少计划数据');
         return;
       }

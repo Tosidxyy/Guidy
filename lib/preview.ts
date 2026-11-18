@@ -7,19 +7,20 @@ export function solveArtifact(
   draft: ConstraintSetArtifact,
   plan: { horizon_start: string; timezone: string },
   blocks: Block[],
-): { output: SolveOutput; diff: DiffResult } {
+): { output: SolveOutput; diff: DiffResult; horizon_start: string } {
+  const horizon_start = draft.horizon_start ?? plan.horizon_start;
   const constraints: Constraint[] = draft.constraints.map((payload, i) => ({
     id: `ai-${i}`, payload, source: 'ai', enabled: true,
   }));
   const pinned = blocks.filter((b) => b.pinned || b.origin === 'manual');
   const output = solve({
     engine_version: ENGINE_VERSION,
-    horizon_start: plan.horizon_start,
+    horizon_start,
     horizon_days: draft.horizon_days,
     timezone: plan.timezone,
     task_defs: draft.task_defs,
     constraints,
     pinned_blocks: pinned,
   });
-  return { output, diff: diffBlocks(blocks, output.blocks) };
+  return { output, diff: diffBlocks(blocks, output.blocks), horizon_start };
 }

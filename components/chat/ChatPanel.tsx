@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { MessageSquarePlus, Sparkles } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useChat } from '@/lib/useChat';
 import { useChatStore, cursorAfterMessages, shouldAutoRestore } from '@/store/useChatStore';
 import { usePlanStore } from '@/store/usePlanStore';
 import { conversationForPlan } from '@/lib/planConversation';
+import { restoreChat } from '@/lib/restoreChat';
 import { useCommitPlan } from '@/lib/useCommitPlan';
 import { useApplyPatch } from '@/lib/useApplyPatch';
 import type { ConstraintSetArtifact, PatchArtifact } from '@/shared/schemas';
@@ -42,21 +43,30 @@ export function ChatPanel() {
 
   const me = useQuery({ queryKey: ['me'], queryFn: () => api.me(), retry: false });
   const conversations = useQuery({ queryKey: ['conversations'], queryFn: () => api.conversations(), retry: false });
+  const qc = useQueryClient();
+  const wasStreaming = useRef(false);
+
+  // 每轮对话在服务端扣减额度；流结束后刷新，页头剩余次数与耗尽提示才是当前值。
+  useEffect(() => {
+    if (wasStreaming.current && !streaming) void qc.invalidateQueries({ queryKey: ['me'] });
+    wasStreaming.current = streaming;
+  }, [streaming, qc]);
 
   useEffect(() => {
     const items = conversations.data?.items ?? [];
     if (!shouldAutoRestore({ conversationId, restoreDone }, items.length, !!conversations.data)) return;
     const first = conversationForPlan(items, planId);
     if (!first) return;
+    const plan = usePlanStore.getState().state;
     api.history(first.id).then((h) => {
-      const msgs = h.messages.map((m: any) => ({ seq: m.seq, role: m.role, kind: m.kind, content: m.content ?? '', payload: m.payload }));
-      setConversation(first.id, msgs);
-      useChatStore.setState({ cursor: cursorAfterMessages(h.messages) });
-      const lastArt = [...h.messages].reverse().find((m: any) => m.kind === 'constraint_set' || m.kind === 'patch');
-      if (lastArt?.payload) {
-        if (lastArt.kind === 'constraint_set') useChatStore.setState({ artifact: lastArt.payload, clarifications: lastArt.payload.clarifications_needed ?? [], patch: null });
-        else useChatStore.setState({ patch: lastArt.payload, artifact: null, clarifications: [] });
-      }
+      const restored = restoreChat(h.messages, plan);
+      setConversation(first.id, restored.messages);
+      useChatStore.setState({
+        cursor: cursorAfterMessages(h.messages),
+        artifact: restored.artifact,
+        patch: restored.patch,
+        clarifications: restored.clarifications,
+      });
       if (first.status === 'active') chat.resume();
     }).catch(() => {});
   }, [conversations.data, conversationId, restoreDone, planId]);
@@ -68,12 +78,14 @@ export function ChatPanel() {
   };
 
   const onConfirmPatch = (p: PatchArtifact) => {
+    if (!planId) return;
     previewPatch(p);
     setConfirmedPatch(p);
     setConfirmedDraft(null);
   };
 
   const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant' && m.kind === 'text');
+  const lastConstraintSeq = [...messages].reverse().find((m) => m.kind === 'constraint_set')?.seq;
 
   const chatRemaining = me.data?.quotas.chat_remaining;
   const quotaExhausted = chatRemaining === 0;
@@ -95,7 +107,12 @@ export function ChatPanel() {
           <p className="px-1 text-xs leading-relaxed text-site-ink-soft">你想制定什么方案？说说你的目标、科目与时间安排，我会边聊边帮你提取约束，信息够了就在下方生成计划。</p>
         )}
         {messages.map((m) => (
-          <MessageBubble key={`${m.seq}-${m.role}-${m.kind}`} message={m} streaming={streaming && m.seq === lastAssistant?.seq} />
+          <MessageBubble
+            key={`${m.seq}-${m.role}-${m.kind}`}
+            message={m}
+            streaming={streaming && m.seq === lastAssistant?.seq}
+            clarificationPending={clarifications.length > 0 && m.kind === 'constraint_set' && m.seq === lastConstraintSeq}
+          />
         ))}
         {clarifications.length > 0 && (
           <div className="rounded-lg border border-site-line bg-site-surface p-3">
@@ -103,15 +120,27 @@ export function ChatPanel() {
             <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-site-ink-soft">
               {clarifications.map((q, i) => <li key={i}>{q}</li>)}
             </ul>
+            <p className="mt-1.5 text-[11px] text-site-ink-soft">直接在下方回复这些问题，我会更新方案并给出确认卡。</p>
           </div>
         )}
         {artifact && clarifications.length === 0 && !confirmedDraft && (
           <ConstraintConfirmCard artifact={artifact} onConfirm={onConfirm} onCancel={() => useChatStore.setState({ artifact: null })} />
         )}
-        {patch && !confirmedPatch && (
+        {patch && planId && !confirmedPatch && (
           <PatchConfirmCard patch={patch} onConfirm={onConfirmPatch} onCancel={() => useChatStore.setState({ patch: null })} />
         )}
-        {confirmedPatch && preview && (
+        {patch && !planId && (
+          <div className="rounded-lg border border-site-warning/40 bg-site-warning/5 p-3">
+            <p className="text-xs font-semibold text-site-ink">这条调整无法应用</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-site-ink-soft">
+              当前还没有保存的计划。请让 AI 重新输出完整方案，或先把上一版约束方案确认为计划。
+            </p>
+            <div className="mt-2 flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => useChatStore.setState({ patch: null })}>知道了</Button>
+            </div>
+          </div>
+        )}
+        {confirmedPatch && preview && planId && (
           <div className="rounded-lg border border-[var(--site-dawn-line)]/40 bg-site-surface p-3">
             <p className="text-xs text-site-ink">调整预览已生成（右侧日历 ghost 块）。确认保存到云端？</p>
             <div className="mt-2 flex justify-end gap-2">

@@ -76,4 +76,15 @@ describe('schemas', () => {
     expect(r.success).toBe(true);
     if (r.success) expect((r.data as Record<string, unknown>).evil).toBeUndefined();
   });
+
+  it('S13 horizon_start 可选，但必须是合法日期', () => {
+    const base = {
+      type: 'constraint_set', plan_title: 't', horizon_days: 7,
+      task_defs: [{ key: 'a', title: 'a', category: 'study', duration_min: 60, frequency: { type: 'daily' } }],
+      constraints: [], clarifications_needed: [],
+    };
+    expect(ConstraintSetArtifactSchema.safeParse({ ...base, horizon_start: '2026-11-23' }).success).toBe(true);
+    expect(ConstraintSetArtifactSchema.safeParse(base).success).toBe(true);
+    expect(ConstraintSetArtifactSchema.safeParse({ ...base, horizon_start: '2026-13-01' }).success).toBe(false);
+  });
 });

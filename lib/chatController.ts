@@ -33,7 +33,14 @@ export function createChatController(deps: {
     send(text: string) {
       const st = store.getState();
       st.startSend(text);
-      const body = { conversation_id: st.conversationId ?? undefined, text, request_id: newId(), plan_id: deps.getPlanId?.() ?? undefined };
+      const body = {
+        conversation_id: st.conversationId ?? undefined,
+        text,
+        request_id: newId(),
+        plan_id: deps.getPlanId?.() ?? undefined,
+        today: new Date().toLocaleDateString('sv-SE'),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
       stream.read((signal) => openChecked(fetchFn, SEND_URL, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body), signal, credentials: 'same-origin',

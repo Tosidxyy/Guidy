@@ -31,6 +31,7 @@ async function loadState(db: Db, visitor: string, planId: string): Promise<PlanS
 export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const visitor = requireVisitor(deps, ctx);
   const body = await readJson(ctx.request, 262144);
+  if ((body as { plan_id?: unknown })?.plan_id === null || (body as { plan_id?: unknown })?.plan_id === undefined) fail('plan_not_saved', 409);
   const parsed = BodySchema.safeParse(body);
   if (!parsed.success) fail('validation_failed', 422, parsed.error.flatten());
   const { preview_id, plan_id, base_version, ops, result_hash, engine_version } = parsed.data;

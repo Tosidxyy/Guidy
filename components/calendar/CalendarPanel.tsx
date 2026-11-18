@@ -67,15 +67,16 @@ export function CalendarPanel() {
 
   const tz = state.plan.timezone;
   const today = todayStr(tz);
+  const horizonStart = preview?.horizon_start ?? state.plan.horizon_start;
 
   const days = useMemo(() => {
     if (view === 'day') {
-      const anchor = dayAnchor && dayAnchor >= state.plan.horizon_start ? dayAnchor : today;
+      const anchor = dayAnchor && dayAnchor >= horizonStart ? dayAnchor : today;
       return [anchor];
     }
-    const anchor = format(addDays(parseISO(state.plan.horizon_start), weekOffset * 7), 'yyyy-MM-dd');
+    const anchor = format(addDays(parseISO(horizonStart), weekOffset * 7), 'yyyy-MM-dd');
     return dayList(anchor, 7, tz);
-  }, [view, dayAnchor, weekOffset, state.plan.horizon_start, tz, today]);
+  }, [view, dayAnchor, weekOffset, horizonStart, tz, today]);
 
   const bodyH = (visibleEnd - visibleStart) * PX_PER_MIN;
   const cols = { gridTemplateColumns: `${GUTTER_PX}px repeat(${days.length}, minmax(0, 1fr))` };

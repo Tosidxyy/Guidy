@@ -16,6 +16,8 @@ export interface ReschedulePreview {
   output: SolveOutput;
   diff: DiffResult;
   reason: string;
+  horizon_start: string;
+  horizon_days: 7 | 14;
 }
 
 interface PlanStore {
@@ -233,17 +235,17 @@ export const usePlanStore = create<PlanStore>((set, get) => {
         pinned_blocks: pinned,
       });
       const diff = diffBlocks(state.blocks, output.blocks);
-      set({ preview: { output, diff, reason }, lastCompromises: output.compromises });
+      set({ preview: { output, diff, reason, horizon_start: state.plan.horizon_start, horizon_days: state.plan.horizon_days }, lastCompromises: output.compromises });
     },
 
     previewArtifact: (draft) => {
       const { state } = get();
-      const { output, diff } = solveArtifact(
+      const { output, diff, horizon_start } = solveArtifact(
         draft,
         { horizon_start: state.plan.horizon_start, timezone: state.plan.timezone },
         state.blocks,
       );
-      set({ preview: { output, diff, reason: 'AI 约束方案预览' }, lastCompromises: output.compromises });
+      set({ preview: { output, diff, reason: 'AI 约束方案预览', horizon_start, horizon_days: draft.horizon_days }, lastCompromises: output.compromises });
     },
 
     previewPatch: (patch) => {
@@ -257,7 +259,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
         output = { blocks: patched.state.blocks, violations: [], compromises: [], stats: { placed: patched.state.blocks.length, unplaced: 0, solve_ms: 0 } };
       }
       const diff = diffBlocks(state.blocks, output.blocks);
-      set({ preview: { output, diff, reason: patch.summary }, lastCompromises: output.compromises });
+      set({ preview: { output, diff, reason: patch.summary, horizon_start: patched.state.plan.horizon_start, horizon_days: patched.state.plan.horizon_days }, lastCompromises: output.compromises });
     },
 
     replaceStateKeepUndo: (next) => {
@@ -273,6 +275,8 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       if (!preview) return;
       get().commit('应用重新排程', (draft) => {
         draft.blocks = preview.output.blocks;
+        draft.plan.horizon_start = preview.horizon_start;
+        draft.plan.horizon_days = preview.horizon_days;
       });
       set({ preview: null, lastCompromises: preview.output.compromises });
     },

@@ -7,6 +7,7 @@ import {
   updateTaskDuration, updateTaskTitle, updateWindow,
 } from '@/lib/confirmDraft';
 import { useFocusTrap } from '@/lib/useFocusTrap';
+import { usePlanStore } from '@/store/usePlanStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -16,7 +17,8 @@ const WINDOW_TYPES = ['busy_window', 'active_window', 'fixed_block'];
 export function ConstraintConfirmCard({ artifact, onConfirm, onCancel }: {
   artifact: ConstraintSetArtifact; onConfirm: (draft: ConstraintSetArtifact) => void; onCancel: () => void;
 }) {
-  const [draft, setDraft] = useState<ConstraintSetArtifact>(artifact);
+  const planStart = usePlanStore((s) => s.state.plan.horizon_start);
+  const [draft, setDraft] = useState<ConstraintSetArtifact>({ ...artifact, horizon_start: artifact.horizon_start ?? planStart });
   const ref = useRef<HTMLDivElement>(null);
   useFocusTrap(ref, true, onCancel);
 
@@ -31,6 +33,18 @@ export function ConstraintConfirmCard({ artifact, onConfirm, onCancel }: {
       <div className="dawn-gradient mb-3 h-0.5 rounded-full" />
       <h3 className="font-display text-sm font-semibold text-site-ink">核对约束方案</h3>
       <p className="mt-0.5 text-xs text-site-ink-soft">逐条确认或修改，再生成计划预览。</p>
+
+      <div className="mt-3 flex items-center gap-2 rounded-lg border border-site-line bg-site-bg px-2.5 py-1.5">
+        <span className="text-xs text-site-ink-soft">开始日期</span>
+        <Input
+          type="date"
+          value={draft.horizon_start ?? planStart}
+          aria-label="计划开始日期"
+          onChange={(e) => setDraft((d) => ({ ...d, horizon_start: e.target.value || planStart }))}
+          className="h-7 w-36 text-xs"
+        />
+        <span className="text-[11px] text-site-ink-soft">连续排 {draft.horizon_days} 天</span>
+      </div>
 
       <section className="mt-3">
         <h4 className="mb-1.5 text-xs font-semibold text-site-ink">任务（{draft.task_defs.length}）</h4>

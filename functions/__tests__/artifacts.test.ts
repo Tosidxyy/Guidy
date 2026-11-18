@@ -49,6 +49,22 @@ describe('prompt 对话策略 — 自由对话 agent，意图分流', () => {
     expect(m).not.toContain('请生成 constraint_set');
     expect(m).toContain('当前还没有计划');
   });
+  it('方案未落库时的修改仍要求完整 constraint_set，不输出 patch', () => {
+    expect(buildSystemPrompt()).toContain('不要输出 patch');
+    const m = buildUserMessage({ message: '周末改上午', plan: null, history: [] });
+    expect(m).toContain('不要输出 patch');
+    expect(m).toContain('尚未落库');
+  });
+  it('声明 horizon_start 与「下周」的时间基准', () => {
+    const p = buildSystemPrompt();
+    expect(p).toContain('horizon_start');
+    expect(p).toContain('今天是 YYYY-MM-DD');
+    expect(p).toContain('下一个自然周的周一');
+  });
+  it('buildUserMessage 注入今天与星期，供模型换算相对日期', () => {
+    const m = buildUserMessage({ message: '从下周开始', plan: null, history: [], today: '2026-11-18', timezone: 'Asia/Shanghai' });
+    expect(m).toContain('今天是 2026-11-18（周三，Asia/Shanghai）');
+  });
 });
 
 describe('prompt 契约 — 范例必须与引擎/确认卡消费的 schema 完全一致', () => {

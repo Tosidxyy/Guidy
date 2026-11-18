@@ -69,6 +69,12 @@ describe('createPlanManager', () => {
     await createPlanManager(d).restoreConversation('p2');
     expect(d.newConversation).toHaveBeenCalled();
   });
+  it('restoreConversation 使用异步刷新的会话列表（commit 绑定后缓存可能过期）', async () => {
+    const d = fakeDeps({ getConversations: vi.fn(async () => [{ id: 'c2', plan_id: 'p2', status: 'active' }]) });
+    await createPlanManager(d).restoreConversation('p2');
+    expect(d.fetchHistory).toHaveBeenCalledWith('c2');
+    expect(d.newConversation).not.toHaveBeenCalled();
+  });
   it('switchPlan fetch 失败 → 不覆盖活动态 + invalidate + 抛出', async () => {
     const d = fakeDeps({ fetchPlan: vi.fn(async () => { throw Object.assign(new Error('gone'), { status: 404 }); }) });
     await expect(createPlanManager(d).switchPlan('p2')).rejects.toThrow('gone');

@@ -36,4 +36,10 @@ describe('buildCommitInput', () => {
     const body = await buildCommitInput({ draft, plan, blocks: output.blocks, previewId: 'pv-3', planId: null });
     expect(body.conversation_id).toBeNull();
   });
+  it('draft.horizon_start 覆盖当前计划开始日', async () => {
+    const nextWeek = { ...draft, horizon_start: '2026-11-23' };
+    const { output } = solveArtifact(nextWeek, plan, []);
+    const body = await buildCommitInput({ draft: nextWeek, plan, blocks: output.blocks, previewId: 'pv-4', planId: null });
+    expect(body.input.horizon_start).toBe('2026-11-23');
+  });
 });
