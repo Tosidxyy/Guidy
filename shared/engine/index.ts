@@ -4,4 +4,5 @@ export type { PlacementCandidate, PlacementContext } from './validate.ts';
 export { diffBlocks } from './diff.ts';
 export { resultHash } from './hash.ts';
 export { applyPatch, type PatchResult } from './patch.ts';
+export { findConflicts, isMergedPair, mergeConflictOps, type ConflictPlan, type ConflictSide, type PlanConflict } from './conflicts.ts';
 export * from './time.ts';

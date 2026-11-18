@@ -1,10 +1,12 @@
 import { toast } from 'sonner';
-import { applyPatch } from '@/shared/engine';
+import { applyPatch, mergeConflictOps } from '@/shared/engine';
 import { planController } from '@/lib/planRuntime';
+import { queryClient } from '@/lib/queryClient';
 import { pickUndoSource } from '@/lib/undoPriority';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useBlockHistory } from '@/store/useBlockHistory';
-import type { ApplyOp, ConstraintPayload, TaskDef } from '@/shared/types';
+import type { ApplyOp, ConstraintPayload, PlanState, TaskDef } from '@/shared/types';
+import type { PlanConflict } from '@/shared/engine';
 
 export interface ActionResult {
   ok: boolean;
@@ -92,6 +94,52 @@ export function deleteConstraintAction(id: string) {
 export function renamePlanAction(title: string) {
   const next = title.slice(0, 60);
   return runOps([{ op: 'update_plan', patch: { title: next } }], '重命名计划', (s) => s.renamePlan(next));
+}
+
+function planStateOf(planId: string): PlanState | undefined {
+  const active = usePlanStore.getState().state;
+  if (active.plan.id === planId) return active;
+  return queryClient.getQueryData<PlanState>(['plan', planId]);
+}
+
+/**
+ * 合并两个计划的重叠块：先写非活动计划，再写活动计划。
+ * 每侧一个 update_block（标题追加 + 并集窗口），各自进入该计划的撤销栈。
+ */
+export async function mergeConflictAction(conflict: PlanConflict): Promise<{ ok: boolean; reason?: string; planIds: string[] }> {
+  const activeId = usePlanStore.getState().state.plan.id;
+  const parts = mergeConflictOps(conflict).sort((p, q) => (p.planId === activeId ? 1 : 0) - (q.planId === activeId ? 1 : 0));
+  const done: string[] = [];
+  for (const part of parts) {
+    const planState = planStateOf(part.planId);
+    if (!planState) return { ok: false, reason: '计划数据未就绪，请刷新后重试', planIds: done };
+    const optimistic = applyPatch(planState, part.ops).state;
+    const r = await planController.apply({
+      planId: part.planId,
+      ops: part.ops,
+      label: `合并「${conflict.merged_title}」`,
+      optimistic: { blocks: optimistic.blocks },
+    });
+    if (!r.ok) {
+      return {
+        ok: false,
+        reason: done.length ? `「${conflict.a.planTitle}」已合并，另一侧失败：${r.reason ?? '未知原因'}` : r.reason ?? '合并失败',
+        planIds: done,
+      };
+    }
+    done.push(part.planId);
+  }
+  return { ok: true, planIds: done };
+}
+
+/** 撤销一次跨计划合并：按合并顺序倒序撤销两侧的该条历史。 */
+export async function undoMergedPlans(planIds: string[]): Promise<string | null> {
+  let last: string | null = null;
+  for (const planId of [...planIds].reverse()) {
+    const label = await planController.undo(planId);
+    if (label) last = label;
+  }
+  return last;
 }
 
 /** 应用「重新排程」预览：已保存计划走服务端 reschedule，未保存计划保持本地应用。 */

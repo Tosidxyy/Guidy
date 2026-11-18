@@ -3,13 +3,14 @@ import { addDays, format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { CalendarPlus } from 'lucide-react';
 import type { Block, PlanState } from '@/shared/types';
-import { dayList, hhmmToMin, localDay, localMinutes, minToHHmm, utcAt, validatePlacement, weekdayOfDay, applyPatch } from '@/shared/engine';
+import { dayList, findConflicts, hhmmToMin, localDay, localMinutes, minToHHmm, utcAt, validatePlacement, weekdayOfDay, applyPatch, type PlanConflict } from '@/shared/engine';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { usePlanLayers } from '@/lib/usePlanLayers';
 import { collectForeignBlocks, sharedHorizonStart, type ForeignBlock } from '@/lib/calendarLayers';
 import { usePlanManager } from '@/lib/usePlanManager';
 import { planController } from '@/lib/planRuntime';
+import { mergeConflictAction, undoMergedPlans } from '@/lib/planActions';
 import { moveSelection } from '@/lib/moveSelection';
 import { todayStr } from '@/lib/seed';
 import { cn } from '@/lib/utils';
@@ -17,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { EmptyCalendar } from '@/components/brand/EmptyCalendar';
 import { BlockCard, type BlockVisualState } from './BlockCard';
+import { ConflictBar } from './ConflictBar';
 import { GUTTER_PX, HOUR_PX, PX_PER_MIN, SNAP_MIN, layoutDay, snap } from './layout';
 import { PreviewDiffCard } from './PreviewDiffCard';
 import { QuickAddDialog } from './QuickAddDialog';
@@ -88,6 +90,39 @@ export function CalendarPanel() {
   const foreign = useMemo(() => collectForeignBlocks(state.blocks, layers), [state.blocks, layers]);
   const foreignMap = useMemo(() => new Map(foreign.map((f) => [f.block.id, f])), [foreign]);
   const combinedBlocks = useMemo(() => [...state.blocks, ...foreign.map((f) => f.block)], [state.blocks, foreign]);
+
+  const [ignoredConflicts, setIgnoredConflicts] = useState<string[]>([]);
+  const conflicts = useMemo<PlanConflict[]>(() => {
+    if (!state.plan.id) return [];
+    const plans = [
+      { id: state.plan.id, title: state.plan.title, blocks: state.blocks },
+      ...layers.map((l) => ({ id: l.id, title: l.title, blocks: l.state.blocks })),
+    ];
+    return findConflicts(plans, { onlyPlanId: state.plan.id }).filter((c) => !ignoredConflicts.includes(c.key));
+  }, [state.plan.id, state.plan.title, state.blocks, layers, ignoredConflicts]);
+
+  const runMerge = useCallback(async (targets: PlanConflict[]) => {
+    if (!targets.length) return;
+    const merged: string[] = [];
+    const planIds: string[] = [];
+    for (const conflict of targets) {
+      const r = await mergeConflictAction(conflict);
+      planIds.push(...r.planIds);
+      if (!r.ok) {
+        toast.error(r.reason ?? '合并失败');
+        if (r.planIds.length) {
+          toast(`已合并部分冲突`, {
+            action: { label: '撤销', onClick: () => { void undoMergedPlans(planIds).then((l) => { if (l) toast.success(`已撤销：${l}`); }); } },
+          });
+        }
+        return;
+      }
+      merged.push(conflict.merged_title);
+    }
+    toast.success(merged.length > 1 ? `已合并 ${merged.length} 处重叠` : `已合并「${merged[0]}」`, {
+      action: { label: '撤销', onClick: () => { void undoMergedPlans(planIds).then((l) => { if (l) toast.success(`已撤销：${l}`); }); } },
+    });
+  }, []);
 
   const requestSwitchPlan = useCallback((id: string, title: string) => {
     if (id === state.plan.id) return;
@@ -569,6 +604,14 @@ export function CalendarPanel() {
 
   return (
     <section className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-site-line bg-site-surface shadow-sm" aria-label="计划日历">
+      <ConflictBar
+        conflicts={conflicts}
+        activePlanId={state.plan.id}
+        timezone={tz}
+        onMerge={(c) => { void runMerge([c]); }}
+        onIgnore={(c) => setIgnoredConflicts((prev) => (prev.includes(c.key) ? prev : [...prev, c.key]))}
+        onMergeAll={() => { void runMerge(conflicts); }}
+      />
       <div ref={scrollRef} className="scrollbar-gutter-stable relative min-h-0 flex-1 overflow-y-auto">
         <div className="sticky top-0 z-30 grid border-b border-site-line bg-site-surface/95 backdrop-blur" style={cols}>
           <div className="flex items-end justify-center pb-1 text-[10px] text-site-ink-soft">GMT{formatTzOffset(tz)}</div>

@@ -28,4 +28,21 @@ describe('共享日历聚合', () => {
     expect(sharedHorizonStart('2026-11-23', layers)).toBe('2026-11-16');
     expect(sharedHorizonStart('2026-11-23', [])).toBe('2026-11-23');
   });
+
+  it('与活动块同时间同标题的外计划块只画一次（合并块）', () => {
+    const mergedActive = block('a1', '数学 + 核心');
+    const dup = { ...block('b9', '数学 + 核心') };
+    const withDup: PlanLayerSource[] = [{ id: 'p2', title: '健身', state: plan('p2', '健身', '2026-11-23', [dup, block('b8', '其他')]) }];
+    const foreign = collectForeignBlocks([mergedActive], withDup);
+    expect(foreign.map((f) => f.block.id)).toEqual(['b8']);
+  });
+
+  it('外计划之间重复的合并块也只画一次', () => {
+    const dupLayers: PlanLayerSource[] = [
+      { id: 'p2', title: '健身', state: plan('p2', '健身', '2026-11-23', [block('b1', '同名')]) },
+      { id: 'p3', title: '阅读', state: plan('p3', '阅读', '2026-11-23', [block('b2', '同名')]) },
+    ];
+    const foreign = collectForeignBlocks([], dupLayers);
+    expect(foreign.map((f) => f.block.id)).toEqual(['b1']);
+  });
 });
