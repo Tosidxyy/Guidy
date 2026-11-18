@@ -189,7 +189,6 @@ export const usePlanStore = create<PlanStore>((set, get) => {
 
     addBlock: (block) => {
       const { state } = get();
-      if (state.blocks.length >= LIMITS.blocksMax) return { ok: false, reason: '任务块数量已达上限' };
       const check = validatePlacement(block, placementCtx(state));
       if (!check.ok) return { ok: false, reason: check.hard?.reason };
       const id = `manual-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;

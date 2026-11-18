@@ -44,7 +44,8 @@ export const LIMITS = {
   tagsMax: 3,
   tagChars: 12,
   taskDefsMax: 30,
-  blocksMax: 300,
+  // 块数不设上限：日历是全局的，容量由服务端与前端渲染自然约束
+  blocksMax: Number.MAX_SAFE_INTEGER,
   constraintsMax: 40,
   undoDepth: 30,
 };

@@ -374,7 +374,7 @@ export function CalendarPanel() {
     if (!drag.moved) {
       if (drag.foreign) {
         lastForeignDrag.current = Date.now();
-        if (drag.planId) requestSwitchPlan(drag.planId, drag.planLabel ?? '');
+        if (drag.planId) setForeignTarget({ planId: drag.planId, planTitle: drag.planLabel ?? '', blockTitle: drag.block.title });
         return;
       }
       if (drag.additive) toggleSelected(drag.block.id);

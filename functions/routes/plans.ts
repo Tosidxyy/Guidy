@@ -126,7 +126,7 @@ const SaveSchema = z.object({
     timezone: z.string().min(1),
     task_defs: z.array(TaskDefSchema).max(LIMITS.taskDefsMax),
     constraints: z.array(ConstraintSchema).max(LIMITS.constraintsMax),
-    blocks: z.array(PlanBlockSchema).max(LIMITS.blocksMax),
+    blocks: z.array(PlanBlockSchema),
   }),
 });
 
