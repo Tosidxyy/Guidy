@@ -8,14 +8,10 @@ import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { conversationForPlan } from '@/lib/planConversation';
 import { restoreChat } from '@/lib/restoreChat';
-import { appliedPatches } from '@/lib/appliedPatches';
-import { useApplyPatch } from '@/lib/useApplyPatch';
-import type { PatchArtifact } from '@/shared/schemas';
 import { Button } from '@/components/ui/button';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { QuestionCard } from './QuestionCard';
-import { PatchConfirmCard } from './PatchConfirmCard';
 import { PlanCardPanel } from './PlanCardPanel';
 
 export function ChatPanel() {
@@ -34,7 +30,6 @@ export function ChatPanel() {
   const setConversation = useChatStore((s) => s.setConversation);
 
   const planId = usePlanStore((s) => s.state.plan.id);
-  const { apply: applyPatch } = useApplyPatch();
 
   const openDrawer = useUiStore((s) => s.openDrawer);
 
@@ -80,11 +75,6 @@ export function ChatPanel() {
       if (first.status === 'active') chat.resume();
     }).catch(() => {});
   }, [conversations.data, conversationId, restoreDone, planId]);
-
-  const onConfirmPatch = (p: PatchArtifact) => {
-    if (!planId) return;
-    applyPatch(p);
-  };
 
   const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant' && m.kind === 'text');
   const lastMessage = messages[messages.length - 1];
@@ -134,14 +124,6 @@ export function ChatPanel() {
             onAnswer={(text) => { useChatStore.setState({ question: null }); chat.send(text); }}
             onDismiss={() => useChatStore.setState({ question: null })}
           />
-        )}
-        {patch && planId && !appliedPatches.isApplied(conversationId, patch) && (
-          <PatchConfirmCard patch={patch} onConfirm={onConfirmPatch} onCancel={() => useChatStore.setState({ patch: null })} />
-        )}
-        {patch && planId && appliedPatches.isApplied(conversationId, patch) && (
-          <p className="rounded-lg border border-site-line bg-site-surface px-3 py-2 text-[11px] text-site-ink-soft">
-            这条调整已经应用过，如需再次修改请直接告诉我。
-          </p>
         )}
         {patch && !planId && (
           <div className="rounded-lg border border-site-warning/40 bg-site-warning/5 p-3">

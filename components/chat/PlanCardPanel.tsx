@@ -4,8 +4,11 @@ import { ChevronDown, ChevronUp, Save, ShieldCheck, X } from 'lucide-react';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 import { artifactFromPlan, canGenerateSchedule, patchFitsPlanCard, planFromArtifact } from '@/lib/planCard';
 import { generateScheduleAction, savePlanCardAction } from '@/lib/planActions';
+import { useApplyPatch } from '@/lib/useApplyPatch';
 import { useAutoSaveDraft } from '@/lib/useAutoSaveDraft';
 import { useCommitPlan } from '@/lib/useCommitPlan';
+import { appliedPatches } from '@/lib/appliedPatches';
+import { patchOpText } from '@/lib/describe';
 import { applyPatch } from '@/shared/engine';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useChatStore } from '@/store/useChatStore';
@@ -25,7 +28,9 @@ export function PlanCardPanel() {
   const state = usePlanStore((s) => s.state);
   const proposal = useChatStore((s) => s.artifact);
   const patch = useChatStore((s) => s.patch);
+  const conversationId = useChatStore((s) => s.conversationId);
   const autoSave = useAutoSaveDraft();
+  const { apply: applyPatchOps, isPending: patchPending } = useApplyPatch();
   const { commit, isPending } = useCommitPlan(() => {
     useChatStore.setState({ artifact: null, clarifications: [] });
     setOpen(false);
@@ -34,7 +39,13 @@ export function PlanCardPanel() {
 
   const unsaved = state.plan.id === null;
   const needsSchedule = canGenerateSchedule(state);
-  const enabled = state.constraints.filter((c) => c.enabled).length;
+
+  // 入口行与展开内容显示同一份数据：有提案/草稿时用草稿，否则用当前计划。
+  const proposalDraft = proposal ? { ...proposal, horizon_start: proposal.horizon_start ?? state.plan.horizon_start } : null;
+  const viewed = draft ?? proposalDraft;
+  const taskCount = viewed ? viewed.task_defs.length : state.task_defs.length;
+  const constraintCount = viewed ? viewed.constraints.length : state.constraints.length;
+  const planTitle = viewed ? viewed.plan_title : state.plan.title;
 
   // AI 给出完整方案时直接展开到这张卡，不再另起确认卡。
   useEffect(() => {
@@ -52,6 +63,17 @@ export function PlanCardPanel() {
     setOpen(true);
     useChatStore.setState({ patch: null });
   }, [patch]);
+
+  // 含块移动/重排的 patch 也留在同一张卡里应用：卡片下方给出调整清单，不再单独弹确认卡。
+  const foreignPatch = patch && state.plan.id && !patchFitsPlanCard(patch, state.plan.id) ? patch : null;
+  const patchAlreadyApplied = !!patch && !!conversationId && appliedPatches.isApplied(conversationId, patch);
+  useEffect(() => {
+    if (!foreignPatch) return;
+    if (patchAlreadyApplied) { useChatStore.setState({ patch: null }); return; }
+    setOpen(true);
+    if (!usePlanStore.getState().state.plan.id) return;
+    setDraft((prev) => prev ?? artifactFromPlan(usePlanStore.getState().state));
+  }, [foreignPatch, patchAlreadyApplied]);
 
   // 有待确认的 AI 方案时，重新打开也回到那张提案，而不是当前计划。
   const openPlan = () => {
@@ -136,19 +158,20 @@ export function PlanCardPanel() {
           className="h-7 min-w-0 flex-1 justify-start gap-1.5 px-2 text-[11px] font-normal text-site-ink-soft hover:bg-site-surface-2 hover:text-site-ink"
         >
           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-site-brand" />
-          <span className="font-medium text-site-ink">方案卡</span>
-          <span className="tabular">约束 {enabled}/{state.constraints.length} · 任务 {state.task_defs.length}</span>
-          <Badge variant="secondary" className="ml-0.5 px-1.5 py-0 text-[10px]">{statusText}</Badge>
-          {open ? <ChevronDown className="ml-auto h-3.5 w-3.5" /> : <ChevronUp className="ml-auto h-3.5 w-3.5" />}
+          <span className="shrink-0 font-medium text-site-ink">方案卡</span>
+          <span className="min-w-0 truncate text-site-ink">{planTitle}</span>
+          <span className="tabular shrink-0">任务 {taskCount} · 约束 {constraintCount}</span>
+          <Badge variant="secondary" className="ml-0.5 shrink-0 px-1.5 py-0 text-[10px]">{statusText}</Badge>
+          {open ? <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0" /> : <ChevronUp className="ml-auto h-3.5 w-3.5 shrink-0" />}
         </Button>
       </div>
 
       {open && draft && (
-        <div className="animate-guidy-fade-up absolute bottom-full left-2 right-2 z-40 mb-2 rounded-xl border border-[var(--site-dawn-line)]/40 bg-site-surface p-4 shadow-xl">
-          <div className="dawn-gradient mb-3 h-0.5 rounded-full" />
-          <div className="flex items-start justify-between gap-3">
+        <div className="mt-1.5 overflow-hidden rounded-xl border border-[var(--site-dawn-line)]/40 bg-site-surface">
+          <div className="dawn-gradient h-0.5 rounded-full" />
+          <div className="flex items-start justify-between gap-3 px-4 pt-3">
             <div>
-              <h3 className="font-display text-sm font-semibold text-site-ink">方案卡</h3>
+              <h3 className="font-display text-sm font-semibold text-site-ink">{draft.plan_title || '方案卡'}</h3>
               <p className="mt-0.5 text-xs text-site-ink-soft">{hint}</p>
             </div>
             <button type="button" onClick={close} aria-label="收起方案卡" className="rounded p-1 text-site-ink-soft hover:bg-site-surface-2">
@@ -156,7 +179,26 @@ export function PlanCardPanel() {
             </button>
           </div>
 
-          <div className="max-h-[50vh] overflow-y-auto pr-1">
+          {foreignPatch && !patchAlreadyApplied && (
+          <section className="mx-4 mt-3 rounded-lg border border-[var(--site-dawn-line)]/40 bg-site-bg p-2.5">
+            <p className="text-xs font-semibold text-site-ink">排程调整 · {foreignPatch.summary}</p>
+            <ul className="mt-1.5 max-h-28 space-y-1 overflow-y-auto">
+              {foreignPatch.ops.map((op, i) => (
+                <li key={i} className="rounded border border-site-line bg-site-surface px-2 py-1 text-[11px] leading-snug text-site-ink">
+                  {patchOpText(op, (key) => state.task_defs.find((t) => t.key === key)?.title ?? key)}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-2 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => useChatStore.setState({ patch: null })}>放弃</Button>
+              <Button size="sm" className="dawn-gradient text-white" disabled={patchPending} onClick={() => applyPatchOps(foreignPatch)}>
+                {patchPending ? '应用中…' : '应用调整'}
+              </Button>
+            </div>
+          </section>
+        )}
+
+          <div className="max-h-[40vh] overflow-y-auto px-4 pb-4">
             <ConstraintSetBody
               draft={draft}
               onChange={change}
