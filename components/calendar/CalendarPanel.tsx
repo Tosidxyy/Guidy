@@ -9,7 +9,7 @@ import { useUiStore } from '@/store/useUiStore';
 import { usePlanLayers } from '@/lib/usePlanLayers';
 import { collectForeignBlocks, sharedHorizonStart, type ForeignBlock } from '@/lib/calendarLayers';
 import { usePlanManager } from '@/lib/usePlanManager';
-import { blockController } from '@/lib/blockRuntime';
+import { planController } from '@/lib/planRuntime';
 import { moveSelection } from '@/lib/moveSelection';
 import { todayStr } from '@/lib/seed';
 import { cn } from '@/lib/utils';
@@ -207,14 +207,14 @@ export function CalendarPanel() {
     const label = drag.ids.length > 1
       ? `移动 ${drag.ids.length} 个任务块`
       : drag.mode === 'resize' ? `调整「${drag.block.title}」` : `移动「${drag.block.title}」`;
-    const res = await blockController.apply({ planId, ops, label, optimisticBlocks });
+    const res = await planController.apply({ planId, ops, label, optimistic: { blocks: optimisticBlocks } });
     if (!res.ok) { toast.error(res.reason ?? '移动失败'); flashInvalid(drag.ids); return; }
 
     const done = drag.ids.length > 1
       ? `已移动 ${drag.ids.length} 个任务块`
       : `已${drag.mode === 'resize' ? '调整' : '移动'}「${drag.block.title}」`;
     toast.success(done, {
-      action: { label: '撤销', onClick: () => { void blockController.undo(planId).then((l) => { if (l) toast.success(`已撤销：${l}`); }); } },
+      action: { label: '撤销', onClick: () => { void planController.undo(planId).then((l) => { if (l) toast.success(`已撤销：${l}`); }); } },
     });
     if (!drag.foreign) selectMany(drag.ids);
   }, [days, flashInvalid, moveBlock, moveBlocks, selectMany, tz]);
@@ -233,11 +233,11 @@ export function CalendarPanel() {
     const ops = targets.map((b) => ({ op: 'remove_block' as const, id: b.id }));
     const optimisticBlocks = applyPatch(current, ops).state.blocks;
     const label = targets.length > 1 ? `删除 ${targets.length} 个任务块` : `删除「${targets[0].title}」`;
-    const r = await blockController.apply({ planId, ops, label, optimisticBlocks });
+    const r = await planController.apply({ planId, ops, label, optimistic: { blocks: optimisticBlocks } });
     if (!r.ok) { toast.error(r.reason ?? '删除失败'); return; }
     select(null);
     toast.success(`已${label}`, {
-      action: { label: '撤销', onClick: () => { void blockController.undo(planId).then((l) => { if (l) toast.success(`已撤销：${l}`); }); } },
+      action: { label: '撤销', onClick: () => { void planController.undo(planId).then((l) => { if (l) toast.success(`已撤销：${l}`); }); } },
     });
   }, [deleteBlocks, select, selectedIds]);
 
@@ -249,7 +249,7 @@ export function CalendarPanel() {
     if (!planId) { togglePin(id); return; }
     const ops = [{ op: 'update_block' as const, id, patch: { pinned: !target.pinned } }];
     const optimisticBlocks = applyPatch(current, ops).state.blocks;
-    const r = await blockController.apply({ planId, ops, label: `${target.pinned ? '取消钉住' : '钉住'}「${target.title}」`, optimisticBlocks });
+    const r = await planController.apply({ planId, ops, label: `${target.pinned ? '取消钉住' : '钉住'}「${target.title}」`, optimistic: { blocks: optimisticBlocks } });
     if (!r.ok) toast.error(r.reason ?? '操作失败');
   }, [togglePin]);
 
@@ -412,11 +412,11 @@ export function CalendarPanel() {
         const result = moveSelection(current, selectedIds, dIdx - dayIdx, ns - start);
         if (!result.ok) { toast.error(result.reason ?? '无法移动'); return; }
         const ops = result.moves.map((m) => ({ op: 'move_block' as const, id: m.id, start_utc: m.start_utc, end_utc: m.end_utc }));
-        void blockController.apply({
+        void planController.apply({
           planId,
           ops,
           label: selectedIds.length > 1 ? `移动 ${selectedIds.length} 个任务块` : `移动「${block.title}」`,
-          optimisticBlocks: applyPatch(current, ops).state.blocks,
+          optimistic: { blocks: applyPatch(current, ops).state.blocks },
         }).then((r) => { if (!r.ok) toast.error(r.reason ?? '无法移动'); });
       };
 

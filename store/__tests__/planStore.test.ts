@@ -116,6 +116,23 @@ describe('applyServerBlocks', () => {
   });
 });
 
+describe('applyServerState', () => {
+  it('替换元数据切片并同步快照，不推撤销', () => {
+    usePlanStore.getState().importState(seeded);
+    usePlanStore.getState().renamePlan('新名');
+    const nextTask = { key: 'eng', title: '英语', category: 'study' as const, duration_min: 45, frequency: { type: 'daily' as const }, priority: 'mid' as const, splittable: false, sort_order: 3 };
+    const constraints = [{ id: '44444444-4444-4444-8444-444444444444', payload: { type: 'buffer' as const, minutes: 10 }, source: 'user' as const, enabled: true }];
+    usePlanStore.getState().applyServerState({ task_defs: [nextTask], constraints, plan: { ...seeded.plan, title: '云端名', version: 7 } });
+    const s = usePlanStore.getState();
+    expect(s.state.task_defs).toEqual([nextTask]);
+    expect(s.state.constraints).toEqual(constraints);
+    expect(s.state.plan.title).toBe('云端名');
+    expect(s.undoStack).toHaveLength(1);
+    expect(s.undoStack[0].before.task_defs).toEqual([nextTask]);
+    expect(s.undoStack[0].after.plan.title).toBe('云端名');
+  });
+});
+
 describe('replaceStateKeepUndo', () => {
   it('保留撤销栈顶 before，after 更新为 next', () => {
     usePlanStore.getState().importState(seeded);

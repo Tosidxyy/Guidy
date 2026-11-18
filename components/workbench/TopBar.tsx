@@ -3,6 +3,8 @@ import { toast } from 'sonner';
 import { CalendarDays, ChevronLeft, ChevronRight, ListChecks, Moon, Redo2, Settings2, ShieldCheck, Sun, Undo2, Users } from 'lucide-react';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
+import { useBlockHistory } from '@/store/useBlockHistory';
+import { peekUndo, renamePlanAction, undoActivePlan } from '@/lib/planActions';
 import { cn } from '@/lib/utils';
 import { Logo } from '@/components/brand/Logo';
 import { Button } from '@/components/ui/button';
@@ -12,13 +14,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 export function TopBar() {
   const title = usePlanStore((s) => s.state.plan.title);
-  const renamePlan = usePlanStore((s) => s.renamePlan);
-  const undo = usePlanStore((s) => s.undo);
-  const redo = usePlanStore((s) => s.redo);
-  const undoDepth = usePlanStore((s) => s.undoStack.length);
-  const redoDepth = usePlanStore((s) => s.redoStack.length);
-  const undoLabel = usePlanStore((s) => s.undoStack[s.undoStack.length - 1]?.label);
-  const redoLabel = usePlanStore((s) => s.redoStack[s.redoStack.length - 1]?.label);
+  const undoDepthLocal = usePlanStore((s) => s.undoStack.length);
+  const redoDepthLocal = usePlanStore((s) => s.redoStack.length);
+  const activePlanId = usePlanStore((s) => s.state.plan.id);
+  const historyEntries = useBlockHistory((s) => s.entries);
+  const historyRedo = useBlockHistory((s) => s.redo);
+  const undoDepth = undoDepthLocal + (activePlanId ? historyEntries[activePlanId]?.length ?? 0 : 0);
+  const redoDepth = redoDepthLocal + (activePlanId ? historyRedo[activePlanId]?.length ?? 0 : 0);
+  const undoLabel = peekUndo().label;
+  const redoLabel = peekUndo(true).label;
 
   const theme = useUiStore((s) => s.theme);
   const setTheme = useUiStore((s) => s.setTheme);
@@ -32,12 +36,10 @@ export function TopBar() {
   const [draft, setDraft] = useState(title);
 
   const doUndo = () => {
-    const label = undo();
-    if (label) toast(`已撤销：${label}`);
+    void undoActivePlan().then((label) => { if (label) toast(`已撤销：${label}`); });
   };
   const doRedo = () => {
-    const label = redo();
-    if (label) toast(`已重做：${label}`);
+    void undoActivePlan(true).then((label) => { if (label) toast(`已重做：${label}`); });
   };
 
   return (
@@ -137,10 +139,10 @@ export function TopBar() {
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2"><CalendarDays className="h-4 w-4" /> 重命名计划</DialogTitle>
           </DialogHeader>
-          <Input autoFocus value={draft} maxLength={60} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && draft.trim()) { renamePlan(draft.trim()); setRenaming(false); } }} />
+          <Input autoFocus value={draft} maxLength={60} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && draft.trim()) { void renamePlanAction(draft.trim()); setRenaming(false); } }} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setRenaming(false)}>取消</Button>
-            <Button disabled={!draft.trim()} onClick={() => { renamePlan(draft.trim()); setRenaming(false); }}>保存</Button>
+            <Button disabled={!draft.trim()} onClick={() => { void renamePlanAction(draft.trim()); setRenaming(false); }}>保存</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

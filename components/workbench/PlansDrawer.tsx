@@ -4,6 +4,7 @@ import { usePlanStore } from '@/store/usePlanStore';
 import { useChatStore } from '@/store/useChatStore';
 import { useUiStore } from '@/store/useUiStore';
 import { usePlanManager } from '@/lib/usePlanManager';
+import { renamePlanAction } from '@/lib/planActions';
 import { cn } from '@/lib/utils';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
@@ -19,7 +20,6 @@ export function PlansDrawer() {
   const closeDrawer = useUiStore((s) => s.closeDrawer);
   const currentId = usePlanStore((s) => s.state.plan.id);
   const dirty = usePlanStore((s) => s.dirty);
-  const renamePlan = usePlanStore((s) => s.renamePlan);
   const streaming = useChatStore((s) => s.streaming);
   const { plans, isLoading, isError, refetch, switchPlan, newPlan, deletePlan, isPending } = usePlanManager();
 
@@ -107,10 +107,10 @@ export function PlansDrawer() {
         <Dialog open={renaming} onOpenChange={setRenaming}>
           <DialogContent className="sm:max-w-sm">
             <DialogHeader><DialogTitle className="font-display">重命名计划</DialogTitle></DialogHeader>
-            <Input autoFocus value={draft} maxLength={60} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && draft.trim()) { renamePlan(draft.trim()); setRenaming(false); } }} />
+            <Input autoFocus value={draft} maxLength={60} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && draft.trim()) { void renamePlanAction(draft.trim()); setRenaming(false); } }} />
             <DialogFooter>
               <Button variant="outline" onClick={() => setRenaming(false)}>取消</Button>
-              <Button disabled={!draft.trim()} onClick={() => { renamePlan(draft.trim()); setRenaming(false); }}>保存</Button>
+              <Button disabled={!draft.trim()} onClick={() => { void renamePlanAction(draft.trim()); setRenaming(false); }}>保存</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

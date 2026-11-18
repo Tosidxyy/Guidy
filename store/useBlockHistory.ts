@@ -1,11 +1,11 @@
 import { create } from 'zustand';
-import type { PatchOp } from '@/shared/types';
+import type { ApplyOp } from '@/shared/types';
 
 export interface BlockHistoryEntry {
   at: number;
   label: string;
-  forwardOps: PatchOp[];
-  inverseOps: PatchOp[];
+  forwardOps: ApplyOp[];
+  inverseOps: ApplyOp[];
 }
 
 interface BlockHistoryState {

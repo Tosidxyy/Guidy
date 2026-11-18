@@ -2,12 +2,12 @@ import { applyPatch } from '@/shared/engine';
 import { useBlockHistory } from '@/store/useBlockHistory';
 import type { PlanState } from '@/shared/types';
 
-export interface BlockUndoDeps {
-  apply(req: { planId: string; ops: any[]; label: string; optimisticBlocks: any[]; record: false }): Promise<{ ok: boolean; reason?: string }>;
+export interface PlanUndoDeps {
+  apply(req: { planId: string; ops: any[]; label: string; optimistic: Partial<PlanState>; record: false }): Promise<{ ok: boolean; reason?: string }>;
   getPlanState(planId: string): PlanState | undefined;
 }
 
-export function createBlockUndo(deps: BlockUndoDeps) {
+export function createPlanUndo(deps: PlanUndoDeps) {
   async function run(planId: string, from: 'entries' | 'redo'): Promise<string | null> {
     const state = useBlockHistory.getState();
     const stack = state[from][planId] ?? [];
@@ -16,8 +16,10 @@ export function createBlockUndo(deps: BlockUndoDeps) {
     const plan = deps.getPlanState(planId);
     if (!plan) return null;
     const ops = from === 'entries' ? entry.inverseOps : entry.forwardOps;
-    const optimisticBlocks = applyPatch(plan, ops).state.blocks;
-    const r = await deps.apply({ planId, ops, label: `${from === 'entries' ? '撤销' : '重做'}：${entry.label}`, optimisticBlocks, record: false });
+    if (!ops.length) return null;
+    const patched = applyPatch(plan, ops).state;
+    const optimistic = { plan: patched.plan, task_defs: patched.task_defs, constraints: patched.constraints, blocks: patched.blocks };
+    const r = await deps.apply({ planId, ops, label: `${from === 'entries' ? '撤销' : '重做'}：${entry.label}`, optimistic, record: false });
     if (!r.ok) return null;
     const to = from === 'entries' ? 'redo' : 'entries';
     useBlockHistory.setState((s) => ({

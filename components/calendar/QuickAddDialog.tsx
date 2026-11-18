@@ -5,7 +5,7 @@ import type { Category } from '@/shared/types';
 import { minToHHmm, utcAt, applyPatch } from '@/shared/engine';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
-import { blockController } from '@/lib/blockRuntime';
+import { planController } from '@/lib/planRuntime';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -54,10 +54,10 @@ export function QuickAddDialog() {
     const id = crypto.randomUUID();
     const ops = [{ op: 'add_block' as const, client_id: id, value: { title: name.slice(0, 60), category, start_utc: startUtc, end_utc: endUtc, priority: 'mid' as const, pinned: false } }];
     const optimisticBlocks = applyPatch(state, ops).state.blocks;
-    const r = await blockController.apply({ planId, ops, label: `新增「${name}」`, optimisticBlocks });
+    const r = await planController.apply({ planId, ops, label: `新增「${name}」`, optimistic: { blocks: optimisticBlocks } });
     if (!r.ok) { toast.error(r.reason ?? '添加失败'); return; }
     toast.success(`已添加「${name}」`, {
-      action: { label: '撤销', onClick: () => { void blockController.undo(planId).then((label) => { if (label) toast.success(`已撤销：${label}`); }); } },
+      action: { label: '撤销', onClick: () => { void planController.undo(planId).then((label) => { if (label) toast.success(`已撤销：${label}`); }); } },
     });
     setQuickAdd(null);
   };

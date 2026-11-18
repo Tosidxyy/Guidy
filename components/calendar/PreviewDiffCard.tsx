@@ -1,10 +1,11 @@
 import { Check, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { usePlanStore } from '@/store/usePlanStore';
+import { applyRescheduleAction, undoToastAction } from '@/lib/planActions';
 import { Button } from '@/components/ui/button';
 
 export function PreviewDiffCard() {
   const preview = usePlanStore((s) => s.preview);
-  const applyPreview = usePlanStore((s) => s.applyPreview);
   const discardPreview = usePlanStore((s) => s.discardPreview);
   if (!preview) return null;
 
@@ -42,7 +43,7 @@ export function PreviewDiffCard() {
 
       <div className="mt-3 flex justify-end gap-2">
         <Button variant="outline" size="sm" onClick={discardPreview}>放弃</Button>
-        <Button size="sm" onClick={applyPreview}>
+        <Button size="sm" onClick={() => { void applyRescheduleAction().then((r) => { if (r.ok) toast('已应用重新排程', { action: undoToastAction(r.planId) }); }); }}>
           <Check className="mr-1 h-4 w-4" /> 应用更改
         </Button>
       </div>

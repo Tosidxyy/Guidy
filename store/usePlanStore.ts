@@ -53,6 +53,7 @@ interface PlanStore {
   previewArtifact: (draft: import('@/shared/schemas').ConstraintSetArtifact) => void;
   previewPatch: (patch: import('@/shared/schemas').PatchArtifact) => void;
   replaceStateKeepUndo: (next: PlanState) => void;
+  applyServerState: (partial: Partial<PlanState>) => void;
   applyServerBlocks: (blocks: Block[]) => void;
   applyPreview: () => void;
   discardPreview: () => void;
@@ -304,17 +305,19 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       save(next);
     },
 
-    applyServerBlocks: (blocks) => {
+    applyServerState: (partial) => {
       const { state, undoStack, redoStack } = get();
-      const nextState = { ...state, blocks };
+      const nextState = { ...state, ...partial };
       const rewrite = (entry: UndoEntry): UndoEntry => ({
         ...entry,
-        before: { ...entry.before, blocks },
-        after: { ...entry.after, blocks },
+        before: { ...entry.before, ...partial },
+        after: { ...entry.after, ...partial },
       });
       set({ state: nextState, undoStack: undoStack.map(rewrite), redoStack: redoStack.map(rewrite) });
       save(nextState);
     },
+
+    applyServerBlocks: (blocks) => get().applyServerState({ blocks }),
 
     applyPreview: () => {
       const { preview } = get();

@@ -7,6 +7,7 @@ import type { Category, Period, Priority } from '@/shared/types';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { categoryColor, taskSummary } from '@/lib/describe';
+import { addTaskDefAction, deleteTaskDefAction, undoToastAction } from '@/lib/planActions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,8 +20,6 @@ export function TasksDrawer() {
   const open = useUiStore((s) => s.drawer === 'tasks');
   const closeDrawer = useUiStore((s) => s.closeDrawer);
   const taskDefs = usePlanStore((s) => s.state.task_defs);
-  const addTaskDef = usePlanStore((s) => s.addTaskDef);
-  const deleteTaskDef = usePlanStore((s) => s.deleteTaskDef);
   const requestReschedule = usePlanStore((s) => s.requestReschedule);
 
   const [title, setTitle] = useState('');
@@ -59,8 +58,9 @@ export function TasksDrawer() {
       toast.error(parsed.error.issues[0]?.message ?? '任务格式不正确');
       return;
     }
-    addTaskDef(parsed.data);
-    toast.success(`已添加「${name}」，点下方「重新排程」生成时间安排`);
+    void addTaskDefAction(parsed.data).then((r) => {
+      if (r.ok) toast.success(`已添加「${name}」，已按新任务重排`, { action: undoToastAction(r.planId) });
+    });
     setTitle('');
   };
 
@@ -84,8 +84,9 @@ export function TasksDrawer() {
                 <button
                   type="button" aria-label={`删除任务 ${t.title}`} className="rounded p-1 text-site-ink-soft hover:text-site-danger"
                   onClick={() => {
-                    deleteTaskDef(t.key);
-                    toast(`已删除任务「${t.title}」及其未钉住的安排`, { action: { label: '撤销', onClick: () => usePlanStore.getState().undo() } });
+                    void deleteTaskDefAction(t.key, t.title).then((r) => {
+                      if (r.ok) toast(`已删除任务「${t.title}」及其未钉住的安排`, { action: undoToastAction(r.planId) });
+                    });
                   }}
                 >
                   <Trash2 className="h-3.5 w-3.5" />

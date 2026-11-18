@@ -6,7 +6,7 @@ import { dayList, localDay, localMinutes, minToHHmm, utcAt, applyPatch } from '@
 import type { Category, Priority } from '@/shared/types';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
-import { blockController } from '@/lib/blockRuntime';
+import { planController } from '@/lib/planRuntime';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -79,10 +79,10 @@ export function BlockDrawer() {
       };
       const ops = [{ op: 'update_block' as const, id: block.id, patch }];
       const optimisticBlocks = applyPatch(current, ops).state.blocks;
-      const r = await blockController.apply({ planId, ops, label: `编辑「${block.title}」`, optimisticBlocks });
+      const r = await planController.apply({ planId, ops, label: `编辑「${block.title}」`, optimistic: { blocks: optimisticBlocks } });
       if (!r.ok) { toast.error(r.reason ?? '保存失败'); return; }
       toast.success('已保存', {
-        action: { label: '撤销', onClick: () => { void blockController.undo(planId).then((label) => { if (label) toast.success(`已撤销：${label}`); }); } },
+        action: { label: '撤销', onClick: () => { void planController.undo(planId).then((label) => { if (label) toast.success(`已撤销：${label}`); }); } },
       });
       closeDrawer();
       return;
@@ -103,7 +103,7 @@ export function BlockDrawer() {
     if (!planId) { togglePin(block.id); return; }
     const ops = [{ op: 'update_block' as const, id: block.id, patch: { pinned: !block.pinned } }];
     const optimisticBlocks = applyPatch(current, ops).state.blocks;
-    const r = await blockController.apply({ planId, ops, label: `${block.pinned ? '取消钉住' : '钉住'}「${block.title}」`, optimisticBlocks });
+    const r = await planController.apply({ planId, ops, label: `${block.pinned ? '取消钉住' : '钉住'}「${block.title}」`, optimistic: { blocks: optimisticBlocks } });
     if (!r.ok) toast.error(r.reason ?? '操作失败');
   };
 
@@ -119,12 +119,12 @@ export function BlockDrawer() {
     }
     const ops = [{ op: 'remove_block' as const, id: block.id }];
     const optimisticBlocks = applyPatch(current, ops).state.blocks;
-    const r = await blockController.apply({ planId, ops, label: `删除「${block.title}」`, optimisticBlocks });
+    const r = await planController.apply({ planId, ops, label: `删除「${block.title}」`, optimistic: { blocks: optimisticBlocks } });
     if (!r.ok) { toast.error(r.reason ?? '删除失败'); return; }
     select(null);
     closeDrawer();
     toast.success(`已删除「${block.title}」`, {
-      action: { label: '撤销', onClick: () => { void blockController.undo(planId).then((label) => { if (label) toast.success(`已撤销：${label}`); }); } },
+      action: { label: '撤销', onClick: () => { void planController.undo(planId).then((label) => { if (label) toast.success(`已撤销：${label}`); }); } },
     });
   };
 

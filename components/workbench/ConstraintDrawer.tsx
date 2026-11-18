@@ -7,6 +7,7 @@ import type { Category, Constraint, ConstraintPayload, Period } from '@/shared/t
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { constraintText } from '@/lib/describe';
+import { addConstraintAction, deleteConstraintAction, undoToastAction, updateConstraintAction } from '@/lib/planActions';
 import { todayStr } from '@/lib/seed';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,9 +61,6 @@ export function ConstraintDrawer() {
   const open = useUiStore((s) => s.drawer === 'constraints');
   const closeDrawer = useUiStore((s) => s.closeDrawer);
   const state = usePlanStore((s) => s.state);
-  const addConstraint = usePlanStore((s) => s.addConstraint);
-  const updateConstraint = usePlanStore((s) => s.updateConstraint);
-  const deleteConstraint = usePlanStore((s) => s.deleteConstraint);
 
   const taskKeys = state.task_defs.map((t) => t.key);
   const defaultForm = (): FormState => ({
@@ -156,11 +154,13 @@ export function ConstraintDrawer() {
     const payload = buildPayload();
     if (!payload) return;
     if (editingId) {
-      updateConstraint(editingId, { payload });
-      toast.success('约束已更新，可点「重新排程」查看效果');
+      void updateConstraintAction(editingId, { payload }).then((r) => {
+        if (r.ok) toast.success('约束已更新，已按新约束重排', { action: undoToastAction(r.planId) });
+      });
     } else {
-      addConstraint(payload);
-      toast.success('约束已添加，可点「重新排程」查看效果');
+      void addConstraintAction(payload).then((r) => {
+        if (r.ok) toast.success('约束已添加，已按新约束重排', { action: undoToastAction(r.planId) });
+      });
     }
     setForm(defaultForm());
     setEditingId(null);
@@ -225,14 +225,14 @@ export function ConstraintDrawer() {
       <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
         <SheetHeader className="border-b border-site-line px-5 py-4">
           <SheetTitle className="font-display flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-site-brand" /> 约束条件</SheetTitle>
-          <SheetDescription>约束决定引擎如何为你排程。修改后可点「重新排程」预览效果。</SheetDescription>
+          <SheetDescription>约束决定引擎如何为你排程。修改后会立即按新约束重排，可撤销。</SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 space-y-5 px-5 py-4">
           <ul className="space-y-1.5">
             {state.constraints.map((c) => (
               <li key={c.id} className="flex items-center gap-2 rounded-lg border border-site-line bg-site-surface px-2.5 py-2">
-                <Switch checked={c.enabled} onCheckedChange={(v) => updateConstraint(c.id, { enabled: v })} className="scale-90" aria-label="启用约束" />
+                <Switch checked={c.enabled} onCheckedChange={(v) => { void updateConstraintAction(c.id, { enabled: v }); }} className="scale-90" aria-label="启用约束" />
                 <span className="min-w-0 flex-1 text-xs leading-snug text-site-ink">{constraintText(c.payload, (k) => state.task_defs.find((t) => t.key === k)?.title ?? k)}</span>
                 <button type="button" aria-label="编辑约束" className="rounded p-1 text-site-ink-soft hover:text-site-brand" onClick={() => loadForEdit(c)}>
                   <Pencil className="h-3.5 w-3.5" />
@@ -240,9 +240,11 @@ export function ConstraintDrawer() {
                 <button
                   type="button" aria-label="删除约束" className="rounded p-1 text-site-ink-soft hover:text-site-danger"
                   onClick={() => {
-                    deleteConstraint(c.id);
-                    if (editingId === c.id) { setEditingId(null); setForm(defaultForm()); }
-                    toast('已删除约束', { action: { label: '撤销', onClick: () => usePlanStore.getState().undo() } });
+                    void deleteConstraintAction(c.id).then((r) => {
+                      if (!r.ok) return;
+                      if (editingId === c.id) { setEditingId(null); setForm(defaultForm()); }
+                      toast('已删除约束', { action: undoToastAction(r.planId) });
+                    });
                   }}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
