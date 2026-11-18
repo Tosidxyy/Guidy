@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectForeignBlocks, sharedHorizonStart, type PlanLayerSource } from '@/lib/calendarLayers';
+import { collectForeignBlocks, type PlanLayerSource } from '@/lib/calendarLayers';
 import type { Block, PlanState } from '@/shared/types';
 
 const block = (id: string, title: string): Block => ({
@@ -22,11 +22,6 @@ describe('共享日历聚合', () => {
     expect(foreign.map((f) => f.block.id)).toEqual(['b2', 'b3']);
     expect(foreign.map((f) => f.planLabel)).toEqual(['英语计划', '阅读计划']);
     expect(foreign.some((f) => f.block.id === 'b1')).toBe(false);
-  });
-
-  it('共享锚点取所有计划最早开始日', () => {
-    expect(sharedHorizonStart('2026-11-23', layers)).toBe('2026-11-16');
-    expect(sharedHorizonStart('2026-11-23', [])).toBe('2026-11-23');
   });
 
   it('与活动块同时间同标题的外计划块只画一次（合并块）', () => {

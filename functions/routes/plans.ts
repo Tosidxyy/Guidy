@@ -6,7 +6,7 @@ import type { Db } from '../db.ts';
 import { requireVisitor } from '../identity.ts';
 import { solve, resultHash } from '../engine.ts';
 import { ENGINE_VERSION, LIMITS, QUOTAS } from '../../shared/constants.ts';
-import { TaskDefSchema, ConstraintSchema } from '../../shared/schemas.ts';
+import { TaskDefSchema, ConstraintSchema, PlanBlockSchema } from '../../shared/schemas.ts';
 import type { Deps, RouteCtx } from '../types.ts';
 
 const CommitSchema = z.object({
@@ -114,4 +114,75 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const blocks = rows(await deps.db.from('blocks').select('*').eq('plan_id', plan.id).order('start_utc', { ascending: true }));
   const constraints = rows(await deps.db.from('constraints').select('*').eq('plan_id', plan.id));
   return Response.json({ plan, task_defs: input.task_defs, constraints, blocks, version: plan.version, server_authoritative, violations: [], compromises: output.compromises });
+}
+const SaveSchema = z.object({
+  plan_id: z.string().uuid().nullable().optional(),
+  conversation_id: z.string().min(1).nullable().optional(),
+  input: z.object({
+    title: z.string().min(1).max(LIMITS.titleChars),
+    horizon_start: z.string().min(1),
+    horizon_days: z.union([z.literal(7), z.literal(14)]),
+    timezone: z.string().min(1),
+    task_defs: z.array(TaskDefSchema).max(LIMITS.taskDefsMax),
+    constraints: z.array(ConstraintSchema).max(LIMITS.constraintsMax),
+    blocks: z.array(PlanBlockSchema).max(LIMITS.blocksMax),
+  }),
+});
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// 保存本地草稿：整份快照落库，不跑求解，保留用户手放的块与备注。
+export async function savePlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
+  const visitor = requireVisitor(deps, ctx);
+  const body = await readJson(ctx.request, 524288);
+  const parsed = SaveSchema.safeParse(body);
+  if (!parsed.success) fail('validation_failed', 422, parsed.error.flatten());
+  const { plan_id, conversation_id, input } = parsed.data;
+
+  let old: any = null;
+  if (plan_id) old = await getOwnedPlan(deps.db, visitor, plan_id);
+
+  let plan;
+  if (old) {
+    await deps.db.from('task_defs').delete().eq('plan_id', old.id);
+    await deps.db.from('constraints').delete().eq('plan_id', old.id);
+    await deps.db.from('blocks').delete().eq('plan_id', old.id);
+    plan = rows(await deps.db.from('plans').update({
+      title: input.title, horizon_start: input.horizon_start, horizon_days: input.horizon_days,
+      timezone: input.timezone, status: 'active', version: old.version + 1, updated_at: new Date().toISOString(),
+    }).eq('id', old.id).eq('owner_visitor_id', visitor).select('*'))[0];
+  } else {
+    const count = rows(await deps.db.from('plans').select('id').eq('owner_visitor_id', visitor)).length;
+    if (count >= QUOTAS.plansPerVisitor) fail('plan_quota_exceeded', 429, { limit: QUOTAS.plansPerVisitor });
+    plan = rows(await deps.db.from('plans').insert({
+      owner_visitor_id: visitor, title: input.title, horizon_start: input.horizon_start,
+      horizon_days: input.horizon_days, timezone: input.timezone, status: 'active', version: 1,
+    }).select('*'))[0];
+  }
+
+  for (const t of input.task_defs) {
+    await deps.db.from('task_defs').insert({ plan_id: plan.id, key: t.key, title: t.title, category: t.category, duration_min: t.duration_min, frequency: t.frequency, priority: t.priority, splittable: t.splittable, preferred_period: t.preferred_period ?? null, sort_order: t.sort_order });
+  }
+  for (const c of input.constraints) {
+    await deps.db.from('constraints').insert({ ...(UUID_RE.test(c.id) ? { id: c.id } : {}), plan_id: plan.id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
+  }
+  for (const b of input.blocks) {
+    await deps.db.from('blocks').insert({
+      ...(UUID_RE.test(b.id) ? { id: b.id } : {}),
+      plan_id: plan.id, task_def_id: null, title: b.title, category: b.category, start_utc: b.start_utc,
+      end_utc: b.end_utc, priority: b.priority, pinned: b.pinned, origin: b.origin, notes: b.notes ?? null,
+    });
+  }
+
+  if (conversation_id) {
+    const conv = rows(await deps.db.from('conversations').select('*').eq('id', conversation_id).eq('owner_visitor_id', visitor).limit(1))[0];
+    if (conv && conv.plan_id === null && conv.status !== 'archived') {
+      await deps.db.from('conversations').update({ plan_id: plan.id }).eq('id', conv.id).eq('owner_visitor_id', visitor);
+    }
+  }
+
+  const blocks = rows(await deps.db.from('blocks').select('*').eq('plan_id', plan.id).order('start_utc', { ascending: true }));
+  const constraints = rows(await deps.db.from('constraints').select('*').eq('plan_id', plan.id));
+  const task_defs = rows(await deps.db.from('task_defs').select('*').eq('plan_id', plan.id));
+  return Response.json({ plan, task_defs, constraints, blocks, version: plan.version }, { headers: { 'cache-control': 'no-store' } });
 }

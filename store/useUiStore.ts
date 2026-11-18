@@ -7,7 +7,7 @@ export type MobileTab = 'chat' | 'calendar';
 interface UiStore {
   theme: 'light' | 'dark';
   view: ViewMode;
-  weekOffset: number;
+  /** 当前查看的日期（YYYY-MM-DD）；周视图取所在周的周一到周日。 */
   dayAnchor: string | null;
   visibleStart: number;
   visibleEnd: number;
@@ -18,7 +18,6 @@ interface UiStore {
   mobileTab: MobileTab;
   setTheme: (t: 'light' | 'dark') => void;
   setView: (v: ViewMode) => void;
-  setWeekOffset: (n: number) => void;
   setDayAnchor: (d: string | null) => void;
   setVisibleRange: (start: number, end: number) => void;
   select: (id: string | null) => void;
@@ -43,7 +42,6 @@ function initialTheme(): 'light' | 'dark' {
 export const useUiStore = create<UiStore>((set) => ({
   theme: initialTheme(),
   view: 'week',
-  weekOffset: 0,
   dayAnchor: null,
   visibleStart: 360,
   visibleEnd: 1440,
@@ -61,7 +59,6 @@ export const useUiStore = create<UiStore>((set) => ({
     set({ theme: t });
   },
   setView: (v) => set({ view: v }),
-  setWeekOffset: (n) => set({ weekOffset: n }),
   setDayAnchor: (d) => set({ dayAnchor: d }),
   setVisibleRange: (start, end) => set({ visibleStart: start, visibleEnd: end }),
   select: (id) => set({ selectedBlockIds: id ? [id] : [] }),

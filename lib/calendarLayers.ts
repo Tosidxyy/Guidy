@@ -27,9 +27,3 @@ export function collectForeignBlocks(active: Block[], layers: PlanLayerSource[])
     })
     .map((block) => ({ block, planId: layer.id, planLabel: layer.title })));
 }
-
-// 共享日历锚点：取所有计划中最早的开始日，避免切换计划时整周跳动。
-export function sharedHorizonStart(activeStart: string, layers: PlanLayerSource[]): string {
-  const starts = [activeStart, ...layers.map((l) => l.state.plan.horizon_start)].filter(Boolean).sort();
-  return starts[0] ?? activeStart;
-}

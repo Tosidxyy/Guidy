@@ -86,6 +86,19 @@ export const ManualBlockSchema = z.object({
   origin: z.enum(['engine', 'manual', 'fixed']).optional(),
 });
 
+export const PlanBlockSchema = z.object({
+  id: z.string().min(1).max(64),
+  task_key: z.string().optional(),
+  title: z.string().min(1).max(60),
+  category: CategoryEnum,
+  start_utc: z.string().datetime(),
+  end_utc: z.string().datetime(),
+  priority: PriorityEnum,
+  pinned: z.boolean(),
+  origin: z.enum(['engine', 'manual', 'fixed']),
+  notes: z.string().max(500).optional(),
+}).refine((b) => Date.parse(b.end_utc) > Date.parse(b.start_utc), '结束时间必须晚于开始时间');
+
 export const PatchOpSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('add_task_def'), value: TaskDefSchema }),
   z.object({ op: z.literal('update_task_def'), key: z.string(), patch: TaskDefSchema.partial() }),

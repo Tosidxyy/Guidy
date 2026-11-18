@@ -1,11 +1,13 @@
 import { useState } from 'react';
+import { addDays, format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { CalendarDays, ChevronLeft, ChevronRight, ListChecks, Moon, Redo2, Settings2, ShieldCheck, Sun, Undo2, Users } from 'lucide-react';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { useBlockHistory } from '@/store/useBlockHistory';
-import { peekUndo, renamePlanAction, undoActivePlan } from '@/lib/planActions';
+import { peekUndo, renamePlanAction, saveDraftAction, undoActivePlan } from '@/lib/planActions';
 import { cn } from '@/lib/utils';
+import { todayStr } from '@/lib/seed';
 import { Logo } from '@/components/brand/Logo';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -28,8 +30,14 @@ export function TopBar() {
   const setTheme = useUiStore((s) => s.setTheme);
   const view = useUiStore((s) => s.view);
   const setView = useUiStore((s) => s.setView);
-  const weekOffset = useUiStore((s) => s.weekOffset);
-  const setWeekOffset = useUiStore((s) => s.setWeekOffset);
+  const dayAnchor = useUiStore((s) => s.dayAnchor);
+  const setDayAnchor = useUiStore((s) => s.setDayAnchor);
+  const tz = usePlanStore((s) => s.state.plan.timezone);
+  const today = todayStr(tz);
+  const anchorDate = dayAnchor ?? today;
+  const unsaved = usePlanStore((s) => s.state.plan.id === null);
+  const hasContent = usePlanStore((s) => s.state.task_defs.length + s.state.constraints.length + s.state.blocks.length > 0);
+  const [saving, setSaving] = useState(false);
   const openDrawer = useUiStore((s) => s.openDrawer);
 
   const [renaming, setRenaming] = useState(false);
@@ -55,25 +63,39 @@ export function TopBar() {
         <span className="max-w-[220px] truncate">{title}</span>
       </button>
 
+      {unsaved && hasContent && (
+        <Button
+          size="sm"
+          className="ml-1 h-8 px-2 text-xs"
+          disabled={saving}
+          onClick={() => {
+            setSaving(true);
+            void saveDraftAction().then((r) => {
+              setSaving(false);
+              if (r.ok) toast.success('计划已保存到云端');
+              else toast.error(r.reason ?? '保存失败');
+            });
+          }}
+        >
+          {saving ? '保存中…' : '保存计划'}
+        </Button>
+      )}
+
       <div className="mx-auto flex items-center gap-1">
-        {view === 'week' && (
-          <>
-            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="上一周" onClick={() => setWeekOffset(weekOffset - 1)}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <button
-              type="button"
-              onClick={() => setWeekOffset(0)}
-              className={cn('tabular min-w-[64px] rounded-md px-2 py-1 text-center text-sm font-medium', weekOffset === 0 ? 'text-site-ink' : 'text-site-brand hover:bg-site-surface-2')}
-              title="回到计划首周"
-            >
-              {weekOffset === 0 ? '首周' : `${weekOffset > 0 ? '+' : ''}${weekOffset} 周`}
-            </button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="下一周" onClick={() => setWeekOffset(weekOffset + 1)}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </>
-        )}
+        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={view === 'day' ? '前一天' : '上一周'} onClick={() => setDayAnchor(shiftDate(anchorDate, view === 'day' ? -1 : -7))}>
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <input
+          type="date"
+          aria-label="选择日期"
+          value={anchorDate}
+          onChange={(e) => { if (e.target.value) setDayAnchor(e.target.value); }}
+          className="tabular h-8 rounded-md border border-site-line bg-site-surface px-2 text-xs text-site-ink"
+        />
+        <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setDayAnchor(today)} aria-label="回到今天">今天</Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={view === 'day' ? '后一天' : '下一周'} onClick={() => setDayAnchor(shiftDate(anchorDate, view === 'day' ? 1 : 7))}>
+          <ChevronRight className="h-4 w-4" />
+        </Button>
         <div className="ml-1 flex rounded-lg border border-site-line p-0.5" role="tablist" aria-label="视图切换">
           {(['week', 'day'] as const).map((v) => (
             <button
@@ -148,4 +170,8 @@ export function TopBar() {
       </Dialog>
     </header>
   );
+}
+
+function shiftDate(date: string, days: number): string {
+  return format(addDays(parseISO(date), days), 'yyyy-MM-dd');
 }

@@ -2,6 +2,7 @@ import type { PlanState } from '../shared/types.ts';
 import type { Block } from '../shared/types.ts';
 import type { ConstraintSetArtifact } from '../shared/schemas.ts';
 import type { PlanConflict } from '../shared/engine/conflicts.ts';
+import { holidaysInRange, makeupWorkdaysInRange } from '../shared/holidays.ts';
 import { taskSummary, constraintText } from '../lib/describe.ts';
 import { localDay, localMinutes, minToHHmm } from '../shared/engine/time.ts';
 
@@ -82,6 +83,7 @@ export function buildSystemPrompt(): string {
     '',
     '【标识与破坏性操作】',
     '- patch 里的 task key、constraint id、block id 必须逐字取自下方上下文（当前计划或其他计划），禁止根据标题猜测；其他计划的块只能用 id 修改，不要臆造 id。',
+    '- 时间块后面的「备注」是用户补充的信息（例如具体章节、器材、地点），排程与调整时要参考，不要忽略。',
     '- 用户要求清空当前计划：先确认范围；确认后输出单个 clear_plan op，不要发明 key 或枚举全部块。',
     '- 用户要求删除/清空所有计划（跨计划）：不要输出 patch；说明当前对话只能清空当前计划，删除全部计划需在设置中确认「删除我的全部数据」。',
     '',
@@ -110,6 +112,11 @@ export function buildUserMessage(input: {
   lines.push(`今天是 ${today}（${weekday}，${timezone}）。`);
   if (input.plan) {
     lines.push(`当前计划「${input.plan.plan.title}」，horizon_start=${input.plan.plan.horizon_start}，timezone=${input.plan.plan.timezone}。`);
+    const holidays = holidaysInRange(input.plan.plan.horizon_start, input.plan.plan.horizon_days);
+    const makeup = makeupWorkdaysInRange(input.plan.plan.horizon_start, input.plan.plan.horizon_days);
+    if (holidays.length) lines.push(`计划期内法定节假日：${holidays.map((h) => `${h.date} ${h.name}`).join('、')}。`);
+    if (makeup.length) lines.push(`计划期内调休上班：${makeup.join('、')}。`);
+    if (!holidays.length && !makeup.length) lines.push('计划期内没有法定节假日与调休。');
     lines.push('任务（key 用于 patch，必须逐字使用）：');
     for (const t of input.plan.task_defs) lines.push(`- ${t.key}｜${t.title}（${taskSummary(t)}）`);
     lines.push('约束（id 用于 patch，必须逐字使用）：');
@@ -119,7 +126,7 @@ export function buildUserMessage(input: {
       const day = localDay(b.start_utc, timezone);
       const start = minToHHmm(localMinutes(b.start_utc, timezone));
       const end = minToHHmm(localMinutes(b.end_utc, timezone));
-      lines.push(`- ${b.id}｜${b.title}｜${day} ${start}–${end}`);
+      lines.push(`- ${b.id}｜${b.title}｜${day} ${start}–${end}${b.notes ? `｜备注：${b.notes.slice(0, 60)}` : ''}`);
     }
     if (input.plan.blocks.length > 60) lines.push(`- …共 ${input.plan.blocks.length} 个时间块，仅列前 60 个`);
     if (input.others?.length) {
@@ -130,7 +137,7 @@ export function buildUserMessage(input: {
           const day = localDay(b.start_utc, timezone);
           const start = minToHHmm(localMinutes(b.start_utc, timezone));
           const end = minToHHmm(localMinutes(b.end_utc, timezone));
-          lines.push(`  - ${b.id}｜${b.title}｜${day} ${start}–${end}`);
+          lines.push(`  - ${b.id}｜${b.title}｜${day} ${start}–${end}${b.notes ? `｜备注：${b.notes.slice(0, 40)}` : ''}`);
         }
         if (other.blocks.length > 12) lines.push(`  - …共 ${other.blocks.length} 个时间块，仅列前 12 个`);
       }

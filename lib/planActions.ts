@@ -1,9 +1,12 @@
 import { toast } from 'sonner';
+import { api, ApiError } from '@/lib/api';
 import { applyPatch, mergeConflictOps } from '@/shared/engine';
 import { planController } from '@/lib/planRuntime';
 import { queryClient } from '@/lib/queryClient';
 import { pickUndoSource } from '@/lib/undoPriority';
 import { usePlanStore } from '@/store/usePlanStore';
+import { usePlanSync } from '@/store/usePlanSync';
+import { useChatStore } from '@/store/useChatStore';
 import { useBlockHistory } from '@/store/useBlockHistory';
 import type { ApplyOp, ConstraintPayload, PlanState, TaskDef } from '@/shared/types';
 import type { PlanConflict } from '@/shared/engine';
@@ -94,6 +97,35 @@ export function deleteConstraintAction(id: string) {
 export function renamePlanAction(title: string) {
   const next = title.slice(0, 60);
   return runOps([{ op: 'update_plan', patch: { title: next } }], '重命名计划', (s) => s.renamePlan(next));
+}
+
+/** 保存尚未落库的草稿：整份快照提交，不跑求解，保留手放块与备注。 */
+export async function saveDraftAction(): Promise<{ ok: boolean; planId?: string; reason?: string }> {
+  const store = usePlanStore.getState();
+  const state = store.state;
+  if (state.plan.id) return { ok: true, planId: state.plan.id };
+  try {
+    const resp = await api.saveDraft({
+      plan_id: null,
+      conversation_id: useChatStore.getState().conversationId,
+      input: {
+        title: state.plan.title,
+        horizon_start: state.plan.horizon_start,
+        horizon_days: state.plan.horizon_days,
+        timezone: state.plan.timezone,
+        task_defs: state.task_defs,
+        constraints: state.constraints,
+        blocks: state.blocks,
+      },
+    });
+    store.importState({ plan: resp.plan, task_defs: resp.task_defs, constraints: resp.constraints, blocks: resp.blocks });
+    usePlanSync.getState().setServerVersion(resp.plan.id, resp.version);
+    void queryClient.invalidateQueries({ queryKey: ['plans'] });
+    void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    return { ok: true, planId: resp.plan.id };
+  } catch (err) {
+    return { ok: false, reason: err instanceof ApiError ? err.message : '保存失败，请重试' };
+  }
 }
 
 function planStateOf(planId: string): PlanState | undefined {

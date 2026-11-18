@@ -230,3 +230,74 @@ describe('plan quota (F)', () => {
     expect(MESSAGES.plan_quota_exceeded).toContain('20');
   });
 });
+
+  it('删除一个计划不影响其他计划', async () => {
+    const d = deps();
+    const app = application(d);
+    const a = await (await app(ctx('POST', '/api/plans/save', { plan_id: null, input: { title: 'A', horizon_start: '2026-11-18', horizon_days: 7, timezone: 'Asia/Shanghai', task_defs: [], constraints: [], blocks: [] } }))).json();
+    await (await app(ctx('POST', '/api/plans/save', { plan_id: null, input: { title: 'B', horizon_start: '2026-11-18', horizon_days: 7, timezone: 'Asia/Shanghai', task_defs: [], constraints: [], blocks: [] } }))).json();
+    expect((await app(ctx('DELETE', `/api/plans/${a.plan.id}`))).status).toBe(200);
+    const list = await (await app(ctx('GET', '/api/plans'))).json();
+    expect(list.items.map((p: any) => p.title)).toEqual(['B']);
+  });
+
+describe('savePlan（草稿整份保存）', () => {
+  const draftBody = (over: Record<string, unknown> = {}) => ({
+    plan_id: null,
+    conversation_id: null,
+    input: {
+      title: '草稿计划',
+      horizon_start: '2026-11-18',
+      horizon_days: 7,
+      timezone: 'Asia/Shanghai',
+      task_defs: [{ key: 'math', title: '数学真题', category: 'study', duration_min: 60, frequency: { type: 'daily' }, priority: 'mid', splittable: false, sort_order: 0 }],
+      constraints: [{ id: 'ai-c-0', payload: { type: 'buffer', minutes: 5 }, source: 'user', enabled: true }],
+      blocks: [
+        { id: 'manual-123', title: '拉伸', category: 'rest', start_utc: '2026-11-20T12:00:00.000Z', end_utc: '2026-11-20T12:20:00.000Z', priority: 'mid', pinned: true, origin: 'manual', notes: '带备注' },
+        { id: crypto.randomUUID(), title: '数学真题', category: 'study', start_utc: '2026-11-18T23:00:00.000Z', end_utc: '2026-11-19T00:00:00.000Z', priority: 'mid', pinned: false, origin: 'engine' },
+      ],
+      ...over,
+    },
+  });
+
+  it('创建计划：块与备注保留，非 UUID 的本地 id 由数据库重发，对话绑定到新计划', async () => {
+    const d = deps();
+    const app = application(d);
+    const conv = (await import('../qca/sessions')).ensureConversation(d.db, 'v', null, '草稿对话');
+    const conversation = await conv;
+    const res = await app(ctx('POST', '/api/plans/save', { ...draftBody(), conversation_id: conversation.id }));
+    expect(res.status).toBe(200);
+    const j = await res.json();
+    expect(j.plan.id).toBeTruthy();
+    expect(j.version).toBe(1);
+    expect(j.blocks).toHaveLength(2);
+    expect(j.blocks.find((b: any) => b.title === '拉伸')).toMatchObject({ pinned: true, notes: '带备注' });
+    expect(j.blocks.find((b: any) => b.title === '拉伸').id).not.toBe('manual-123');
+    expect(j.constraints[0].id).not.toBe('ai-c-0');
+    expect(d.db.tables.conversations[0].plan_id).toBe(j.plan.id);
+  });
+
+  it('再次保存同一计划 → version+1，整表替换', async () => {
+    const d = deps();
+    const app = application(d);
+    const first = await (await app(ctx('POST', '/api/plans/save', draftBody()))).json();
+    const body = draftBody({ title: '改名后', blocks: [] });
+    const res = await app(ctx('POST', '/api/plans/save', { ...body, plan_id: first.plan.id }));
+    expect(res.status).toBe(200);
+    const j = await res.json();
+    expect(j.version).toBe(2);
+    expect(j.plan.title).toBe('改名后');
+    expect(j.blocks).toHaveLength(0);
+  });
+
+  it('别人的计划 → 403；结束早于开始 → 422', async () => {
+    const d = deps();
+    const app = application(d);
+    const first = await (await app(ctx('POST', '/api/plans/save', draftBody()))).json();
+    const other = await app(ctx('POST', '/api/plans/save', { ...draftBody(), plan_id: first.plan.id }, { id: 'other' }));
+    expect(other.status).toBe(403);
+
+    const bad = draftBody({ blocks: [{ id: 'manual-1', title: '坏块', category: 'rest', start_utc: '2026-11-20T12:20:00.000Z', end_utc: '2026-11-20T12:00:00.000Z', priority: 'mid', pinned: false, origin: 'manual' }] });
+    expect((await app(ctx('POST', '/api/plans/save', bad))).status).toBe(422);
+  });
+});

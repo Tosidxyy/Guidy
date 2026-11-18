@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { addDays, format, parseISO } from 'date-fns';
+import { addDays, format, parseISO, startOfWeek } from 'date-fns';
 import { toast } from 'sonner';
 import { CalendarPlus } from 'lucide-react';
 import type { Block, PlanState } from '@/shared/types';
-import { dayList, findConflicts, hhmmToMin, localDay, localMinutes, minToHHmm, utcAt, validatePlacement, weekdayOfDay, applyPatch, type PlanConflict } from '@/shared/engine';
+import { findConflicts, hhmmToMin, localDay, localMinutes, minToHHmm, utcAt, validatePlacement, weekdayOfDay, applyPatch, type PlanConflict } from '@/shared/engine';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { usePlanLayers } from '@/lib/usePlanLayers';
-import { collectForeignBlocks, sharedHorizonStart, type ForeignBlock } from '@/lib/calendarLayers';
+import { collectForeignBlocks, type ForeignBlock } from '@/lib/calendarLayers';
 import { usePlanManager } from '@/lib/usePlanManager';
 import { planController } from '@/lib/planRuntime';
 import { mergeConflictAction, undoMergedPlans } from '@/lib/planActions';
 import { moveSelection } from '@/lib/moveSelection';
 import { todayStr } from '@/lib/seed';
+import { holidayOn, makeupWorkdayOn } from '@/shared/holidays';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -70,7 +71,6 @@ export function CalendarPanel() {
   const togglePin = usePlanStore((s) => s.togglePin);
 
   const view = useUiStore((s) => s.view);
-  const weekOffset = useUiStore((s) => s.weekOffset);
   const dayAnchor = useUiStore((s) => s.dayAnchor);
   const visibleStart = useUiStore((s) => s.visibleStart);
   const visibleEnd = useUiStore((s) => s.visibleEnd);
@@ -144,16 +144,14 @@ export function CalendarPanel() {
 
   const tz = state.plan.timezone;
   const today = todayStr(tz);
-  const horizonStart = preview?.horizon_start ?? sharedHorizonStart(state.plan.horizon_start, layers);
+  const anchor = dayAnchor ?? today;
 
+  // 经典周视图：只显示锚点所在周的周一到周日；日视图显示锚点当天。
   const days = useMemo(() => {
-    if (view === 'day') {
-      const anchor = dayAnchor && dayAnchor >= horizonStart ? dayAnchor : today;
-      return [anchor];
-    }
-    const anchor = format(addDays(parseISO(horizonStart), weekOffset * 7), 'yyyy-MM-dd');
-    return dayList(anchor, 7, tz);
-  }, [view, dayAnchor, weekOffset, horizonStart, tz, today]);
+    if (view === 'day') return [anchor];
+    const monday = format(startOfWeek(parseISO(anchor), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+    return Array.from({ length: 7 }, (_, i) => format(addDays(parseISO(monday), i), 'yyyy-MM-dd'));
+  }, [view, anchor]);
 
   const bodyH = (visibleEnd - visibleStart) * PX_PER_MIN;
   const cols = { gridTemplateColumns: `${GUTTER_PX}px repeat(${days.length}, minmax(0, 1fr))` };
@@ -643,6 +641,8 @@ export function CalendarPanel() {
                 <span className={cn('font-display tabular text-sm font-semibold', isToday ? 'dawn-text' : 'text-site-ink')}>
                   {format(parseISO(d), 'M/d')}
                 </span>
+                {holidayOn(d) && <span className="rounded bg-site-danger/10 px-1 text-[9px] text-site-danger">{holidayOn(d)}</span>}
+                {!holidayOn(d) && makeupWorkdayOn(d) && <span className="rounded bg-site-warning/15 px-1 text-[9px] text-site-warning-text">调休</span>}
               </button>
             );
           })}

@@ -33,6 +33,20 @@ describe('buildUserMessage — 跨计划上下文', () => {
     expect(text).not.toContain('【共享日历：跨计划时间重叠】');
   });
 
+  it('计划期内的节假日与调休进入上下文', () => {
+    const holidayPlan: PlanState = { ...plan, plan: { ...plan.plan, horizon_start: '2026-02-14', horizon_days: 7 } };
+    const text = buildUserMessage({ message: '这周怎么排？', plan: holidayPlan, history: [], today: '2026-02-14' });
+    expect(text).toContain('计划期内法定节假日');
+    expect(text).toContain('2026-02-17 春节');
+    expect(text).toContain('计划期内调休上班：2026-02-14');
+  });
+
+  it('时间块的备注进入上下文', () => {
+    const withNotes: PlanState = { ...plan, blocks: [{ ...plan.blocks[0], notes: '错题复盘：线代第二章' }] };
+    const text = buildUserMessage({ message: '今天怎么安排？', plan: withNotes, history: [], today: '2026-11-18' });
+    expect(text).toContain('备注：错题复盘：线代第二章');
+  });
+
   it('其他计划的块 id 与跨计划规则进入上下文', () => {
     const text = buildUserMessage({ message: '把健身计划周三的训练挪到晚上', plan, history: [], today: '2026-11-18', others: [other] });
     expect(text).toContain('【共享日历中的其他计划】');

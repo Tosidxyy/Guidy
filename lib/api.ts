@@ -32,6 +32,7 @@ export const api = {
   interrupt: (id: string) => requestJson<{ ok: boolean }>('/chat/interrupt', { method: 'POST', body: { conversation_id: id } }),
   recoveryGenerate: () => requestJson<{ code: string }>('/recovery/generate', { method: 'POST' }),
   recoveryClaim: (code: string) => requestJson<{ ok: boolean; plans_count: number; conversations_count: number }>('/recovery/claim', { method: 'POST', body: { code, strategy: 'overwrite' } }),
+  saveDraft: (body: unknown) => requestJson<any>('/plans/save', { method: 'POST', body }),
   deleteAll: () => requestJson<{ ok: boolean; deleted: Record<string, number> }>('/data/delete-all', { method: 'POST', body: { confirm_token: 'DELETE' } }),
 };
 export const SEND_URL = BASE + '/chat/send';
