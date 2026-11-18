@@ -49,6 +49,8 @@ export function useApplyPatch() {
       }
 
       const foreignOps = foreign.reduce((n, g) => n + g.ops.length, 0);
+      // 全部 ops 都被丢弃（没有可定位的目标计划）时不能假装成功。
+      if (!resp && !foreign.length) throw new ApiError('patch_target_missing', 422, '这条调整没有可应用的内容，请刷新后重试');
       for (const group of foreign) {
         const layer = layerStates().find((s) => s.plan.id === group.planId);
         const optimistic = layer ? { blocks: applyPatch(layer, group.ops).state.blocks } : {};

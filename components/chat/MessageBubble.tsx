@@ -17,7 +17,7 @@ export function MessageBubble({ message, streaming, clarificationPending }: { me
         ? '已生成调整建议'
         : clarificationPending
           ? '已生成初版约束方案，请先回答下方问题'
-          : '已生成约束方案，请在下方确认卡核对';
+          : '已生成约束方案，请在上方方案卡核对';
     return (
       <div className="flex items-center gap-1.5 rounded-lg border border-[var(--site-dawn-line)]/30 bg-[var(--site-dawn-soft)] px-3 py-2 text-xs text-site-ink">
         <Sparkles className="h-3.5 w-3.5 text-[var(--site-dawn-line)]" />

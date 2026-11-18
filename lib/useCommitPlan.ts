@@ -9,7 +9,7 @@ import { useChatStore } from '@/store/useChatStore';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 import type { PlanState } from '@/shared/types';
 
-export function useCommitPlan() {
+export function useCommitPlan(onSaved?: (planId: string) => void) {
   const qc = useQueryClient();
   // onMutate clears store.preview via applyPreview before mutationFn runs, so
   // the preview being committed must be captured there and handed over here.
@@ -60,6 +60,7 @@ export function useCommitPlan() {
       qc.invalidateQueries({ queryKey: ['plans'] });
       qc.invalidateQueries({ queryKey: ['conversations'] });
       toast.success(serverPlan.server_authoritative ? '已按服务端结果保存计划' : '计划已保存到云端');
+      onSaved?.(serverPlan.plan.id);
     },
   });
   return {
