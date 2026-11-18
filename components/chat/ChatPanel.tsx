@@ -11,7 +11,9 @@ import { restoreChat } from '@/lib/restoreChat';
 import { appliedPatches } from '@/lib/appliedPatches';
 import { useCommitPlan } from '@/lib/useCommitPlan';
 import { useApplyPatch } from '@/lib/useApplyPatch';
+import { activeOpsOnly } from '@/lib/patchTargets';
 import type { ConstraintSetArtifact, PatchArtifact } from '@/shared/schemas';
+import type { PlanState } from '@/shared/types';
 import { Button } from '@/components/ui/button';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
@@ -82,7 +84,11 @@ export function ChatPanel() {
 
   const onConfirmPatch = (p: PatchArtifact) => {
     if (!planId) return;
-    previewPatch(p);
+    // 预览只对当前计划生效；跨计划 ops 由 useApplyPatch 在保存时分别下发。
+    const layers = qc.getQueriesData<PlanState>({ queryKey: ['plan'] })
+      .map(([, data]) => data)
+      .filter((s): s is PlanState => !!s?.plan?.id);
+    previewPatch({ ...p, ops: activeOpsOnly(p.ops, usePlanStore.getState().state, layers) });
     setConfirmedPatch(p);
     setConfirmedDraft(null);
   };

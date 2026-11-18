@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countExternalOps, resolvePatchTargets } from '@/lib/patchTargets';
+import { activeOpsOnly, countExternalOps, resolvePatchTargets } from '@/lib/patchTargets';
 import type { Block, PlanState } from '@/shared/types';
 
 const block = (id: string, title: string): Block => ({
@@ -42,7 +42,24 @@ describe('resolvePatchTargets', () => {
     expect(groups[1].ops).toHaveLength(1);
   });
 
-  it('草稿计划（无 id）返回空分组', () => {
+  it('add_block 带 plan_id 时路由到该计划，update_plan 同理', () => {
+    const groups = resolvePatchTargets([
+      { op: 'add_block', plan_id: 'p2', value: { title: '拉伸', category: 'rest', start_utc: '2026-11-20T12:00:00.000Z', end_utc: '2026-11-20T12:15:00.000Z', priority: 'mid', pinned: false } },
+      { op: 'update_plan', plan_id: 'p2', patch: { title: '健身（新）' } },
+      { op: 'update_plan', patch: { title: '考研（新）' } },
+    ], active, layers);
+    expect(groups.map((g) => g.planId)).toEqual(['p2', 'p1']);
+    expect(groups[0].ops.map((o) => o.op)).toEqual(['add_block', 'update_plan']);
+  });
+
+  it('activeOpsOnly 只返回当前计划的 ops', () => {
+    const ops = [
+      { op: 'remove_block' as const, id: 'a1' },
+      { op: 'remove_block' as const, id: 'b1' },
+    ];
+    expect(activeOpsOnly(ops, active, layers)).toEqual([{ op: 'remove_block', id: 'a1' }]);
+  });
+    it('草稿计划（无 id）返回空分组', () => {
     const draft = { ...active, plan: { ...active.plan, id: null } };
     expect(resolvePatchTargets([{ op: 'remove_block', id: 'a1' }], draft, layers)).toEqual([]);
   });
