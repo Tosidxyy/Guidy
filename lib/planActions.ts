@@ -190,7 +190,7 @@ export async function applyRescheduleAction(): Promise<ActionResult> {
     return { ok: true, planId: null };
   }
   const ops: ApplyOp[] = [{ op: 'reschedule', scope: 'all', keep_pinned: true }];
-  const planPatch: { horizon_start?: string; horizon_days?: 7 | 14 } = {};
+  const planPatch: { horizon_start?: string; horizon_days?: 7 | 14 | 30 | 90 } = {};
   if (preview.horizon_start !== store.state.plan.horizon_start) planPatch.horizon_start = preview.horizon_start;
   if (preview.horizon_days !== store.state.plan.horizon_days) planPatch.horizon_days = preview.horizon_days;
   if (Object.keys(planPatch).length) ops.push({ op: 'update_plan', patch: planPatch });

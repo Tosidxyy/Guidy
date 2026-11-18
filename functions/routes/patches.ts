@@ -102,7 +102,7 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
     updated_at: new Date().toISOString(),
   }).eq('id', plan_id).eq('owner_visitor_id', visitor).select('*'))[0];
   for (const t of patched.state.task_defs) {
-    await deps.db.from('task_defs').insert({ plan_id, key: t.key, title: t.title, category: t.category, duration_min: t.duration_min, frequency: t.frequency, priority: t.priority, splittable: t.splittable, preferred_period: t.preferred_period ?? null, sort_order: t.sort_order });
+    await deps.db.from('task_defs').insert({ plan_id, key: t.key, title: t.title, category: t.category, duration_min: t.duration_min, frequency: t.frequency, priority: t.priority, splittable: t.splittable, preferred_period: t.preferred_period ?? null, sort_order: t.sort_order, notes: t.notes ?? null });
   }
   for (const c of patched.state.constraints) {
     await deps.db.from('constraints').insert({ ...(UUID_RE.test(c.id) ? { id: c.id } : {}), plan_id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });

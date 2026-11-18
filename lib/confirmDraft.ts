@@ -33,3 +33,7 @@ export function updateWindow(draft: ConstraintSetArtifact, index: number, field:
   const constraints = draft.constraints.map((x, i) => (i === index ? { ...c, [field]: value } : x));
   return { ...draft, constraints };
 }
+
+export function updateTaskNotes(draft: ConstraintSetArtifact, key: string, notes: string): ConstraintSetArtifact {
+  return { ...draft, task_defs: draft.task_defs.map((t) => (t.key === key ? { ...t, notes: notes.slice(0, 500) } : t)) };
+}

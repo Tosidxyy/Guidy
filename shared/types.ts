@@ -1,5 +1,7 @@
 import type { Category, Constraint, Priority, TaskDef } from './schemas.ts';
 
+export type HorizonDays = 7 | 14 | 30 | 90;
+
 export type { ApplyOp, Category, Constraint, ConstraintPayload, Frequency, ManualBlock, PatchOp, Period, Priority, TaskDef } from './schemas.ts';
 
 export interface Block {
@@ -19,7 +21,7 @@ export interface Plan {
   id: string | null;
   title: string;
   horizon_start: string;
-  horizon_days: 7 | 14;
+  horizon_days: HorizonDays;
   timezone: string;
   status: 'draft' | 'active' | 'archived';
   version: number;
@@ -52,7 +54,7 @@ export interface Compromise {
 export interface SolveInput {
   engine_version: number;
   horizon_start: string;
-  horizon_days: 7 | 14;
+  horizon_days: HorizonDays;
   timezone: string;
   task_defs: TaskDef[];
   constraints: Constraint[];

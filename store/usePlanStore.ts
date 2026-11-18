@@ -21,7 +21,7 @@ export interface ReschedulePreview {
   diff: DiffResult;
   reason: string;
   horizon_start: string;
-  horizon_days: 7 | 14;
+  horizon_days: 7 | 14 | 30 | 90;
 }
 
 interface PlanStore {

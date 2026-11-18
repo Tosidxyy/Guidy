@@ -219,6 +219,7 @@ export function solve(input: SolveInput): SolveOutput {
     id: nextId(), task_key: task.key, title: task.title, category: task.category,
     start_utc: utcAt(ctx.day, interval.start, tz), end_utc: utcAt(ctx.day, interval.end, tz),
     priority: task.priority, pinned: false, origin: 'engine',
+    ...(task.notes ? { notes: task.notes } : {}),
   });
 
   const recordSoft = (task: TaskDef, block: Block, ctx: DayContext, interval: Interval) => {

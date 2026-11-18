@@ -341,3 +341,19 @@ describe('engine pinned accounting (regression)', () => {
     expect(new Set(out.blocks.map((b) => b.id)).size).toBe(out.blocks.length);
   });
 });
+
+describe('任务备注', () => {
+  it('任务备注随生成的块一起落库', () => {
+    const out = solve({
+      engine_version: 1,
+      horizon_start: '2026-11-18',
+      horizon_days: 7,
+      timezone: 'Asia/Shanghai',
+      task_defs: [{ key: 'push', title: '推日', category: 'fitness', duration_min: 60, frequency: { type: 'daily' }, priority: 'mid', splittable: false, sort_order: 0, notes: '卧推 3×8；肩推 3×10' }],
+      constraints: [{ id: 'c1', payload: { type: 'active_window', start: '07:00', end: '23:00' }, source: 'user', enabled: true }],
+      pinned_blocks: [],
+    });
+    expect(out.blocks.length).toBeGreaterThan(0);
+    expect(out.blocks.every((b) => b.notes === '卧推 3×8；肩推 3×10')).toBe(true);
+  });
+});

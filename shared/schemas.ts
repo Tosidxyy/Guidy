@@ -5,6 +5,7 @@ export const CategoryEnum = z.enum([
 ]);
 export const PriorityEnum = z.enum(['high', 'mid', 'low']);
 export const PeriodEnum = z.enum(['morning', 'afternoon', 'evening', 'night']);
+export const HorizonDaysSchema = z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(90)]);
 export const HHmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, '时间格式须为 HH:mm');
 export const Weekday = z.number().int().min(0).max(6);
 
@@ -24,6 +25,8 @@ export const TaskDefSchema = z.object({
   splittable: z.boolean().default(false),
   preferred_period: PeriodEnum.optional(),
   sort_order: z.number().int().default(0),
+  /** 执行细节/资料要点，会随生成的时间块进入日历与上下文。 */
+  notes: z.string().max(500).optional(),
 });
 
 const weekdayOrDate = { weekday: Weekday.optional(), date: z.string().date().optional() };
@@ -136,7 +139,7 @@ export const UpdatePlanOpSchema = z.object({
     .object({
       title: z.string().min(1).max(60).optional(),
       horizon_start: z.string().date().optional(),
-      horizon_days: z.union([z.literal(7), z.literal(14)]).optional(),
+      horizon_days: HorizonDaysSchema.optional(),
       timezone: z.string().min(1).max(64).optional(),
     })
     .refine((p) => Object.keys(p).length > 0, '至少修改一个字段'),
@@ -169,7 +172,7 @@ export const ConstraintSetArtifactSchema = z.object({
   type: z.literal('constraint_set'),
   plan_title: z.string().max(60),
   horizon_start: z.string().date().optional(),
-  horizon_days: z.union([z.literal(7), z.literal(14)]).default(7),
+  horizon_days: HorizonDaysSchema.default(7),
   task_defs: z.array(TaskDefSchema).min(1).max(30),
   constraints: z.array(ConstraintPayloadSchema).max(40),
   clarifications_needed: z.array(z.string().max(200)).max(2),

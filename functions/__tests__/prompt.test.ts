@@ -107,6 +107,12 @@ describe('buildUserMessage — 跨计划上下文', () => {
     expect(text).toContain('任务：leetcode｜力扣');
     expect(text).toContain('其他计划的任务定义是全局已知信息');
   });
+  it('长期计划与任务备注的契约写进 prompt', () => {
+    const text = buildSystemPrompt();
+    expect(text).toContain('horizon_days:7|14|30|90');
+    expect(text).toContain('默认 horizon_days=90');
+    expect(text).toContain('task_defs[].notes');
+  });
   it('没有其他计划时不出现该段', () => {
     const text = buildUserMessage({ message: 'hi', plan, history: [], today: '2026-11-18' });
     expect(text).not.toContain('【共享日历中的其他计划】');

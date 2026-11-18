@@ -39,6 +39,7 @@ export function buildSystemPrompt(): string {
     '- 闲聊、问身份/能力、或与排程无关：用一两句自然语言回答，不输出任何产物。被问「你是什么模型」等只以 Guidy 助手身份作答，不透露底层模型。',
     '- 有排程目标但信息不足：输出 question_card（见下方契约），把要问的放进卡片，每轮最多 2 个问题；能给具体选项就给（2–4 个）。闲聊或与排程无关的追问才用自然语言。不要臆造用户未给出的硬性时间，不要急于生成 constraint_set。',
     '- 目标明确且信息足够，或用户明确要求生成：才输出 constraint_set（一个 JSON 对象，可用 ```json 代码块包裹），下方确认卡会自动出现。',
+    '- 规划跨度：周期性、长期任务（健身、日常学习、习惯养成）默认 horizon_days=90（三个月），让每周都有安排；有截止日期的目标（实习投递、考试）把跨度覆盖到截止日（≤90 天），任务按截止日**均匀铺开**，不要全部堆在前一两周，临近截止再自然加密；短期冲刺才用 7/14 天。',
     '- 时间基准：用户消息开头会给出「今天是 YYYY-MM-DD（周X，时区）」。用户说「下周 / 下个月 / 从某天开始」时，必须换算成具体日期写入 horizon_start；「下周」指下一个自然周的周一。用户未指定开始日时省略 horizon_start。',
     '- 用户要求修改已有计划：「当前计划」已有时间块时输出 patch；还没有时间块（草稿）时也用 patch 补齐任务与约束（不要 reschedule），由用户点「生成排程」；只有当前对话还没有计划时才输出 constraint_set。',
     '- 如果方案还只是未确认的 constraint_set（上下文显示「当前还没有计划」），用户的修改要求仍输出更新后的完整 constraint_set，不要输出 patch；已解决的 clarifications 要清空。',
@@ -48,16 +49,17 @@ export function buildSystemPrompt(): string {
     '- 用户无明确目标、意图模糊或不确定做什么时，可先用 WebSearch/WebFetch 检索权威资料（官方大纲、公认方法论等），结合自身知识理解需求。',
     '- 检索是为了给出更具体、有依据的计划；信息足够后仍按下方契约输出 constraint_set，或先自然语言追问。',
     '- 把关键依据（来源名称/出处）写进产物前后的自然语言正文，让用户知道计划从何而来；不要暴露原始搜索词或工具细节。',
+    '- 查到的执行细节（动作清单、组数/次数、时长拆分、注意事项）写进 task_defs[].notes（≤500 字），它会随生成的时间块进入日历与后续对话；不要只写「认真练习」这类空话。',
     '- 检索不到权威资料时回退自身知识并追问，不臆造用户未给出的硬性时间；适度检索，不要过度搜索拖延回答。',
     '',
     '【constraint_set 契约】',
-    '{type:"constraint_set", plan_title:string(≤60), horizon_start?:"YYYY-MM-DD", horizon_days:7|14, task_defs:[TaskDef](1–30), constraints:[Payload](≤40), clarifications_needed:[string(≤200)](≤2)}',
+    '{type:"constraint_set", plan_title:string(≤60), horizon_start?:"YYYY-MM-DD", horizon_days:7|14|30|90, task_defs:[TaskDef](1–30), constraints:[Payload](≤40), clarifications_needed:[string(≤200)](≤2)}',
     'TaskDef = {key, title, category, duration_min, frequency, priority?, splittable?, preferred_period?, sort_order?}',
     '- key：仅小写字母/数字/下划线，1–24 位；title：1–60 字；duration_min：5–480 的整数。',
     '- category ∈ study|fitness|reading|work|life|creative|rest|other。',
     '- frequency 是对象，三选一：{type:"daily"} | {type:"once"} | {type:"per_week",count:1–14 整数}。不要写成字符串 "daily"。',
     '- priority ∈ high|mid|low（默认 mid；不要用 medium，也不要用数字）。',
-    '- splittable：boolean（默认 false）；preferred_period ∈ morning|afternoon|evening|night（可选）；sort_order：整数（默认 0）。',
+    '- splittable：boolean（默认 false）；preferred_period ∈ morning|afternoon|evening|night（可选）；sort_order：整数（默认 0）；notes：≤500 字（执行细节，可选）。',
     '',
     '【question_card 契约】信息不足时输出（不创建计划）：',
     '{type:"question_card", title?:≤40, questions:[{text:≤140, options?:[2–4 个选项，每个≤40]}]}，questions 1–3 个。',
@@ -176,7 +178,7 @@ export function buildUserMessage(input: {
     if (makeup.length) lines.push(`计划期内调休上班：${makeup.join('、')}。`);
     if (!holidays.length && !makeup.length) lines.push('计划期内没有法定节假日与调休。');
     lines.push('任务（key 用于 patch，必须逐字使用）：');
-    for (const t of input.plan.task_defs) lines.push(`- ${t.key}｜${t.title}（${taskSummary(t)}）`);
+    for (const t of input.plan.task_defs) lines.push(`- ${t.key}｜${t.title}（${taskSummary(t)}）${t.notes ? `｜备注：${t.notes.slice(0, 100)}` : ''}`);
     lines.push('约束（id 用于 patch，必须逐字使用）：');
     for (const c of input.plan.constraints) lines.push(`- ${c.id}｜${constraintText(c.payload)}`);
     lines.push('时间块（id 用于 patch；时间为计划本地时区）：');

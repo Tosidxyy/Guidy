@@ -6,7 +6,7 @@ import type { Db } from '../db.ts';
 import { requireVisitor } from '../identity.ts';
 import { solve, resultHash } from '../engine.ts';
 import { ENGINE_VERSION, LIMITS, QUOTAS } from '../../shared/constants.ts';
-import { TaskDefSchema, ConstraintSchema, PlanBlockSchema } from '../../shared/schemas.ts';
+import { TaskDefSchema, ConstraintSchema, PlanBlockSchema, HorizonDaysSchema } from '../../shared/schemas.ts';
 import type { Deps, RouteCtx } from '../types.ts';
 
 const CommitSchema = z.object({
@@ -18,7 +18,7 @@ const CommitSchema = z.object({
   input: z.object({
     title: z.string().min(1).max(LIMITS.titleChars),
     horizon_start: z.string().min(1),
-    horizon_days: z.union([z.literal(7), z.literal(14)]),
+    horizon_days: HorizonDaysSchema,
     timezone: z.string().min(1),
     task_defs: z.array(TaskDefSchema).min(1).max(LIMITS.taskDefsMax),
     constraints: z.array(ConstraintSchema).max(LIMITS.constraintsMax),
@@ -96,7 +96,7 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
     plan = rows(await deps.db.from('plans').insert({ owner_visitor_id: visitor, title: input.title, horizon_start: input.horizon_start, horizon_days: input.horizon_days, timezone: input.timezone, status: 'active', version: 1 }).select('*'))[0];
   }
   for (const t of input.task_defs) {
-    await deps.db.from('task_defs').insert({ plan_id: plan.id, key: t.key, title: t.title, category: t.category, duration_min: t.duration_min, frequency: t.frequency, priority: t.priority, splittable: t.splittable, preferred_period: t.preferred_period ?? null, sort_order: t.sort_order });
+    await deps.db.from('task_defs').insert({ plan_id: plan.id, key: t.key, title: t.title, category: t.category, duration_min: t.duration_min, frequency: t.frequency, priority: t.priority, splittable: t.splittable, preferred_period: t.preferred_period ?? null, sort_order: t.sort_order, notes: t.notes ?? null });
   }
   for (const c of input.constraints) {
     await deps.db.from('constraints').insert({ plan_id: plan.id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
@@ -122,7 +122,7 @@ const SaveSchema = z.object({
   input: z.object({
     title: z.string().min(1).max(LIMITS.titleChars),
     horizon_start: z.string().min(1),
-    horizon_days: z.union([z.literal(7), z.literal(14)]),
+    horizon_days: HorizonDaysSchema,
     timezone: z.string().min(1),
     task_defs: z.array(TaskDefSchema).max(LIMITS.taskDefsMax),
     constraints: z.array(ConstraintSchema).max(LIMITS.constraintsMax),
@@ -205,7 +205,7 @@ export async function savePlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
   }
 
   for (const t of input.task_defs) {
-    await deps.db.from('task_defs').insert({ plan_id: plan.id, key: t.key, title: t.title, category: t.category, duration_min: t.duration_min, frequency: t.frequency, priority: t.priority, splittable: t.splittable, preferred_period: t.preferred_period ?? null, sort_order: t.sort_order });
+    await deps.db.from('task_defs').insert({ plan_id: plan.id, key: t.key, title: t.title, category: t.category, duration_min: t.duration_min, frequency: t.frequency, priority: t.priority, splittable: t.splittable, preferred_period: t.preferred_period ?? null, sort_order: t.sort_order, notes: t.notes ?? null });
   }
   const savedConstraints = input.constraints;
   for (const c of savedConstraints) {

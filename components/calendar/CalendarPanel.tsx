@@ -90,6 +90,7 @@ export function CalendarPanel() {
   const { switchPlan } = usePlanManager();
   const lastForeignDrag = useRef(0);
   const [pendingSwitch, setPendingSwitch] = useState<{ id: string; title: string } | null>(null);
+  const [foreignTarget, setForeignTarget] = useState<{ planId: string; planTitle: string; blockTitle: string } | null>(null);
 
   const foreign = useMemo(() => collectForeignBlocks(state.blocks, layers), [state.blocks, layers]);
   const foreignMap = useMemo(() => new Map(foreign.map((f) => [f.block.id, f])), [foreign]);
@@ -580,7 +581,7 @@ export function CalendarPanel() {
           onOpen={foreignInfo ? undefined : (b) => openDrawer('block', b.id)}
           onClick={foreignInfo ? () => {
             if (Date.now() - lastForeignDrag.current < 400) return;
-            requestSwitchPlan(foreignInfo.planId, foreignInfo.planLabel);
+            setForeignTarget({ planId: foreignInfo.planId, planTitle: foreignInfo.planLabel, blockTitle: p.block.title });
           } : undefined}
         />
       );
@@ -769,6 +770,29 @@ export function CalendarPanel() {
 
       {preview && <PreviewDiffCard />}
       <QuickAddDialog />
+
+      <AlertDialog open={!!foreignTarget} onOpenChange={(v) => { if (!v) setForeignTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display">「{foreignTarget?.blockTitle}」属于「{foreignTarget?.planTitle}」</AlertDialogTitle>
+            <AlertDialogDescription>
+              当前会话只能编辑自己计划的任务块。转到该计划后即可修改或删除它。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const target = foreignTarget;
+                setForeignTarget(null);
+                if (target) requestSwitchPlan(target.planId, target.planTitle);
+              }}
+            >
+              转到「{foreignTarget?.planTitle}」
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!pendingSwitch} onOpenChange={(v) => { if (!v) setPendingSwitch(null); }}>
         <AlertDialogContent>

@@ -23,6 +23,7 @@ function taskDefValue(t: TaskDef): TaskDef {
     key: t.key, title: t.title, category: t.category, duration_min: t.duration_min,
     frequency: t.frequency, priority: t.priority, splittable: t.splittable,
     ...(t.preferred_period ? { preferred_period: t.preferred_period } : {}),
+    ...(t.notes ? { notes: t.notes } : {}),
     sort_order: t.sort_order,
   };
 }
@@ -122,7 +123,7 @@ export function applyPatch(state: PlanState, ops: ApplyOp[]): PatchResult {
         const p = next.plan as unknown as Record<string, unknown>;
         const old: Record<string, unknown> = {};
         for (const k of Object.keys(op.patch)) { old[k] = clone(p[k]); p[k] = clone((op.patch as Record<string, unknown>)[k]); }
-        inverse.push({ op: 'update_plan', patch: old as { title?: string; horizon_start?: string; horizon_days?: 7 | 14; timezone?: string } });
+        inverse.push({ op: 'update_plan', patch: old as { title?: string; horizon_start?: string; horizon_days?: 7 | 14 | 30 | 90; timezone?: string } });
         if ('horizon_start' in op.patch || 'horizon_days' in op.patch || 'timezone' in op.patch) requiresReschedule = true;
         break;
       }

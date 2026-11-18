@@ -3,10 +3,11 @@ import type { ConstraintSetArtifact } from '@/shared/schemas';
 import { constraintText } from '@/lib/describe';
 import {
   removeConstraint, addDefaultConstraint, toggleMutexStrength,
-  updateTaskDuration, updateTaskTitle, updateWindow,
+  updateTaskDuration, updateTaskNotes, updateTaskTitle, updateWindow,
 } from '@/lib/confirmDraft';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { cn } from '@/lib/utils';
 
 const WINDOW_TYPES = ['busy_window', 'active_window', 'fixed_block'];
@@ -34,14 +35,25 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
           onChange={(e) => set({ ...draft, horizon_start: e.target.value || planStart })}
           className="h-7 w-36 text-xs"
         />
-        <span className="text-[11px] text-site-ink-soft">连续排 {draft.horizon_days} 天</span>
+        <NativeSelect
+          value={String(draft.horizon_days)}
+          aria-label="计划跨度"
+          onChange={(e) => set({ ...draft, horizon_days: Number(e.target.value) as 7 | 14 | 30 | 90 })}
+          className="h-7 w-24 text-xs"
+        >
+          <NativeSelectOption value="7">连续 7 天</NativeSelectOption>
+          <NativeSelectOption value="14">连续 14 天</NativeSelectOption>
+          <NativeSelectOption value="30">连续 30 天</NativeSelectOption>
+          <NativeSelectOption value="90">连续 90 天</NativeSelectOption>
+        </NativeSelect>
       </div>
 
       <section className="mt-3">
         <h4 className="mb-1.5 text-xs font-semibold text-site-ink">任务（{draft.task_defs.length}）</h4>
         <ul className="space-y-1.5">
           {draft.task_defs.map((t) => (
-            <li key={t.key} className="flex items-center gap-2 rounded-lg border border-site-line bg-site-bg px-2.5 py-1.5">
+            <li key={t.key} className="rounded-lg border border-site-line bg-site-bg px-2.5 py-1.5">
+              <div className="flex items-center gap-2">
               <Input
                 value={t.title}
                 aria-label={`任务标题 ${t.key}`}
@@ -55,6 +67,14 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
                 className="tabular h-7 w-20 text-xs"
               />
               <span className="text-[10px] text-site-ink-soft">分钟</span>
+              </div>
+              <Input
+                value={t.notes ?? ''}
+                aria-label={`任务备注 ${t.key}`}
+                placeholder="备注：动作、组数或资料要点"
+                onChange={(e) => set(updateTaskNotes(draft, t.key, e.target.value))}
+                className="mt-1 h-7 text-xs"
+              />
             </li>
           ))}
           {draft.task_defs.length === 0 && (
