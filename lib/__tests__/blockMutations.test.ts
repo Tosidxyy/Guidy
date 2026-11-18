@@ -57,6 +57,16 @@ describe('createBlockMutations', () => {
     expect(d.setServerVersion).toHaveBeenCalledWith('p1', 4);
   });
 
+  it('409 时回滚乐观块，不写版本/历史', async () => {
+    const d = deps({ patch: vi.fn(async () => { throw Object.assign(new Error('计划已被更新'), { status: 409 }); }) });
+    const apply = createBlockMutations(d);
+    const r = await apply({ planId: 'p1', ops: [{ op: 'remove_block', id: 'b1' }], label: '删除', optimisticBlocks: [] });
+    expect(r.ok).toBe(false);
+    expect(d.applyActiveBlocks).toHaveBeenLastCalledWith([]);
+    expect(d.setServerVersion).not.toHaveBeenCalled();
+    expect(d.pushHistory).not.toHaveBeenCalled();
+  });
+
   it('record:false 不写历史（撤销/重做内部使用）', async () => {
     const d = deps();
     const apply = createBlockMutations(d);

@@ -450,6 +450,8 @@ solve(input: SolveInput): SolveOutput   // 纯函数、确定性
 
 > **当前实现（P2）**：手动移动/缩放块复用 `POST /patches/apply` 的 `move_block`——带 `plan_id` + `base_version`，服务端按该计划的约束/块校验落点、version+1 落库，并返回 `inverse_ops` 供撤销。下列独立块 CRUD 端点仍为规划项。
 
+> **P2b 扩展**：块级新增/删除/移动/缩放/字段编辑统一走 `POST /patches/apply`。`add_block` 可带 `client_id`（UUID），服务端按该 ID 落库；删除的逆操作携带原 ID，撤销恢复同一块。客户端以每计划 `serverVersion` 作为 `base_version`；`409 version_conflict` 回滚乐观更新并重新拉取，不自动重放。清空当前计划使用 `{"op":"clear_plan"}`。
+
 | 端点 | 说明 |
 | --- | --- |
 | `POST /plans/:id/blocks` | `{base_version, block: ManualBlock}` → 校验落点 → 201 `{block, version}`；硬违反 → 422 `placement_invalid`+reason |
