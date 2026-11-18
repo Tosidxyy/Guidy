@@ -143,3 +143,13 @@ resolvePatchTargets(ops, active: PlanState, layers: PlanState[]): PlanTarget[]
 - 客户端路由与 patch 校验早已支持按 id 定位跨计划约束，这一层只补了上下文。
 
 **仍不支持的**：按具体日期请假（例如只取消下周三的上班）。这需要「忙时块/例外」模型——把忙时在计划期内实例化成块（`origin: fixed`），删/移某一块就是请假；代价是每个计划各存一份实例、90 天会产生大量块，且与「全局单份日历」需要额外裁决。
+
+## 11. 日历全局化：忙时变成公共块
+
+按「一张日历」的模型实施：
+
+- `blocks.plan_id` 允许为空，`owner_visitor_id` 标记归属；`plan_id = NULL` 的块就是访客级公共块。
+- `GET /api/calendar` 首次调用时把各计划的 `busy_window` / `fixed_block` 实例化成公共块（`origin: fixed`、`pinned: true`、`owner_visitor_id`），随后**删除这些约束**，避免两套规则并存；重复调用按「标题 + 开始时间」幂等。
+- 求解：commit 与 patch 重排都把公共块并入 `pinned_blocks`，任务不会排进上班时间；可安排时段也把公共块计入扣除。
+- 客户端：`GET /api/calendar` 一次取回公共块，日历以「共享日历」半透明块渲染；它们不参与拖动（编辑入口后续补），其他计划块仍半透明。
+- 块数不再有上限（schema 与 store 的上限已移除）。

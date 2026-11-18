@@ -12,6 +12,7 @@ import type { PlanState } from '@/shared/types';
 // 同时把各计划的固定忙时汇总成「共享日历」，参与求解、校验与日历底色。
 export function usePlanLayers(activePlanId: string | null) {
   const list = useQuery({ queryKey: ['plans'], queryFn: () => api.plans(), retry: false });
+  const global = useQuery({ queryKey: ['calendar'], queryFn: () => api.calendar(), retry: false });
   const plans = list.data?.items ?? [];
   const details = useQueries({
     queries: plans.map((p) => ({
@@ -35,10 +36,11 @@ export function usePlanLayers(activePlanId: string | null) {
     for (const layer of layersRef.current) usePlanSync.getState().setServerVersion(layer.id, layer.state.plan.version);
     const active = usePlanStore.getState().state;
     const others = layersRef.current.map((l) => l.state);
+    useSharedCalendar.getState().setBusyBlocks((global.data?.blocks ?? []) as PlanState['blocks']);
     useSharedCalendar.getState().setWindows(collectSharedWindows(
       active.plan.id === activePlanId ? others : [...others, active],
     ));
-  }, [versionKey, activePlanId]);
+  }, [versionKey, activePlanId, global.data]);
 
   return { plans, layers, isLoading: list.isLoading || details.some((d) => d.isLoading) };
 }

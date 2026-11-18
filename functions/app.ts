@@ -6,6 +6,7 @@ import { conversations } from './routes/conversations.ts';
 import { chatSend, chatHistory, chatEvents, chatInterrupt } from './routes/chat.ts';
 import { listPlans, getPlan, commitPlan, deletePlan, savePlan } from './routes/plans.ts';
 import { applyPatchRoute } from './routes/patches.ts';
+import { calendar } from './routes/calendar.ts';
 import { recoveryGenerate, recoveryClaim } from './routes/recovery.ts';
 import { deleteAll } from './routes/data.ts';
 export function application(deps: Deps) {
@@ -20,6 +21,7 @@ export function application(deps: Deps) {
     { method: 'POST', pattern: /^\/api\/plans\/commit$/, handler: commitPlan },
     { method: 'POST', pattern: /^\/api\/plans\/save$/, handler: savePlan },
     { method: 'POST', pattern: /^\/api\/patches\/apply$/, handler: applyPatchRoute },
+    { method: 'GET', pattern: /^\/api\/calendar$/, handler: calendar },
     { method: 'GET', pattern: /^\/api\/plans$/, handler: listPlans },
     { method: 'GET', pattern: /^\/api\/plans\/([^/]+)$/, handler: getPlan },
     { method: 'DELETE', pattern: /^\/api\/plans\/([^/]+)$/, handler: deletePlan },

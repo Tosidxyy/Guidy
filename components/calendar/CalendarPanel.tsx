@@ -86,6 +86,8 @@ export function CalendarPanel() {
   const drawer = useUiStore((s) => s.drawer);
   const { layers } = usePlanLayers(state.plan.id);
   const sharedWindows = useSharedCalendar((s) => s.windows);
+  const busyBlocks = useSharedCalendar((s) => s.busyBlocks);
+  const busyIds = useSharedCalendar((s) => s.busyIds);
   const effectiveConstraints = useMemo(() => mergeSharedWindows(state.constraints, sharedWindows), [state.constraints, sharedWindows]);
   const { switchPlan } = usePlanManager();
   const lastForeignDrag = useRef(0);
@@ -94,7 +96,7 @@ export function CalendarPanel() {
 
   const foreign = useMemo(() => collectForeignBlocks(state.blocks, layers), [state.blocks, layers]);
   const foreignMap = useMemo(() => new Map(foreign.map((f) => [f.block.id, f])), [foreign]);
-  const combinedBlocks = useMemo(() => [...state.blocks, ...foreign.map((f) => f.block)], [state.blocks, foreign]);
+  const combinedBlocks = useMemo(() => [...state.blocks, ...foreign.map((f) => f.block), ...busyBlocks], [state.blocks, foreign, busyBlocks]);
 
   const [ignoredConflicts, setIgnoredConflicts] = useState<string[]>([]);
   const conflicts = useMemo<PlanConflict[]>(() => {
@@ -557,8 +559,9 @@ export function CalendarPanel() {
     const day = days[dayIdx];
     const items = positioned[dayIdx];
     const nodes = items.map((p) => {
+      const busy = busyIds.has(p.block.id);
       const foreignInfo = foreignMap.get(p.block.id);
-      const visual: BlockVisualState = foreignInfo
+      const visual: BlockVisualState = foreignInfo || busy
         ? 'foreign'
         : preview
           ? ghostVisual(p.block.id)
@@ -574,12 +577,12 @@ export function CalendarPanel() {
           leftPct={(p.lane / p.lanes) * 100}
           widthPct={100 / p.lanes}
           visual={visual}
-          planLabel={foreignInfo?.planLabel}
+          planLabel={busy ? '共享日历' : foreignInfo?.planLabel}
           compact={(p.endMin - p.startMin) * PX_PER_MIN < 40}
-          onPointerDown={(e, b) => beginDrag(e, b, 'move', foreignInfo)}
-          onResizeDown={(e, b) => beginDrag(e, b, 'resize', foreignInfo)}
+          onPointerDown={busy ? undefined : (e, b) => beginDrag(e, b, 'move', foreignInfo)}
+          onResizeDown={busy ? undefined : (e, b) => beginDrag(e, b, 'resize', foreignInfo)}
           onOpen={foreignInfo ? undefined : (b) => openDrawer('block', b.id)}
-          onClick={foreignInfo ? () => {
+          onClick={busy ? undefined : foreignInfo ? () => {
             if (Date.now() - lastForeignDrag.current < 400) return;
             setForeignTarget({ planId: foreignInfo.planId, planTitle: foreignInfo.planLabel, blockTitle: p.block.title });
           } : undefined}

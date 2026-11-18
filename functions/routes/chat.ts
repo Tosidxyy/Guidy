@@ -13,6 +13,7 @@ import { readSSE } from '../qca/sse.mjs';
 import { LIMITS } from '../../shared/constants.ts';
 import { findConflicts, type ConflictPlan } from '../../shared/engine/conflicts.ts';
 import { formatAvailability, weeklyAvailability, type AvailabilitySource } from '../../shared/engine/availability.ts';
+import { sharedBusyBlocks } from './calendar.ts';
 import { constraintText } from '../../lib/describe.ts';
 import type { OtherPlanContext } from '../prompt.ts';
 import type { Deps, RouteCtx, AppEvent } from '../types.ts';
@@ -127,8 +128,10 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const related = planState
     ? await loadRelatedPlans(deps.db, visitor, planState as PlanState)
     : await loadSharedCalendar(deps.db, visitor);
-  const availability = related.sources.length
-    ? formatAvailability(weeklyAvailability(related.sources, planState?.plan.timezone ?? timezone ?? 'Asia/Shanghai'))
+  const busyBlocks = await sharedBusyBlocks(deps.db, visitor);
+  const availabilitySources = [...related.sources, ...(busyBlocks.length ? [{ constraints: [], blocks: busyBlocks }] : [])];
+  const availability = availabilitySources.length
+    ? formatAvailability(weeklyAvailability(availabilitySources, planState?.plan.timezone ?? timezone ?? 'Asia/Shanghai'))
     : '';
 
   const stream = new ReadableStream<Uint8Array>({

@@ -7,6 +7,7 @@ import { requireVisitor } from '../identity.ts';
 import { solve, resultHash } from '../engine.ts';
 import { ENGINE_VERSION, LIMITS, QUOTAS } from '../../shared/constants.ts';
 import { TaskDefSchema, ConstraintSchema, PlanBlockSchema, HorizonDaysSchema } from '../../shared/schemas.ts';
+import { horizonBounds, sharedBusyBlocks } from './calendar.ts';
 import type { Deps, RouteCtx } from '../types.ts';
 
 const CommitSchema = z.object({
@@ -79,7 +80,9 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
     return Response.json({ plan, ...(await children(deps.db, plan.id)), version: plan.version, server_authoritative: false, violations: [], compromises: [] });
   }
   const sharedWindows = await sharedRecurring(deps.db, visitor);
-  const output = solve({ engine_version: ENGINE_VERSION, horizon_start: input.horizon_start, horizon_days: input.horizon_days, timezone: input.timezone, task_defs: input.task_defs, constraints: mergeConstraints(input.constraints, sharedWindows), pinned_blocks: [] });
+  const bounds = horizonBounds({ horizon_start: input.horizon_start, horizon_days: input.horizon_days });
+  const busy = await sharedBusyBlocks(deps.db, visitor, bounds.from, bounds.to);
+  const output = solve({ engine_version: ENGINE_VERSION, horizon_start: input.horizon_start, horizon_days: input.horizon_days, timezone: input.timezone, task_defs: input.task_defs, constraints: mergeConstraints(input.constraints, sharedWindows), pinned_blocks: busy.map((b: any) => ({ ...b, pinned: true })) });
   if (output.violations.length) fail('engine_infeasible', 422, { violations: output.violations, compromises: output.compromises });
   const serverHash = await resultHash(output.blocks);
   const server_authoritative = serverHash !== result_hash;
