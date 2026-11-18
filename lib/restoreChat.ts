@@ -1,4 +1,4 @@
-import type { ConstraintSetArtifact, PatchArtifact } from '@/shared/schemas';
+import type { ConstraintSetArtifact, PatchArtifact, QuestionCardArtifact } from '@/shared/schemas';
 import type { PlanState, TaskDef } from '@/shared/types';
 
 export interface HistoryRow {
@@ -12,6 +12,7 @@ export interface RestoredChat {
   messages: { seq: number; role: 'user' | 'assistant'; kind: string; content: string; payload?: unknown }[];
   artifact: ConstraintSetArtifact | null;
   patch: PatchArtifact | null;
+  question: QuestionCardArtifact | null;
   clarifications: string[];
 }
 
@@ -53,7 +54,7 @@ export function isConstraintSetApplied(artifact: ConstraintSetArtifact, plan: Pl
 
 // 历史回放：系统状态行（status/error）本就不作为气泡展示；已落库的确认卡不再重现。
 export function restoreChat(rows: HistoryRow[], plan: PlanState): RestoredChat {
-  const lastArtifact = [...rows].reverse().find((r) => r.kind === 'constraint_set' || r.kind === 'patch');
+  const lastArtifact = [...rows].reverse().find((r) => r.kind === 'constraint_set' || r.kind === 'patch' || r.kind === 'question_card');
   const appliedSeq = lastArtifact?.kind === 'constraint_set' && isConstraintSetApplied(lastArtifact.payload as ConstraintSetArtifact, plan)
     ? lastArtifact.seq
     : null;
@@ -64,5 +65,6 @@ export function restoreChat(rows: HistoryRow[], plan: PlanState): RestoredChat {
     ? (lastArtifact.payload as ConstraintSetArtifact)
     : null;
   const patch = lastArtifact?.kind === 'patch' ? (lastArtifact.payload as PatchArtifact) : null;
-  return { messages, artifact, patch, clarifications: artifact?.clarifications_needed ?? [] };
+  const question = lastArtifact?.kind === 'question_card' ? (lastArtifact.payload as QuestionCardArtifact) : null;
+  return { messages, artifact, patch, question, clarifications: artifact?.clarifications_needed ?? [] };
 }

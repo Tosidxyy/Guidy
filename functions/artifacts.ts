@@ -1,8 +1,9 @@
-import { ConstraintSetArtifactSchema, PatchArtifactSchema } from '../shared/schemas.ts';
-import type { ConstraintSetArtifact, PatchArtifact } from '../shared/schemas.ts';
+import { ConstraintSetArtifactSchema, PatchArtifactSchema, QuestionCardArtifactSchema } from '../shared/schemas.ts';
+import type { ConstraintSetArtifact, PatchArtifact, QuestionCardArtifact } from '../shared/schemas.ts';
 export type ParsedArtifact =
   | { kind: 'constraint_set'; value: ConstraintSetArtifact }
-  | { kind: 'patch'; value: PatchArtifact };
+  | { kind: 'patch'; value: PatchArtifact }
+  | { kind: 'question_card'; value: QuestionCardArtifact };
 export function parseModelText(text: string): ParsedArtifact | null {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const raw = (fenced ? fenced[1] : text).trim();
@@ -13,6 +14,10 @@ export function parseModelText(text: string): ParsedArtifact | null {
   if (type === 'constraint_set') {
     const r = ConstraintSetArtifactSchema.safeParse(obj);
     return r.success ? { kind: 'constraint_set', value: r.data } : null;
+  }
+  if (type === 'question_card') {
+    const r = QuestionCardArtifactSchema.safeParse(obj);
+    return r.success ? { kind: 'question_card', value: r.data } : null;
   }
   if (type === 'patch') {
     const ops = Array.isArray((obj as { ops?: unknown }).ops)

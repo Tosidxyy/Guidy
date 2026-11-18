@@ -144,6 +144,21 @@ export const UpdatePlanOpSchema = z.object({
 
 export const ApplyOpSchema = z.union([PatchOpSchema, UpdatePlanOpSchema]);
 
+// 信息不足时的追问卡片：不进计划，只把问题结构化地呈现给用户。
+export const QuestionCardArtifactSchema = z.object({
+  type: z.literal('question_card'),
+  title: z.string().max(40).optional(),
+  questions: z
+    .array(
+      z.object({
+        text: z.string().min(1).max(140),
+        options: z.array(z.string().min(1).max(40)).min(2).max(4).optional(),
+      }),
+    )
+    .min(1)
+    .max(3),
+});
+
 export const PatchArtifactSchema = z.object({
   type: z.literal('patch'),
   summary: z.string().max(200),
@@ -172,3 +187,4 @@ export type PatchOp = z.infer<typeof PatchOpSchema>;
 export type ApplyOp = z.infer<typeof ApplyOpSchema>;
 export type PatchArtifact = z.infer<typeof PatchArtifactSchema>;
 export type ConstraintSetArtifact = z.infer<typeof ConstraintSetArtifactSchema>;
+export type QuestionCardArtifact = z.infer<typeof QuestionCardArtifactSchema>;

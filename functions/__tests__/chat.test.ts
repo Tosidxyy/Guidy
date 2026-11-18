@@ -183,6 +183,15 @@ describe('跨计划冲突进入 prompt', () => {
   });
 });
 
+  it('artifact：追问卡片投影为 question_card 事件', async () => {
+    const card = { type: 'question_card', title: '还需要确认', questions: [{ text: '每周练几天？', options: ['3 练', '6 练'] }] };
+    const frames = [{ type: 'agent.message', id: 'e1', content: [{ type: 'text', text: '```json\n' + JSON.stringify(card) + '\n```' }] }, { type: 'session.status', status: 'idle' }];
+    const d = deps({ openStream: async () => ({ body: upstreamStream(frames), close() {} }) });
+    const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '我想做三分化训练' })));
+    const art = out.find((f) => f.event === 'artifact');
+    expect(art?.data.kind).toBe('question_card');
+    expect(art?.data.payload.questions).toHaveLength(1);
+  });
 describe('对话与计划绑定', () => {
   const open = { openStream: async () => ({ body: upstreamStream(replyFrames), close() {} }), sendEvents: async () => ({ eventIds: ['e1'] }) };
 

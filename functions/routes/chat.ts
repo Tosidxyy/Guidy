@@ -226,7 +226,7 @@ export async function chatEvents(ctx: RouteCtx, deps: Deps): Promise<Response> {
           if (m.kind === 'text' && m.role === 'assistant') {
             const t = m.seq === cursorSeq ? String(m.content).slice(offset) : String(m.content);
             controller.enqueue(appFrame(m.seq, 'delta', { seq: m.seq, text: t }));
-          } else if (m.kind === 'constraint_set' || m.kind === 'patch') {
+          } else if (m.kind === 'constraint_set' || m.kind === 'patch' || m.kind === 'question_card') {
             controller.enqueue(appFrame(m.seq, 'artifact', { seq: m.seq, kind: m.kind, payload: m.payload }));
           } else if (m.kind === 'status') {
             controller.enqueue(appFrame(m.seq, 'status', { seq: m.seq, state: m.content }));

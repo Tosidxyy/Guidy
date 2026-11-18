@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildUserMessage } from '../prompt';
+import { buildSystemPrompt, buildUserMessage } from '../prompt';
 import { findConflicts } from '../../shared/engine/conflicts';
 import type { Block, PlanState } from '../../shared/types';
 
@@ -76,6 +76,11 @@ describe('buildUserMessage — 跨计划上下文', () => {
     const text = buildUserMessage({ message: '帮我安排', plan, history: [], today: '2026-11-18', others: [withWindows] });
     expect(text).toContain('已有时段：周三 18:00–22:00 兼职');
     expect(text).toContain('不要重复问用户什么时候有空');
+  });
+  it('信息不足时要求输出 question_card 契约', () => {
+    const text = buildSystemPrompt();
+    expect(text).toContain('【question_card 契约】');
+    expect(text).toContain('输出 question_card 的这一轮不要再输出 constraint_set 或 patch');
   });
   it('没有其他计划时不出现该段', () => {
     const text = buildUserMessage({ message: 'hi', plan, history: [], today: '2026-11-18' });

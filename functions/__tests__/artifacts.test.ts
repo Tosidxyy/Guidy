@@ -116,6 +116,18 @@ describe('prompt 契约 — 范例必须与引擎/确认卡消费的 schema 完�
   });
 });
 
+describe('question_card 产物', () => {
+  it('能把追问卡片解析为 question_card', () => {
+    const card = { type: 'question_card', title: '还需要确认', questions: [{ text: '每周练几天？', options: ['3 练', '6 练'] }] };
+    const parsed = parseModelText('```json\n' + JSON.stringify(card) + '\n```');
+    expect(parsed?.kind).toBe('question_card');
+    expect((parsed as any).value.questions).toHaveLength(1);
+  });
+  it('选项少于 2 个或问题为空时拒绝', () => {
+    expect(parseModelText(JSON.stringify({ type: 'question_card', questions: [] }))).toBeNull();
+    expect(parseModelText(JSON.stringify({ type: 'question_card', questions: [{ text: 'x', options: ['只有一个'] }] }))).toBeNull();
+  });
+});
 describe('prompt 研究式规划指引 — 用户不知道做什么时联网检索', () => {
   it('声明研究式规划并点名 WebSearch/WebFetch', () => {
     const p = buildSystemPrompt();

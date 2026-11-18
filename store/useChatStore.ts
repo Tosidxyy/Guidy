@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ConstraintSetArtifact, PatchArtifact } from '@/shared/schemas';
+import type { ConstraintSetArtifact, PatchArtifact, QuestionCardArtifact } from '@/shared/schemas';
 export interface ChatMessage { seq: number; role: 'user' | 'assistant' | 'system'; kind: string; content: string; payload?: unknown }
 export interface ChatState {
   conversationId: string | null;
@@ -10,6 +10,7 @@ export interface ChatState {
   cursor: string;
   artifact: ConstraintSetArtifact | null;
   patch: PatchArtifact | null;
+  question: QuestionCardArtifact | null;
   clarifications: string[];
   error: { code: string; message: string; diagnosticId?: string } | null;
   searching: boolean;
@@ -17,7 +18,7 @@ export interface ChatState {
 }
 export interface AppFrame { event: string; data: any }
 const TERMINAL = ['completed', 'failed', 'interrupted'];
-export const initialChatState: ChatState = { conversationId: null, requestId: null, messages: [], streaming: false, connection: 'idle', cursor: '0:0', artifact: null, patch: null, clarifications: [], error: null, searching: false, restoreDone: false };
+export const initialChatState: ChatState = { conversationId: null, requestId: null, messages: [], streaming: false, connection: 'idle', cursor: '0:0', artifact: null, patch: null, question: null, clarifications: [], error: null, searching: false, restoreDone: false };
 // 恢复会话时历史已完整加载，cursor 须越过最大 seq，否则 resume 重放历史会把全文再追加一遍。
 export function cursorAfterMessages(messages: { seq: number }[]): string {
   const max = messages.reduce((mx, m) => Math.max(mx, m.seq), 0);
@@ -46,7 +47,8 @@ export function reduceFrame(state: ChatState, frame: AppFrame): ChatState {
       const artifact = d.kind === 'constraint_set' ? (d.payload as ConstraintSetArtifact) : state.artifact;
       const clarifications = d.kind === 'constraint_set' ? (d.payload.clarifications_needed ?? []) : state.clarifications;
       const patch = d.kind === 'patch' ? (d.payload as PatchArtifact) : state.patch;
-      return { ...state, artifact, clarifications, patch, messages: [...state.messages, { seq: d.seq, role: 'assistant', kind: d.kind, content: '', payload: d.payload }], cursor: `${d.seq}:0` };
+      const question = d.kind === 'question_card' ? (d.payload as QuestionCardArtifact) : null;
+      return { ...state, artifact, clarifications, patch, question, messages: [...state.messages, { seq: d.seq, role: 'assistant', kind: d.kind, content: '', payload: d.payload }], cursor: `${d.seq}:0` };
     }
     case 'progress':
       return { ...state, searching: true };
@@ -69,7 +71,7 @@ interface ChatStore extends ChatState {
 export const useChatStore = create<ChatStore>((set, get) => ({
   ...initialChatState,
   applyFrame: (frame) => set(reduceFrame(get(), frame)),
-  startSend: (text) => set({ ...get(), streaming: true, connection: 'connecting', error: null, artifact: null, patch: null, clarifications: [], searching: false, restoreDone: true, messages: [...get().messages, { seq: -1, role: 'user', kind: 'text', content: text }] }),
+  startSend: (text) => set({ ...get(), streaming: true, connection: 'connecting', error: null, artifact: null, patch: null, question: null, clarifications: [], searching: false, restoreDone: true, messages: [...get().messages, { seq: -1, role: 'user', kind: 'text', content: text }] }),
   setConversation: (id, messages = []) => set({ ...initialChatState, conversationId: id, messages, restoreDone: true }),
   reset: () => set({ ...initialChatState, restoreDone: true }),
 }));

@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { ConstraintConfirmCard } from './ConstraintConfirmCard';
+import { QuestionCard } from './QuestionCard';
 import { PatchConfirmCard } from './PatchConfirmCard';
 import { PlanCardPanel } from './PlanCardPanel';
 
@@ -29,6 +30,7 @@ export function ChatPanel() {
   const connection = useChatStore((s) => s.connection);
   const artifact = useChatStore((s) => s.artifact);
   const patch = useChatStore((s) => s.patch);
+  const question = useChatStore((s) => s.question);
   const clarifications = useChatStore((s) => s.clarifications);
   const error = useChatStore((s) => s.error);
   const conversationId = useChatStore((s) => s.conversationId);
@@ -83,6 +85,7 @@ export function ChatPanel() {
         cursor: cursorAfterMessages(h.messages),
         artifact: restored.artifact,
         patch: restored.patch,
+        question: restored.question,
         clarifications: restored.clarifications,
       });
       if (first.status === 'active') chat.resume();
@@ -147,6 +150,13 @@ export function ChatPanel() {
             </ul>
             <p className="mt-1.5 text-[11px] text-site-ink-soft">直接在下方回复这些问题，我会更新方案并给出确认卡。</p>
           </div>
+        )}
+        {question && (
+          <QuestionCard
+            artifact={question}
+            onAnswer={(text) => { useChatStore.setState({ question: null }); chat.send(text); }}
+            onDismiss={() => useChatStore.setState({ question: null })}
+          />
         )}
         {artifact && clarifications.length === 0 && !confirmedDraft && (
           <ConstraintConfirmCard artifact={artifact} onConfirm={onConfirm} onCancel={() => useChatStore.setState({ artifact: null })} />
