@@ -436,6 +436,7 @@ solve(input: SolveInput): SolveOutput   // 纯函数、确定性
 | `PATCH /plans/:id` | `{base_version, title?, timezone?, horizon_start?, horizon_days?, status?}` → version+1 |
 | `DELETE /plans/:id` | 软删（deleted_at）；可撤销=恢复 deleted_at |
 | `POST /plans/commit` | 见下 |
+| `POST /plans/save` | 整份草稿快照落库（不跑求解）：`{plan_id?, conversation_id?, input:{title, horizon_start, horizon_days, timezone, task_defs, constraints, blocks}}` → `{plan, task_defs, constraints, blocks, version}`；本地非 UUID 的块/约束 id 由数据库重发；顺带绑定未绑定对话 |
 
 **POST /plans/commit**（生成确认 / 模板套用后首次落库）
 
