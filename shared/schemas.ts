@@ -91,7 +91,7 @@ export const PatchOpSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('add_constraint'), value: ConstraintPayloadSchema }),
   z.object({ op: z.literal('update_constraint'), id: z.string(), patch: z.record(z.unknown()) }),
   z.object({ op: z.literal('remove_constraint'), id: z.string() }),
-  z.object({ op: z.literal('add_block'), value: ManualBlockSchema }),
+  z.object({ op: z.literal('add_block'), value: ManualBlockSchema, client_id: z.string().uuid().optional() }),
   z.object({ op: z.literal('update_block'), id: z.string(), patch: ManualBlockSchema.partial() }),
   z.object({ op: z.literal('move_block'), id: z.string(), start_utc: z.string().datetime(), end_utc: z.string().datetime() }),
   z.object({ op: z.literal('remove_block'), id: z.string() }),

@@ -71,6 +71,19 @@ describe('applyPatchRoute', () => {
     expect(body.blocks.find((b: any) => b.id === block.id).start_utc).toBe(nextStart);
     expect(body.inverse_ops[0]).toMatchObject({ op: 'move_block', id: block.id, start_utc: block.start_utc, end_utc: block.end_utc });
   });
+  it('add_block.client_id 落库保留 ID，且落点校验生效', async () => {
+    const d = deps();
+    const plan = await seedPlan(d);
+    const id = crypto.randomUUID();
+    const res = await application(d)(ctx('POST', '/api/patches/apply', {
+      preview_id: 'cid1', plan_id: plan.id, base_version: plan.version,
+      ops: [{ op: 'add_block', client_id: id, value: { title: '休息', category: 'rest', start_utc: '2026-11-16T02:00:00.000Z', end_utc: '2026-11-16T02:30:00.000Z', priority: 'mid', pinned: false } }],
+      result_hash: null, engine_version: 1,
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.blocks.find((b: any) => b.id === id)?.title).toBe('休息');
+  });
   it('clear_plan → 200，任务/约束/块清空，version+1', async () => {
     const d = deps();
     const plan = await seedPlan(d);

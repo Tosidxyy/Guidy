@@ -52,12 +52,13 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
   const patched = applyPatch(state, ops);
   if (patched.missing.length) fail('patch_target_missing', 422, { targets: patched.missing });
   const originalBlockIds = new Set(state.blocks.map((b) => b.id));
+  const clientIds = new Set(ops.flatMap((op) => (op.op === 'add_block' && op.client_id ? [op.client_id] : [])));
 
   const pctx = { timezone: patched.state.plan.timezone, horizon_start: patched.state.plan.horizon_start, horizon_days: patched.state.plan.horizon_days, blocks: patched.state.blocks, constraints: patched.state.constraints };
   let bSeq = 0;
   for (const op of ops) {
     let id: string | null = null;
-    if (op.op === 'add_block') id = `ai-b-${bSeq++}`;
+    if (op.op === 'add_block') id = op.client_id ?? `ai-b-${bSeq++}`;
     else if (op.op === 'move_block' || op.op === 'update_block') id = op.id;
     if (!id) continue;
     const b = patched.state.blocks.find((x) => x.id === id);
@@ -91,7 +92,7 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
   }
   for (const b of newBlocks) {
     await deps.db.from('blocks').insert({
-      ...(originalBlockIds.has(b.id) ? { id: b.id } : {}),
+      ...(originalBlockIds.has(b.id) || clientIds.has(b.id) ? { id: b.id } : {}),
       plan_id, title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc, priority: b.priority, pinned: b.pinned, origin: b.origin, notes: b.notes ?? null,
     });
   }

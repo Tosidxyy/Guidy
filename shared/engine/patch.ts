@@ -74,7 +74,7 @@ export function applyPatch(state: PlanState, ops: PatchOp[]): PatchResult {
         break;
       }
       case 'add_block': {
-        const id = `ai-b-${bSeq++}`;
+        const id = op.client_id ?? `ai-b-${bSeq++}`;
         const m = op.value;
         next.blocks.push({ id, title: m.title, category: m.category, start_utc: m.start_utc, end_utc: m.end_utc, priority: m.priority, pinned: m.pinned, origin: 'manual', ...(m.notes ? { notes: m.notes } : {}) });
         inverse.push({ op: 'remove_block', id });
@@ -100,7 +100,7 @@ export function applyPatch(state: PlanState, ops: PatchOp[]): PatchResult {
         const b = next.blocks.find((x) => x.id === op.id);
         if (!b) { missing.push(`block:${op.id}`); break; }
         next.blocks = next.blocks.filter((x) => x.id !== op.id);
-        inverse.push({ op: 'add_block', value: blockToManual(b) });
+        inverse.push({ op: 'add_block', value: blockToManual(b), client_id: b.id });
         break;
       }
       case 'reschedule': {

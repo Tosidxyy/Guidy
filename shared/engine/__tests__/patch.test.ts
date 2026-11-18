@@ -70,6 +70,19 @@ describe('applyPatch — block ops（不重算）', () => {
     expect(r.requiresReschedule).toBe(false);
     expect(r.inverse_ops).toContainEqual({ op: 'move_block', id: 'b1', start_utc: '2026-11-16T01:00:00.000Z', end_utc: '2026-11-16T02:30:00.000Z' });
   });
+  it('add_block 使用 client_id，并生成可定位的逆操作', () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const r = applyPatch(base, [{
+      op: 'add_block', client_id: id,
+      value: { title: '休息', category: 'rest', start_utc: '2026-11-16T05:00:00.000Z', end_utc: '2026-11-16T05:30:00.000Z', priority: 'mid', pinned: false },
+    }]);
+    expect(r.state.blocks.find((b) => b.id === id)?.title).toBe('休息');
+    expect(r.inverse_ops).toContainEqual({ op: 'remove_block', id });
+  });
+  it('remove_block 的逆操作携带原 block id', () => {
+    const r = applyPatch(base, [{ op: 'remove_block', id: 'b1' }]);
+    expect(r.inverse_ops).toContainEqual(expect.objectContaining({ op: 'add_block', client_id: 'b1' }));
+  });
   it('add_block 追加 manual 块并求逆', () => {
     const r = applyPatch(base, [{ op: 'add_block', value: { title: '休息', category: 'rest', start_utc: '2026-11-16T05:00:00.000Z', end_utc: '2026-11-16T05:30:00.000Z', priority: 'mid', pinned: false } }]);
     const b = r.state.blocks.find((x) => x.id === 'ai-b-0')!;
