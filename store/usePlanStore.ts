@@ -6,6 +6,8 @@ import { buildEmptyPlan } from '@/lib/seed';
 import { solveArtifact } from '@/lib/preview';
 import { moveSelection } from '@/lib/moveSelection';
 import { loadPersisted, persist } from '@/lib/storage';
+import { mergeSharedWindows } from '@/lib/sharedCalendar';
+import { useSharedCalendar } from '@/store/useSharedCalendar';
 
 interface UndoEntry {
   label: string;
@@ -79,13 +81,14 @@ const init = initial();
 
 export const usePlanStore = create<PlanStore>((set, get) => {
   const save = (state: PlanState) => persist(state);
+  const withShared = (own: PlanState['constraints']) => mergeSharedWindows(own, useSharedCalendar.getState().windows);
 
   const placementCtx = (s: PlanState) => ({
     timezone: s.plan.timezone,
     horizon_start: s.plan.horizon_start,
     horizon_days: s.plan.horizon_days,
     blocks: s.blocks,
-    constraints: s.constraints,
+    constraints: withShared(s.constraints),
   });
 
   return {
@@ -158,7 +161,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
 
     moveBlocks: (ids, dayDelta, minuteDelta) => {
       const { state } = get();
-      const result = moveSelection(state, ids, dayDelta, minuteDelta);
+      const result = moveSelection({ ...state, constraints: withShared(state.constraints) }, ids, dayDelta, minuteDelta);
       if (!result.ok) return { ok: false, reason: result.reason };
       const one = ids.length === 1 ? state.blocks.find((b) => b.id === ids[0]) : undefined;
       const label = one ? `移动「${one.title}」` : `移动 ${ids.length} 个任务块`;
@@ -291,7 +294,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       let output: SolveOutput;
       if (patched.requiresReschedule) {
         const pinned = patched.state.blocks.filter((b) => b.pinned || b.origin === 'manual');
-        output = solve({ engine_version: ENGINE_VERSION, horizon_start: state.plan.horizon_start, horizon_days: state.plan.horizon_days, timezone: state.plan.timezone, task_defs: patched.state.task_defs, constraints: patched.state.constraints, pinned_blocks: pinned });
+        output = solve({ engine_version: ENGINE_VERSION, horizon_start: state.plan.horizon_start, horizon_days: state.plan.horizon_days, timezone: state.plan.timezone, task_defs: patched.state.task_defs, constraints: withShared(patched.state.constraints), pinned_blocks: pinned });
       } else {
         output = { blocks: patched.state.blocks, violations: [], compromises: [], stats: { placed: patched.state.blocks.length, unplaced: 0, solve_ms: 0 } };
       }

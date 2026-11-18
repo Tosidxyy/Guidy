@@ -277,7 +277,7 @@ describe('savePlan（草稿整份保存）', () => {
     expect(d.db.tables.conversations[0].plan_id).toBe(j.plan.id);
   });
 
-  it('新建计划继承已有计划的忙时，状态为 draft；更新时不再继承', async () => {
+  it('新建计划不再复制忙时（共享日历按全局计算），状态为 draft', async () => {
     const d = deps();
     const app = application(d);
     const base = { title: '工作日程', horizon_start: '2026-11-18', horizon_days: 7, timezone: 'Asia/Shanghai', task_defs: [], blocks: [] };
@@ -286,13 +286,8 @@ describe('savePlan（草稿整份保存）', () => {
 
     const b = await (await app(ctx('POST', '/api/plans/save', { plan_id: null, input: { ...base, title: '训练', constraints: [{ id: crypto.randomUUID(), payload: { type: 'active_window', start: '07:00', end: '23:00' }, source: 'user', enabled: true }] } }))).json();
     expect(b.plan.status).toBe('draft');
-    expect(b.constraints).toHaveLength(2);
-    expect(b.constraints.some((c: any) => c.payload.type === 'busy_window')).toBe(true);
-
-    // 更新：用户删掉忙时后不应被重新继承
-    const updated = await (await app(ctx('POST', '/api/plans/save', { plan_id: b.plan.id, input: { ...base, title: '训练', constraints: [] } }))).json();
-    expect(updated.constraints).toHaveLength(0);
-    expect(updated.plan.status).toBe('draft');
+    expect(b.constraints).toHaveLength(1);
+    expect(b.constraints.some((c: any) => c.payload.type === 'busy_window')).toBe(false);
   });
   it('再次保存同一计划 → version+1，整表替换', async () => {
     const d = deps();
@@ -316,5 +311,47 @@ describe('savePlan（草稿整份保存）', () => {
 
     const bad = draftBody({ blocks: [{ id: 'manual-1', title: '坏块', category: 'rest', start_utc: '2026-11-20T12:20:00.000Z', end_utc: '2026-11-20T12:00:00.000Z', priority: 'mid', pinned: false, origin: 'manual' }] });
     expect((await app(ctx('POST', '/api/plans/save', bad))).status).toBe(422);
+  });
+});
+
+describe('共享日历：忙时参与求解', () => {
+  const weekdays = [1, 2, 3, 4, 5].map((weekday) => ({
+    id: crypto.randomUUID(),
+    payload: { type: 'busy_window', weekday, start: '09:00', end: '17:30', label: '上班' },
+    source: 'user',
+    enabled: true,
+  }));
+  const active = { id: crypto.randomUUID(), payload: { type: 'active_window', start: '07:00', end: '23:00' }, source: 'user', enabled: true };
+  const workPlan = { title: '工作日程', horizon_start: '2026-11-18', horizon_days: 7, timezone: 'Asia/Shanghai', task_defs: [], constraints: weekdays, blocks: [] };
+  const tz = 'Asia/Shanghai';
+  const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
+  const isWorkday = (iso: string) => !['Sat', 'Sun'].includes(new Date(iso).toLocaleDateString('en-US', { timeZone: tz, weekday: 'short' }));
+  const overlapsWork = (b: any) => isWorkday(b.start_utc) && hhmm(b.start_utc) < '17:30' && hhmm(b.end_utc) > '09:00';
+
+  it('commit 生成的块避开其他计划的忙时', async () => {
+    const d = deps();
+    const app = application(d);
+    await (await app(ctx('POST', '/api/plans/save', { plan_id: null, input: workPlan }))).json();
+    const input = { ...baseInput, constraints: [active] };
+    const result_hash = await hashFor(input);
+    const body = await (await app(ctx('POST', '/api/plans/commit', { preview_id: 'shared-busy-1', plan_id: null, input, result_hash, engine_version: 1 }))).json();
+    expect(body.blocks.length).toBeGreaterThan(0);
+    for (const b of body.blocks) expect(overlapsWork(b)).toBe(false);
+  });
+
+  it('patch 重排也避开忙时', async () => {
+    const d = deps();
+    const app = application(d);
+    await (await app(ctx('POST', '/api/plans/save', { plan_id: null, input: workPlan }))).json();
+    const draft = await (await app(ctx('POST', '/api/plans/save', { plan_id: null, input: { ...workPlan, title: '训练', constraints: [active] } }))).json();
+    const ops = [
+      { op: 'add_task_def', value: { key: 'run', title: '跑步', category: 'fitness', duration_min: 60, frequency: { type: 'daily' }, priority: 'mid', splittable: false, sort_order: 0 } },
+      { op: 'reschedule', scope: 'all', keep_pinned: true },
+    ];
+    const res = await app(ctx('POST', '/api/patches/apply', { preview_id: 'shared-busy-2', plan_id: draft.plan.id, base_version: draft.version, ops, result_hash: null, engine_version: 1 }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.blocks.length).toBeGreaterThan(0);
+    for (const b of body.blocks) expect(overlapsWork(b)).toBe(false);
   });
 });

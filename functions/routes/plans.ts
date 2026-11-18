@@ -78,12 +78,12 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
     const plan = await getOwnedPlan(deps.db, visitor, existingLog.plan_id);
     return Response.json({ plan, ...(await children(deps.db, plan.id)), version: plan.version, server_authoritative: false, violations: [], compromises: [] });
   }
-  const output = solve({ engine_version: ENGINE_VERSION, horizon_start: input.horizon_start, horizon_days: input.horizon_days, timezone: input.timezone, task_defs: input.task_defs, constraints: input.constraints, pinned_blocks: [] });
+  const sharedWindows = await sharedRecurring(deps.db, visitor);
+  const output = solve({ engine_version: ENGINE_VERSION, horizon_start: input.horizon_start, horizon_days: input.horizon_days, timezone: input.timezone, task_defs: input.task_defs, constraints: mergeConstraints(input.constraints, sharedWindows), pinned_blocks: [] });
   if (output.violations.length) fail('engine_infeasible', 422, { violations: output.violations, compromises: output.compromises });
   const serverHash = await resultHash(output.blocks);
   const server_authoritative = serverHash !== result_hash;
   let plan;
-  const planIdCreated = !plan_id;
   if (plan_id) {
     const old = await getOwnedPlan(deps.db, visitor, plan_id);
     await deps.db.from('task_defs').delete().eq('plan_id', plan_id);
@@ -98,8 +98,7 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
   for (const t of input.task_defs) {
     await deps.db.from('task_defs').insert({ plan_id: plan.id, key: t.key, title: t.title, category: t.category, duration_min: t.duration_min, frequency: t.frequency, priority: t.priority, splittable: t.splittable, preferred_period: t.preferred_period ?? null, sort_order: t.sort_order });
   }
-  const inherited = planIdCreated ? await inheritedRecurring(deps.db, visitor) : [];
-  for (const c of (planIdCreated ? mergedConstraints(input.constraints, inherited) : input.constraints)) {
+  for (const c of input.constraints) {
     await deps.db.from('constraints').insert({ plan_id: plan.id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
   }
   for (const b of output.blocks) {
@@ -142,29 +141,36 @@ function stableKey(value: unknown): string {
   return JSON.stringify(value) ?? 'null';
 }
 
-// 忙时与固定日程是「这个人的日历」而不是某个计划的属性：新建计划时继承已有计划里的这类约束，
-// 否则新计划的日历不显示上班时间，排程也会把任务放进工作时段。
-async function inheritedRecurring(db: Db, visitor: string): Promise<any[]> {
+/**
+ * 共享日历里的固定忙时/固定日程：来自访客所有计划，不属于某一个计划。
+ * 求解与落点校验都要带上，否则新计划会把任务排进上班时间。
+ */
+export async function sharedRecurringFor(db: Db, visitor: string, excludePlanId?: string): Promise<any[]> {
+  return sharedRecurring(db, visitor, excludePlanId);
+}
+
+async function sharedRecurring(db: Db, visitor: string, excludePlanId?: string): Promise<any[]> {
   const plans = rows(await db.from('plans').select('id').eq('owner_visitor_id', visitor));
   const out: any[] = [];
   const seen = new Set<string>();
   for (const p of plans) {
+    if (excludePlanId && p.id === excludePlanId) continue;
     const constraints = rows(await db.from('constraints').select('*').eq('plan_id', p.id));
     for (const c of constraints) {
       if (c.enabled === false || !RECURRING_TYPES.has(c.payload?.type)) continue;
       const key = stableKey(c.payload);
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ id: crypto.randomUUID(), payload: c.payload, source: c.source ?? 'user', enabled: true });
+      out.push({ id: `shared-${out.length}`, payload: c.payload, source: c.source ?? 'user', enabled: true });
     }
     if (out.length >= 12) break;
   }
   return out;
 }
 
-function mergedConstraints(input: any[], inherited: any[]): any[] {
-  const seen = new Set(input.map((c) => stableKey(c.payload)));
-  return [...input, ...inherited.filter((c) => !seen.has(stableKey(c.payload)))].slice(0, LIMITS.constraintsMax);
+function mergeConstraints(own: any[], shared: any[]): any[] {
+  const seen = new Set(own.map((c) => stableKey(c.payload)));
+  return [...own, ...shared.filter((c) => !seen.has(stableKey(c.payload)))];
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -201,7 +207,7 @@ export async function savePlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
   for (const t of input.task_defs) {
     await deps.db.from('task_defs').insert({ plan_id: plan.id, key: t.key, title: t.title, category: t.category, duration_min: t.duration_min, frequency: t.frequency, priority: t.priority, splittable: t.splittable, preferred_period: t.preferred_period ?? null, sort_order: t.sort_order });
   }
-  const savedConstraints = old ? input.constraints : mergedConstraints(input.constraints, await inheritedRecurring(deps.db, visitor));
+  const savedConstraints = input.constraints;
   for (const c of savedConstraints) {
     await deps.db.from('constraints').insert({ ...(UUID_RE.test(c.id) ? { id: c.id } : {}), plan_id: plan.id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
   }

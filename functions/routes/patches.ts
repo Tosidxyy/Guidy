@@ -7,7 +7,7 @@ import { requireVisitor } from '../identity.ts';
 import { applyPatch, diffBlocks, resultHash, solve, validatePlacement } from '../engine.ts';
 import { ENGINE_VERSION } from '../../shared/constants.ts';
 import { ApplyOpSchema } from '../../shared/schemas.ts';
-import { getOwnedPlan } from './plans.ts';
+import { getOwnedPlan, sharedRecurringFor } from './plans.ts';
 import type { Deps, RouteCtx } from '../types.ts';
 import type { PlanState } from '../../shared/types.ts';
 
@@ -59,7 +59,9 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
   const originalBlockIds = new Set(state.blocks.map((b) => b.id));
   const clientIds = new Set(ops.flatMap((op) => (op.op === 'add_block' && op.client_id ? [op.client_id] : [])));
 
-  const pctx = { timezone: patched.state.plan.timezone, horizon_start: patched.state.plan.horizon_start, horizon_days: patched.state.plan.horizon_days, blocks: patched.state.blocks, constraints: patched.state.constraints };
+  const sharedWindows = await sharedRecurringFor(deps.db, visitor, plan_id);
+  const effective = [...patched.state.constraints, ...sharedWindows];
+  const pctx = { timezone: patched.state.plan.timezone, horizon_start: patched.state.plan.horizon_start, horizon_days: patched.state.plan.horizon_days, blocks: patched.state.blocks, constraints: effective };
   let bSeq = 0;
   for (const op of ops) {
     let id: string | null = null;
@@ -77,7 +79,7 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
   let server_authoritative = false;
   if (patched.requiresReschedule) {
     const pinned = patched.state.blocks.filter((b) => b.pinned || b.origin === 'manual');
-    const out = solve({ engine_version: ENGINE_VERSION, horizon_start: patched.state.plan.horizon_start, horizon_days: patched.state.plan.horizon_days, timezone: patched.state.plan.timezone, task_defs: patched.state.task_defs, constraints: patched.state.constraints, pinned_blocks: pinned });
+    const out = solve({ engine_version: ENGINE_VERSION, horizon_start: patched.state.plan.horizon_start, horizon_days: patched.state.plan.horizon_days, timezone: patched.state.plan.timezone, task_defs: patched.state.task_defs, constraints: effective, pinned_blocks: pinned });
     if (out.violations.length) fail('engine_infeasible', 422, { violations: out.violations, compromises: out.compromises });
     newBlocks = out.blocks;
     compromises = out.compromises;

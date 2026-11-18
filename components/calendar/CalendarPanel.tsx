@@ -8,6 +8,8 @@ import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { usePlanLayers } from '@/lib/usePlanLayers';
 import { collectForeignBlocks, type ForeignBlock } from '@/lib/calendarLayers';
+import { mergeSharedWindows } from '@/lib/sharedCalendar';
+import { useSharedCalendar } from '@/store/useSharedCalendar';
 import { usePlanManager } from '@/lib/usePlanManager';
 import { planController } from '@/lib/planRuntime';
 import { mergeConflictAction, undoMergedPlans } from '@/lib/planActions';
@@ -83,6 +85,8 @@ export function CalendarPanel() {
   const setDayAnchor = useUiStore((s) => s.setDayAnchor);
   const drawer = useUiStore((s) => s.drawer);
   const { layers } = usePlanLayers(state.plan.id);
+  const sharedWindows = useSharedCalendar((s) => s.windows);
+  const effectiveConstraints = useMemo(() => mergeSharedWindows(state.constraints, sharedWindows), [state.constraints, sharedWindows]);
   const { switchPlan } = usePlanManager();
   const lastForeignDrag = useRef(0);
   const [pendingSwitch, setPendingSwitch] = useState<{ id: string; title: string } | null>(null);
@@ -160,22 +164,22 @@ export function CalendarPanel() {
 
   const busyByDay = useMemo(() => days.map((d) => {
     const wd = weekdayOfDay(d, tz);
-    return state.constraints
+    return effectiveConstraints
       .filter((c) => c.enabled && c.payload.type === 'busy_window')
       .map((c) => c.payload as Extract<typeof c.payload, { type: 'busy_window' }>)
       .filter((p) => (p.date !== undefined ? p.date === d : p.weekday === wd))
       .map((p) => ({ start: hhmmToMin(p.start), end: hhmmToMin(p.end), label: p.label ?? '忙碌' }));
-  }), [days, state.constraints, tz]);
+  }), [days, effectiveConstraints, tz]);
 
   const activeByDay = useMemo(() => days.map((d) => {
     const wd = weekdayOfDay(d, tz);
-    const windows = state.constraints
+    const windows = effectiveConstraints
       .filter((c) => c.enabled && c.payload.type === 'active_window')
       .map((c) => c.payload as Extract<typeof c.payload, { type: 'active_window' }>)
       .filter((p) => !p.weekdays || p.weekdays.includes(wd));
     if (!windows.length) return [{ start: 420, end: 1380 }];
     return windows.map((p) => ({ start: hhmmToMin(p.start), end: hhmmToMin(p.end) }));
-  }), [days, state.constraints, tz]);
+  }), [days, effectiveConstraints, tz]);
 
   const [nowMin, setNowMin] = useState(() => {
     const d = new Date();
