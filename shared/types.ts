@@ -1,6 +1,6 @@
 import type { Category, Constraint, Priority, TaskDef } from './schemas.ts';
 
-export type { Category, Constraint, ConstraintPayload, Frequency, ManualBlock, PatchOp, Period, Priority, TaskDef } from './schemas.ts';
+export type { ApplyOp, Category, Constraint, ConstraintPayload, Frequency, ManualBlock, PatchOp, Period, Priority, TaskDef } from './schemas.ts';
 
 export interface Block {
   id: string;

@@ -113,6 +113,90 @@ describe('applyPatchRoute', () => {
     expect(d.db.tables.plans[0].version).toBe(plan.version);
     expect(d.db.tables.task_defs).toHaveLength(1);
   });
+  it('add_constraint.client_id 落库保留 ID，后续按同 ID 编辑不丢目标', async () => {
+    const d = deps();
+    const plan = await seedPlan(d);
+    const id = crypto.randomUUID();
+    const app = application(d);
+    const first = await (await app(ctx('POST', '/api/patches/apply', {
+      preview_id: 'cid-c1', plan_id: plan.id, base_version: plan.version,
+      ops: [{ op: 'add_constraint', client_id: id, value: { type: 'buffer', minutes: 10 } }],
+      result_hash: null, engine_version: 1,
+    }))).json();
+    expect(first.constraints.find((c: any) => c.id === id)).toBeDefined();
+    const second = await app(ctx('POST', '/api/patches/apply', {
+      preview_id: 'cid-c2', plan_id: plan.id, base_version: first.version,
+      ops: [{ op: 'update_constraint', id, patch: { enabled: false } }],
+      result_hash: null, engine_version: 1,
+    }));
+    expect(second.status).toBe(200);
+    const body = await second.json();
+    const saved = body.constraints.find((c: any) => c.id === id);
+    expect(saved.enabled).toBe(false);
+    expect(body.inverse_ops[0]).toMatchObject({ op: 'update_constraint', id });
+  });
+  it('约束 ID 在整表重写后保持稳定', async () => {
+    const d = deps();
+    const plan = await seedPlan(d);
+    const app = application(d);
+    const first = await (await app(ctx('POST', '/api/patches/apply', {
+      preview_id: 'stable1', plan_id: plan.id, base_version: plan.version,
+      ops: [{ op: 'add_constraint', value: { type: 'buffer', minutes: 5 } }], result_hash: null, engine_version: 1,
+    }))).json();
+    const generated = first.constraints[0].id;
+    const second = await (await app(ctx('POST', '/api/patches/apply', {
+      preview_id: 'stable2', plan_id: plan.id, base_version: first.version,
+      ops: [{ op: 'update_constraint', id: generated, patch: { enabled: false } }], result_hash: null, engine_version: 1,
+    }))).json();
+    expect(second.constraints[0].id).toBe(generated);
+  });
+  it('update_plan 落库标题与 horizon，version+1，逆操作可恢复', async () => {
+    const d = deps();
+    const plan = await seedPlan(d);
+    const res = await application(d)(ctx('POST', '/api/patches/apply', {
+      preview_id: 'meta1', plan_id: plan.id, base_version: plan.version,
+      ops: [{ op: 'update_plan', patch: { title: '新标题', horizon_days: 14 } }],
+      result_hash: null, engine_version: 1,
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.plan.title).toBe('新标题');
+    expect(body.plan.horizon_days).toBe(14);
+    expect(body.version).toBe(plan.version + 1);
+    expect(d.db.tables.plans[0].title).toBe('新标题');
+    expect(body.inverse_ops).toContainEqual({ op: 'update_plan', patch: { title: plan.title, horizon_days: plan.horizon_days } });
+  });
+  it('update_plan 空 patch → 422 validation_failed', async () => {
+    const d = deps();
+    const plan = await seedPlan(d);
+    const res = await application(d)(ctx('POST', '/api/patches/apply', {
+      preview_id: 'meta2', plan_id: plan.id, base_version: plan.version,
+      ops: [{ op: 'update_plan', patch: {} }], result_hash: null, engine_version: 1,
+    }));
+    expect(res.status).toBe(422);
+    expect((await res.json()).error.code).toBe('validation_failed');
+  });
+  it('clear_plan 的逆操作可完整恢复', async () => {
+    const d = deps();
+    const plan = await seedPlan(d);
+    const beforeBlocks = d.db.tables.blocks.length;
+    const beforeTasks = d.db.tables.task_defs.length;
+    const app = application(d);
+    const cleared = await (await app(ctx('POST', '/api/patches/apply', {
+      preview_id: 'undo-clear', plan_id: plan.id, base_version: plan.version,
+      ops: [{ op: 'clear_plan' }], result_hash: null, engine_version: 1,
+    }))).json();
+    expect(cleared.blocks).toHaveLength(0);
+    const restored = await app(ctx('POST', '/api/patches/apply', {
+      preview_id: 'undo-clear-2', plan_id: plan.id, base_version: cleared.version,
+      ops: cleared.inverse_ops, result_hash: null, engine_version: 1,
+    }));
+    expect(restored.status).toBe(200);
+    const body = await restored.json();
+    expect(body.task_defs).toHaveLength(beforeTasks);
+    expect(body.blocks).toHaveLength(beforeBlocks);
+    expect(new Set(body.blocks.map((b: any) => b.start_utc)).size).toBe(body.blocks.length);
+  });
   it('preview_id 回放不重复落库', async () => {
     const d = deps();
     const plan = await seedPlan(d);

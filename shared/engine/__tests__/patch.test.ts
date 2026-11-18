@@ -21,12 +21,16 @@ describe('applyPatch — task_def / constraint ops', () => {
     expect(r.state.task_defs.map((t) => t.key)).toEqual(['math', 'eng']);
     expect(r.inverse_ops).toContainEqual({ op: 'remove_task_def', key: 'eng' });
   });
-  it('clear_plan 清空全部任务/约束/块，不产生逆操作', () => {
+  it('clear_plan 清空全部任务/约束/块，并生成可恢复的逆操作', () => {
     const r = applyPatch(base, [{ op: 'clear_plan' }]);
     expect(r.state.task_defs).toHaveLength(0);
     expect(r.state.constraints).toHaveLength(0);
     expect(r.state.blocks).toHaveLength(0);
-    expect(r.inverse_ops).toHaveLength(0);
+    expect(r.inverse_ops).toEqual(expect.arrayContaining([
+      expect.objectContaining({ op: 'add_task_def', value: expect.objectContaining({ key: 'math' }) }),
+      expect.objectContaining({ op: 'add_constraint', value: expect.objectContaining({ type: 'active_window' }), source: 'user', enabled: true }),
+      expect.objectContaining({ op: 'add_block', value: expect.objectContaining({ title: '数学' }) }),
+    ]));
     expect(r.requiresReschedule).toBe(false);
   });
   it('remove_task_def 删任务及其非钉住块', () => {
@@ -60,10 +64,22 @@ describe('applyPatch — task_def / constraint ops', () => {
     expect(r.state.constraints[0].enabled).toBe(false);
     expect(r.inverse_ops).toContainEqual({ op: 'update_constraint', id: 'c1', patch: { enabled: true } });
   });
-  it('remove_constraint 删除并求逆', () => {
+  it('remove_constraint 删除并求逆（保留 source/enabled）', () => {
     const r = applyPatch(base, [{ op: 'remove_constraint', id: 'c1' }]);
     expect(r.state.constraints).toHaveLength(0);
-    expect(r.inverse_ops).toContainEqual({ op: 'add_constraint', value: { type: 'active_window', start: '07:00', end: '23:00' } });
+    expect(r.inverse_ops).toContainEqual({ op: 'add_constraint', value: { type: 'active_window', start: '07:00', end: '23:00' }, source: 'user', enabled: true });
+  });
+  it('add_constraint 使用 client_id，逆操作可定位同一 ID', () => {
+    const id = '22222222-2222-4222-8222-222222222222';
+    const r = applyPatch(base, [{ op: 'add_constraint', client_id: id, value: { type: 'buffer', minutes: 15 } }]);
+    expect(r.state.constraints.find((c) => c.payload.type === 'buffer')?.id).toBe(id);
+    expect(r.inverse_ops).toContainEqual({ op: 'remove_constraint', id });
+  });
+  it('remove_constraint 的逆操作携带 UUID 原 ID', () => {
+    const id = '33333333-3333-4333-8333-333333333333';
+    const withUuid: PlanState = { ...base, constraints: [{ id, payload: { type: 'buffer', minutes: 5 }, source: 'user', enabled: false }] };
+    const r = applyPatch(withUuid, [{ op: 'remove_constraint', id }]);
+    expect(r.inverse_ops).toContainEqual({ op: 'add_constraint', client_id: id, value: { type: 'buffer', minutes: 5 }, source: 'user', enabled: false });
   });
 });
 
@@ -103,6 +119,21 @@ describe('applyPatch — block ops（不重算）', () => {
     const r = applyPatch(base, [{ op: 'update_block', id: 'b1', patch: { title: '数学真题' } }]);
     expect(r.state.blocks[0].title).toBe('数学真题');
     expect(r.inverse_ops).toContainEqual({ op: 'update_block', id: 'b1', patch: { title: '数学' } });
+  });
+});
+
+describe('applyPatch — plan meta', () => {
+  it('update_plan 改标题并求逆，不重排', () => {
+    const r = applyPatch(base, [{ op: 'update_plan', patch: { title: '新计划' } }]);
+    expect(r.state.plan.title).toBe('新计划');
+    expect(r.requiresReschedule).toBe(false);
+    expect(r.inverse_ops).toContainEqual({ op: 'update_plan', patch: { title: '测试' } });
+  });
+  it('update_plan 改 horizon 触发重排并求逆', () => {
+    const r = applyPatch(base, [{ op: 'update_plan', patch: { horizon_days: 14 } }]);
+    expect(r.state.plan.horizon_days).toBe(14);
+    expect(r.requiresReschedule).toBe(true);
+    expect(r.inverse_ops).toContainEqual({ op: 'update_plan', patch: { horizon_days: 7 } });
   });
 });
 

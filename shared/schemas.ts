@@ -82,14 +82,30 @@ export const ManualBlockSchema = z.object({
   priority: PriorityEnum.default('mid'),
   pinned: z.boolean().default(false),
   notes: z.string().max(500).optional(),
+  // 仅用于撤销恢复原块语义：engine 块会被重排替换，manual 块作为固定保留。
+  origin: z.enum(['engine', 'manual', 'fixed']).optional(),
 });
 
 export const PatchOpSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('add_task_def'), value: TaskDefSchema }),
   z.object({ op: z.literal('update_task_def'), key: z.string(), patch: TaskDefSchema.partial() }),
   z.object({ op: z.literal('remove_task_def'), key: z.string() }),
-  z.object({ op: z.literal('add_constraint'), value: ConstraintPayloadSchema }),
-  z.object({ op: z.literal('update_constraint'), id: z.string(), patch: z.record(z.unknown()) }),
+  z.object({
+    op: z.literal('add_constraint'),
+    value: ConstraintPayloadSchema,
+    client_id: z.string().uuid().optional(),
+    source: z.enum(['user', 'ai', 'template']).optional(),
+    enabled: z.boolean().optional(),
+  }),
+  z.object({
+    op: z.literal('update_constraint'),
+    id: z.string(),
+    patch: z.object({
+      payload: ConstraintPayloadSchema.optional(),
+      enabled: z.boolean().optional(),
+      source: z.enum(['user', 'ai', 'template']).optional(),
+    }),
+  }),
   z.object({ op: z.literal('remove_constraint'), id: z.string() }),
   z.object({ op: z.literal('add_block'), value: ManualBlockSchema, client_id: z.string().uuid().optional() }),
   z.object({ op: z.literal('update_block'), id: z.string(), patch: ManualBlockSchema.partial() }),
@@ -104,6 +120,21 @@ export const PatchArtifactSchema = z.object({
   summary: z.string().max(200),
   ops: z.array(PatchOpSchema).min(1).max(30),
 });
+
+// 人工编辑与撤销可用的操作：在 AI artifact 之外额外允许改计划元数据。
+export const UpdatePlanOpSchema = z.object({
+  op: z.literal('update_plan'),
+  patch: z
+    .object({
+      title: z.string().min(1).max(60).optional(),
+      horizon_start: z.string().date().optional(),
+      horizon_days: z.union([z.literal(7), z.literal(14)]).optional(),
+      timezone: z.string().min(1).max(64).optional(),
+    })
+    .refine((p) => Object.keys(p).length > 0, '至少修改一个字段'),
+});
+
+export const ApplyOpSchema = z.union([PatchOpSchema, UpdatePlanOpSchema]);
 
 export const ConstraintSetArtifactSchema = z.object({
   type: z.literal('constraint_set'),
@@ -124,5 +155,6 @@ export type ConstraintPayload = z.infer<typeof ConstraintPayloadSchema>;
 export type Constraint = z.infer<typeof ConstraintSchema>;
 export type ManualBlock = z.infer<typeof ManualBlockSchema>;
 export type PatchOp = z.infer<typeof PatchOpSchema>;
+export type ApplyOp = z.infer<typeof ApplyOpSchema>;
 export type PatchArtifact = z.infer<typeof PatchArtifactSchema>;
 export type ConstraintSetArtifact = z.infer<typeof ConstraintSetArtifactSchema>;

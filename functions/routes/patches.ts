@@ -6,16 +6,18 @@ import type { Db } from '../db.ts';
 import { requireVisitor } from '../identity.ts';
 import { applyPatch, diffBlocks, resultHash, solve, validatePlacement } from '../engine.ts';
 import { ENGINE_VERSION } from '../../shared/constants.ts';
-import { PatchOpSchema } from '../../shared/schemas.ts';
+import { ApplyOpSchema } from '../../shared/schemas.ts';
 import { getOwnedPlan } from './plans.ts';
 import type { Deps, RouteCtx } from '../types.ts';
 import type { PlanState } from '../../shared/types.ts';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const BodySchema = z.object({
   preview_id: z.string().min(1),
   plan_id: z.string().min(1),
   base_version: z.number().int(),
-  ops: z.array(PatchOpSchema).min(1).max(30),
+  ops: z.array(ApplyOpSchema).min(1).max(30),
   result_hash: z.string().nullable(),
   engine_version: z.number(),
 });
@@ -83,12 +85,19 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
   await deps.db.from('task_defs').delete().eq('plan_id', plan_id);
   await deps.db.from('constraints').delete().eq('plan_id', plan_id);
   await deps.db.from('blocks').delete().eq('plan_id', plan_id);
-  const updated = rows(await deps.db.from('plans').update({ version: plan.version + 1, updated_at: new Date().toISOString() }).eq('id', plan_id).eq('owner_visitor_id', visitor).select('*'))[0];
+  const updated = rows(await deps.db.from('plans').update({
+    title: patched.state.plan.title,
+    horizon_start: patched.state.plan.horizon_start,
+    horizon_days: patched.state.plan.horizon_days,
+    timezone: patched.state.plan.timezone,
+    version: plan.version + 1,
+    updated_at: new Date().toISOString(),
+  }).eq('id', plan_id).eq('owner_visitor_id', visitor).select('*'))[0];
   for (const t of patched.state.task_defs) {
     await deps.db.from('task_defs').insert({ plan_id, key: t.key, title: t.title, category: t.category, duration_min: t.duration_min, frequency: t.frequency, priority: t.priority, splittable: t.splittable, preferred_period: t.preferred_period ?? null, sort_order: t.sort_order });
   }
   for (const c of patched.state.constraints) {
-    await deps.db.from('constraints').insert({ plan_id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
+    await deps.db.from('constraints').insert({ ...(UUID_RE.test(c.id) ? { id: c.id } : {}), plan_id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
   }
   for (const b of newBlocks) {
     await deps.db.from('blocks').insert({
@@ -101,5 +110,5 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
   const blocks = rows(await deps.db.from('blocks').select('*').eq('plan_id', plan_id).order('start_utc', { ascending: true }));
   const constraints = rows(await deps.db.from('constraints').select('*').eq('plan_id', plan_id));
   const task_defs = rows(await deps.db.from('task_defs').select('*').eq('plan_id', plan_id));
-  return Response.json({ version: updated.version, blocks, task_defs, constraints, inverse_ops: patched.inverse_ops, diff, compromises, server_authoritative }, { headers: { 'cache-control': 'no-store' } });
+  return Response.json({ plan: updated, version: updated.version, blocks, task_defs, constraints, inverse_ops: patched.inverse_ops, diff, compromises, server_authoritative }, { headers: { 'cache-control': 'no-store' } });
 }

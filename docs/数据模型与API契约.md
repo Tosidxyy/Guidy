@@ -320,14 +320,21 @@ const PatchOp = z.discriminatedUnion('op', [
   z.object({ op: z.literal('add_task_def'), value: TaskDef }),
   z.object({ op: z.literal('update_task_def'), key: z.string(), patch: TaskDef.partial() }),
   z.object({ op: z.literal('remove_task_def'), key: z.string() }),
-  z.object({ op: z.literal('add_constraint'), value: ConstraintPayload }),
-  z.object({ op: z.literal('update_constraint'), id: z.string().uuid(), patch: z.record(z.unknown()) }),
+  z.object({ op: z.literal('add_constraint'), value: ConstraintPayload, client_id: z.string().uuid().optional(), source: z.enum(['user','ai','template']).optional(), enabled: z.boolean().optional() }),
+  z.object({ op: z.literal('update_constraint'), id: z.string().uuid(), patch: z.object({ payload: ConstraintPayload.optional(), enabled: z.boolean().optional(), source: z.enum(['user','ai','template']).optional() }) }),
   z.object({ op: z.literal('remove_constraint'), id: z.string().uuid() }),
-  z.object({ op: z.literal('add_block'), value: ManualBlock }),        // §4.5
+  z.object({ op: z.literal('add_block'), value: ManualBlock, client_id: z.string().uuid().optional() }),   // §4.5
   z.object({ op: z.literal('update_block'), id: z.string().uuid(), patch: ManualBlock.partial() }),
   z.object({ op: z.literal('move_block'), id: z.string().uuid(), start_utc: z.string().datetime(), end_utc: z.string().datetime() }),
   z.object({ op: z.literal('remove_block'), id: z.string().uuid() }),
   z.object({ op: z.literal('reschedule'), scope: z.enum(['affected_only','all']).default('affected_only'), keep_pinned: z.literal(true) }),
+  z.object({ op: z.literal('clear_plan') }),
+]);
+
+// 人工编辑与撤销专用的扩展操作；不进 PatchArtifact，AI 不能改计划元数据。
+const ApplyOp = z.union([
+  PatchOp,
+  z.object({ op: z.literal('update_plan'), patch: z.object({ title: z.string().min(1).max(60).optional(), horizon_start: z.string().date().optional(), horizon_days: z.union([z.literal(7), z.literal(14)]).optional(), timezone: z.string().min(1).max(64).optional() }).refine((p) => Object.keys(p).length > 0) }),
 ]);
 
 const PatchArtifact = z.object({
@@ -450,7 +457,9 @@ solve(input: SolveInput): SolveOutput   // 纯函数、确定性
 
 > **当前实现（P2）**：手动移动/缩放块复用 `POST /patches/apply` 的 `move_block`——带 `plan_id` + `base_version`，服务端按该计划的约束/块校验落点、version+1 落库，并返回 `inverse_ops` 供撤销。下列独立块 CRUD 端点仍为规划项。
 
-> **P2b 扩展**：块级新增/删除/移动/缩放/字段编辑统一走 `POST /patches/apply`。`add_block` 可带 `client_id`（UUID），服务端按该 ID 落库；删除的逆操作携带原 ID，撤销恢复同一块。客户端以每计划 `serverVersion` 作为 `base_version`；`409 version_conflict` 回滚乐观更新并重新拉取，不自动重放。清空当前计划使用 `{"op":"clear_plan"}`。
+> **P2b 扩展**：块级新增/删除/移动/缩放/字段编辑统一走 `POST /patches/apply`。`add_block` 可带 `client_id`（UUID），服务端按该 ID 落库；删除的逆操作携带原 ID，撤销恢复同一块。客户端以每计划 `serverVersion` 作为 `base_version`；`409 version_conflict` 回滚乐观更新并重新拉取，不自动重放。清空当前计划使用 `{"op":"clear_plan"}`，其逆操作会重放任务、约束与块，可撤销。
+>
+> **P2c 扩展**：任务定义、约束与计划元数据同样走该端点。`add_constraint` 可带 `client_id`（UUID），服务端按该 ID 落库并在整表重写时保留，撤销删除后 ID 不变。计划标题/开始日/时区/horizon 使用 `{"op":"update_plan","patch":{...}}`（`ApplyOp`，AI artifact 不可用）；改 horizon 或时区会触发重排。元数据编辑同样进入 per-plan 撤销栈。
 
 | 端点 | 说明 |
 | --- | --- |

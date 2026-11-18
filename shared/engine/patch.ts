@@ -1,21 +1,35 @@
-import type { Block, ManualBlock, PatchOp, PlanState, TaskDef } from '../types.ts';
+import type { ApplyOp, Block, ManualBlock, PlanState, TaskDef } from '../types.ts';
 
 export interface PatchResult {
   state: PlanState;
-  inverse_ops: PatchOp[];
+  inverse_ops: ApplyOp[];
   requiresReschedule: boolean;
   missing: string[];
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuidOrUndefined = (id: string): string | undefined => (UUID_RE.test(id) ? id : undefined);
+
 function clone<T>(x: T): T { return x === undefined ? x : JSON.parse(JSON.stringify(x)) as T; }
 
 function blockToManual(b: Block): ManualBlock {
-  return { title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc, priority: b.priority, pinned: b.pinned, ...(b.notes ? { notes: b.notes } : {}) };
+  return { title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc, priority: b.priority, pinned: b.pinned, origin: b.origin, ...(b.notes ? { notes: b.notes } : {}) };
 }
 
-export function applyPatch(state: PlanState, ops: PatchOp[]): PatchResult {
+// 服务端返回的 task_defs 带数据库字段（id/plan_id）与 NULL 的 preferred_period，
+// 回灌成操作前要先归一化，否则无法通过 TaskDefSchema 校验。
+function taskDefValue(t: TaskDef): TaskDef {
+  return {
+    key: t.key, title: t.title, category: t.category, duration_min: t.duration_min,
+    frequency: t.frequency, priority: t.priority, splittable: t.splittable,
+    ...(t.preferred_period ? { preferred_period: t.preferred_period } : {}),
+    sort_order: t.sort_order,
+  };
+}
+
+export function applyPatch(state: PlanState, ops: ApplyOp[]): PatchResult {
   const next = clone(state);
-  const inverse: PatchOp[] = [];
+  const inverse: ApplyOp[] = [];
   const missing: string[] = [];
   let requiresReschedule = false;
   let cSeq = 0;
@@ -44,14 +58,14 @@ export function applyPatch(state: PlanState, ops: PatchOp[]): PatchResult {
         const removed = next.blocks.filter((b) => b.task_key === op.key && !b.pinned);
         next.task_defs = next.task_defs.filter((x) => x.key !== op.key);
         next.blocks = next.blocks.filter((b) => b.task_key !== op.key || b.pinned);
-        inverse.push({ op: 'add_task_def', value: clone(t) });
+        inverse.push({ op: 'add_task_def', value: taskDefValue(t) });
         for (const b of removed) inverse.push({ op: 'add_block', value: blockToManual(b) });
         requiresReschedule = true;
         break;
       }
       case 'add_constraint': {
-        const id = `ai-c-${cSeq++}`;
-        next.constraints.push({ id, payload: clone(op.value), source: 'ai', enabled: true });
+        const id = op.client_id ?? `ai-c-${cSeq++}`;
+        next.constraints.push({ id, payload: clone(op.value), source: op.source ?? 'ai', enabled: op.enabled ?? true });
         inverse.push({ op: 'remove_constraint', id });
         requiresReschedule = true;
         break;
@@ -69,14 +83,15 @@ export function applyPatch(state: PlanState, ops: PatchOp[]): PatchResult {
         const c = next.constraints.find((x) => x.id === op.id);
         if (!c) { missing.push(`constraint:${op.id}`); break; }
         next.constraints = next.constraints.filter((x) => x.id !== op.id);
-        inverse.push({ op: 'add_constraint', value: clone(c.payload) });
+        const clientId = uuidOrUndefined(c.id);
+        inverse.push({ op: 'add_constraint', value: clone(c.payload), ...(clientId ? { client_id: clientId } : {}), source: c.source, enabled: c.enabled });
         requiresReschedule = true;
         break;
       }
       case 'add_block': {
         const id = op.client_id ?? `ai-b-${bSeq++}`;
         const m = op.value;
-        next.blocks.push({ id, title: m.title, category: m.category, start_utc: m.start_utc, end_utc: m.end_utc, priority: m.priority, pinned: m.pinned, origin: 'manual', ...(m.notes ? { notes: m.notes } : {}) });
+        next.blocks.push({ id, title: m.title, category: m.category, start_utc: m.start_utc, end_utc: m.end_utc, priority: m.priority, pinned: m.pinned, origin: m.origin ?? 'manual', ...(m.notes ? { notes: m.notes } : {}) });
         inverse.push({ op: 'remove_block', id });
         break;
       }
@@ -103,11 +118,28 @@ export function applyPatch(state: PlanState, ops: PatchOp[]): PatchResult {
         inverse.push({ op: 'add_block', value: blockToManual(b), client_id: b.id });
         break;
       }
+      case 'update_plan': {
+        const p = next.plan as unknown as Record<string, unknown>;
+        const old: Record<string, unknown> = {};
+        for (const k of Object.keys(op.patch)) { old[k] = clone(p[k]); p[k] = clone((op.patch as Record<string, unknown>)[k]); }
+        inverse.push({ op: 'update_plan', patch: old as { title?: string; horizon_start?: string; horizon_days?: 7 | 14; timezone?: string } });
+        if ('horizon_start' in op.patch || 'horizon_days' in op.patch || 'timezone' in op.patch) requiresReschedule = true;
+        break;
+      }
       case 'reschedule': {
         requiresReschedule = true;
         break;
       }
       case 'clear_plan': {
+        for (const t of next.task_defs) inverse.push({ op: 'add_task_def', value: taskDefValue(t) });
+        for (const c of next.constraints) {
+          const clientId = uuidOrUndefined(c.id);
+          inverse.push({ op: 'add_constraint', value: clone(c.payload), ...(clientId ? { client_id: clientId } : {}), source: c.source, enabled: c.enabled });
+        }
+        for (const b of next.blocks) {
+          const clientId = uuidOrUndefined(b.id);
+          inverse.push({ op: 'add_block', value: blockToManual(b), ...(clientId ? { client_id: clientId } : {}) });
+        }
         next.task_defs = [];
         next.constraints = [];
         next.blocks = [];
