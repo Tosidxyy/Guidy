@@ -39,11 +39,11 @@ function horizonRange(p: { horizon_start: string; horizon_days: number }) {
 
 const WINDOW_TYPES = new Set(['busy_window', 'active_window', 'fixed_block']);
 
-function windowSummary(constraints: any[]): string[] {
+function windowSummary(constraints: any[]): { id: string; text: string }[] {
   return constraints
     .filter((c) => c.enabled !== false && WINDOW_TYPES.has(c.payload?.type))
-    .slice(0, 6)
-    .map((c) => constraintText(c.payload));
+    .slice(0, 8)
+    .map((c) => ({ id: c.id, text: constraintText(c.payload) }));
 }
 
 // 新对话（草稿）没有活动计划：给一份只读的共享日历摘要，避免让用户重复说空闲时间。
