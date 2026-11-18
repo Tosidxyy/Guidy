@@ -43,7 +43,7 @@ export function PatchConfirmCard({ patch, onConfirm, onCancel }: {
       <div className="mt-4 flex items-center justify-end gap-2">
         <Button variant="outline" size="sm" onClick={onCancel}>取消</Button>
         <Button size="sm" className="dawn-gradient text-white" onClick={() => onConfirm(patch)}>
-          <Check className="mr-1 h-4 w-4" /> 确认并预览
+          <Check className="mr-1 h-4 w-4" /> 确认并应用
         </Button>
       </div>
     </div>

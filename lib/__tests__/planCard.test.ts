@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { artifactFromPlan, canGenerateSchedule, diffPlanCard, planFromArtifact } from '@/lib/planCard';
+import { artifactFromPlan, canGenerateSchedule, diffPlanCard, patchFitsPlanCard, planFromArtifact } from '@/lib/planCard';
 import type { PlanState } from '@/shared/types';
 
 const plan: PlanState = {
@@ -89,5 +89,20 @@ describe('canGenerateSchedule', () => {
     expect(canGenerateSchedule(plan)).toBe(true);
     expect(canGenerateSchedule({ ...plan, task_defs: [] })).toBe(false);
     expect(canGenerateSchedule({ ...plan, blocks: [{ id: 'b', title: 'x', category: 'study', start_utc: '2026-11-18T01:00:00.000Z', end_utc: '2026-11-18T02:00:00.000Z', priority: 'mid', pinned: false, origin: 'engine' }] })).toBe(false);
+  });
+});
+
+describe('patchFitsPlanCard', () => {
+  const patch = (ops: any[]) => ({ type: 'patch' as const, summary: '调整', ops });
+  it('只改任务/约束/计划元数据的 patch 交给方案卡', () => {
+    expect(patchFitsPlanCard(patch([{ op: 'update_task_def', key: 'math', patch: { duration_min: 90 } }]), 'p1')).toBe(true);
+    expect(patchFitsPlanCard(patch([{ op: 'remove_constraint', id: 'c-buffer' }]), 'p1')).toBe(true);
+    expect(patchFitsPlanCard(patch([{ op: 'update_plan', patch: { title: '新标题' } }]), 'p1')).toBe(true);
+  });
+  it('含块操作、重排或指向其他计划的 patch 留在聊天确认', () => {
+    expect(patchFitsPlanCard(patch([{ op: 'remove_block', id: 'b1' }]), 'p1')).toBe(false);
+    expect(patchFitsPlanCard(patch([{ op: 'reschedule', scope: 'all', keep_pinned: true }]), 'p1')).toBe(false);
+    expect(patchFitsPlanCard(patch([{ op: 'update_plan', plan_id: 'p2', patch: { title: 'x' } }]), 'p1')).toBe(false);
+    expect(patchFitsPlanCard(patch([]), 'p1')).toBe(false);
   });
 });

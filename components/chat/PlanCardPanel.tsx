@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronUp, Save, ShieldCheck, X } from 'lucide-react';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
-import { artifactFromPlan, canGenerateSchedule, planFromArtifact } from '@/lib/planCard';
+import { artifactFromPlan, canGenerateSchedule, patchFitsPlanCard, planFromArtifact } from '@/lib/planCard';
 import { generateScheduleAction, savePlanCardAction } from '@/lib/planActions';
 import { useAutoSaveDraft } from '@/lib/useAutoSaveDraft';
 import { useCommitPlan } from '@/lib/useCommitPlan';
+import { applyPatch } from '@/shared/engine';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useChatStore } from '@/store/useChatStore';
 import { Badge } from '@/components/ui/badge';
@@ -14,38 +15,43 @@ import { ConstraintSetBody, ConstraintSetFooter } from './ConstraintSetBody';
 
 /**
  * 方案卡：制定计划与日常修改都只用这一张卡。
- * - AI 产出 constraint_set 时自动展开为「核对约束方案」，确认后生成计划；
- * - 否则显示当前计划，草稿边改边自动保存，已保存计划批量提交差异。
+ * - AI 给出 constraint_set 或只改任务/约束的 patch 时自动展开，点「确认并生成」直接落库出排程；
+ * - 已有计划时显示当前方案，草稿边改边自动保存，已保存计划批量提交差异。
  */
 export function PlanCardPanel() {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<ConstraintSetArtifact | null>(null);
-  const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
   const state = usePlanStore((s) => s.state);
-  const preview = usePlanStore((s) => s.preview);
-  const previewArtifact = usePlanStore((s) => s.previewArtifact);
-  const discardPreview = usePlanStore((s) => s.discardPreview);
   const proposal = useChatStore((s) => s.artifact);
+  const patch = useChatStore((s) => s.patch);
   const autoSave = useAutoSaveDraft();
   const { commit, isPending } = useCommitPlan(() => {
     useChatStore.setState({ artifact: null, clarifications: [] });
     setOpen(false);
     setDraft(null);
-    setPreviewing(false);
   });
 
   const unsaved = state.plan.id === null;
   const needsSchedule = canGenerateSchedule(state);
   const enabled = state.constraints.filter((c) => c.enabled).length;
 
-  // AI 给出方案时直接展开到这张卡，不再另起一张聊天卡片。
+  // AI 给出完整方案时直接展开到这张卡，不再另起确认卡。
   useEffect(() => {
     if (!proposal) return;
     setDraft({ ...proposal, horizon_start: proposal.horizon_start ?? usePlanStore.getState().state.plan.horizon_start });
     setOpen(true);
-    setPreviewing(false);
   }, [proposal]);
+
+  // 只改任务/约束的 AI patch 也交给方案卡：用户在同一张卡里核对、补充后再保存。
+  useEffect(() => {
+    if (!patch) return;
+    const current = usePlanStore.getState().state;
+    if (!current.plan.id || !patchFitsPlanCard(patch, current.plan.id)) return;
+    setDraft(artifactFromPlan(applyPatch(current, patch.ops).state));
+    setOpen(true);
+    useChatStore.setState({ patch: null });
+  }, [patch]);
 
   // 有待确认的 AI 方案时，重新打开也回到那张提案，而不是当前计划。
   const openPlan = () => {
@@ -53,14 +59,11 @@ export function PlanCardPanel() {
     const p = useChatStore.getState().artifact;
     setDraft(p ? { ...p, horizon_start: p.horizon_start ?? current.plan.horizon_start } : artifactFromPlan(current));
     setOpen(true);
-    setPreviewing(false);
   };
 
   const close = () => {
-    if (previewing) discardPreview();
     setOpen(false);
     setDraft(null);
-    setPreviewing(false);
   };
 
   // 外部改动（AI patch / 其他入口保存）后，已保存计划的卡片要跟着变，避免用旧快照覆盖云端。
@@ -87,18 +90,17 @@ export function PlanCardPanel() {
     }
   };
 
-  const confirmProposal = () => {
+  // 方案卡保存后再重排：先落任务/约束（草稿首次保存或已保存计划的差异），再生成时间块。
+  const saveAndGenerate = async () => {
     if (!draft) return;
-    previewArtifact(draft);
-    setPreviewing(true);
-  };
-
-  const generate = async () => {
     setSaving(true);
+    const saved = await savePlanCardAction(draft);
+    if (!saved.ok) { setSaving(false); toast.error(saved.reason ?? '保存失败'); return; }
     const r = await generateScheduleAction();
     setSaving(false);
     if (!r.ok) { toast.error(r.reason ?? '生成排程失败'); return; }
     toast.success('已生成排程');
+    close();
   };
 
   const saveSaved = async () => {
@@ -117,11 +119,10 @@ export function PlanCardPanel() {
       ? autoSave === 'saving' ? '保存中…' : autoSave === 'failed' ? '自动保存失败' : '自动保存'
       : '已保存';
 
-  const title = proposal ? '核对约束方案' : '当前方案';
   const hint = proposal
-    ? '逐条确认或修改，确认后生成计划。'
+    ? '核对任务与约束；点「确认并生成」后，右侧日历会同步生成排程。'
     : unsaved
-      ? '改完不用保存，后台会自动同步到云端。'
+      ? '改完不用保存，后台会自动同步到云端；添加任务后点「保存并生成排程」。'
       : '改完点「保存修改」，改动会同步到云端并可撤销。';
 
   return (
@@ -147,7 +148,7 @@ export function PlanCardPanel() {
           <div className="dawn-gradient mb-3 h-0.5 rounded-full" />
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="font-display text-sm font-semibold text-site-ink">{title}</h3>
+              <h3 className="font-display text-sm font-semibold text-site-ink">方案卡</h3>
               <p className="mt-0.5 text-xs text-site-ink-soft">{hint}</p>
             </div>
             <button type="button" onClick={close} aria-label="收起方案卡" className="rounded p-1 text-site-ink-soft hover:bg-site-surface-2">
@@ -163,34 +164,24 @@ export function PlanCardPanel() {
               footer={(
                 <ConstraintSetFooter>
                   {proposal ? (
-                    previewing && preview ? (
-                      <>
-                        <Button variant="outline" size="sm" onClick={() => { discardPreview(); setPreviewing(false); }}>放弃预览</Button>
-                        <Button size="sm" className="dawn-gradient text-white" disabled={isPending} onClick={() => commit(draft)}>
-                          {isPending ? '保存中…' : '确认保存'}
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button variant="outline" size="sm" onClick={() => { useChatStore.setState({ artifact: null, clarifications: [] }); close(); }}>取消</Button>
-                        <Button size="sm" className="dawn-gradient text-white" disabled={draft.task_defs.length === 0} onClick={confirmProposal}>
-                          确认并生成
-                        </Button>
-                      </>
-                    )
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => { useChatStore.setState({ artifact: null, clarifications: [] }); close(); }}>取消</Button>
+                      <Button size="sm" className="dawn-gradient text-white" disabled={isPending || draft.task_defs.length === 0} onClick={() => commit(draft)}>
+                        {isPending ? '生成中…' : '确认并生成'}
+                      </Button>
+                    </>
                   ) : (
                     <>
                       <Button variant="outline" size="sm" onClick={close}>关闭</Button>
-                      {needsSchedule && (
-                        <Button size="sm" className="dawn-gradient text-white" disabled={saving} onClick={() => { void generate(); }}>
-                          {saving ? '生成中…' : '生成排程'}
+                      {needsSchedule ? (
+                        <Button size="sm" className="dawn-gradient text-white" disabled={saving} onClick={() => { void saveAndGenerate(); }}>
+                          {saving ? '生成中…' : '保存并生成排程'}
                         </Button>
-                      )}
-                      {!unsaved && !needsSchedule && (
+                      ) : !unsaved ? (
                         <Button size="sm" className="dawn-gradient text-white" disabled={saving} onClick={() => { void saveSaved(); }}>
                           <Save className="mr-1 h-4 w-4" /> {saving ? '保存中…' : '保存修改'}
                         </Button>
-                      )}
+                      ) : null}
                     </>
                   )}
                 </ConstraintSetFooter>

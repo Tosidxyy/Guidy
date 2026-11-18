@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   removeConstraint, addDefaultConstraint, toggleMutexStrength,
-  updateTaskDuration, updateTaskTitle, updateWindow,
+  addTask, removeTask, updateTaskDuration, updateTaskTitle, updateWindow,
 } from '@/lib/confirmDraft';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 
@@ -44,5 +44,21 @@ describe('confirmDraft', () => {
   it('updateWindow 改 active_window 时间', () => {
     const next = updateWindow(base, 0, 'end', '22:00');
     expect((next.constraints[0] as any).end).toBe('22:00');
+  });
+  it('addTask 追加一条合法任务，key 自动避让', () => {
+    const next = addTask(base);
+    expect(next.task_defs).toHaveLength(2);
+    const added = next.task_defs[1];
+    expect(added.key).toBe('task_2');
+    expect(added.title).toBe('新任务');
+    expect(added.sort_order).toBe(1);
+    const again = addTask(next);
+    expect(again.task_defs.map((t) => t.key)).toEqual(['math', 'task_2', 'task_3']);
+    expect(base.task_defs).toHaveLength(1);
+  });
+  it('removeTask 按 key 删除', () => {
+    const next = removeTask(addTask(base), 'math');
+    expect(next.task_defs.map((t) => t.key)).toEqual(['task_2']);
+    expect(removeTask(base, 'nope')).toEqual(base);
   });
 });

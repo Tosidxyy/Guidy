@@ -3,7 +3,7 @@ import type { ConstraintSetArtifact } from '@/shared/schemas';
 import { constraintText } from '@/lib/describe';
 import {
   removeConstraint, addDefaultConstraint, toggleMutexStrength,
-  updateTaskDuration, updateTaskNotes, updateTaskTitle, updateWindow,
+  addTask, removeTask, updateTaskDuration, updateTaskNotes, updateTaskTitle, updateWindow,
 } from '@/lib/confirmDraft';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,7 +49,12 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
       </div>
 
       <section className="mt-3">
-        <h4 className="mb-1.5 text-xs font-semibold text-site-ink">任务（{draft.task_defs.length}）</h4>
+        <div className="mb-1.5 flex items-center justify-between">
+          <h4 className="text-xs font-semibold text-site-ink">任务（{draft.task_defs.length}）</h4>
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => set(addTask(draft))}>
+            <Plus className="mr-0.5 h-3 w-3" /> 添加任务
+          </Button>
+        </div>
         <ul className="space-y-1.5">
           {draft.task_defs.map((t) => (
             <li key={t.key} className="rounded-lg border border-site-line bg-site-bg px-2.5 py-1.5">
@@ -67,6 +72,9 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
                 className="tabular h-7 w-20 text-xs"
               />
               <span className="text-[10px] text-site-ink-soft">分钟</span>
+              <button type="button" aria-label={`删除任务 ${t.title}`} className="rounded p-1 text-site-ink-soft hover:text-site-danger" onClick={() => set(removeTask(draft, t.key))}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
               </div>
               <Input
                 value={t.notes ?? ''}
@@ -78,7 +86,7 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
             </li>
           ))}
           {draft.task_defs.length === 0 && (
-            <li className="rounded-lg border border-dashed border-site-line p-2.5 text-center text-xs text-site-ink-soft">暂无任务定义</li>
+            <li className="rounded-lg border border-dashed border-site-line p-2.5 text-center text-xs text-site-ink-soft">暂无任务，点「添加任务」新增</li>
           )}
         </ul>
       </section>

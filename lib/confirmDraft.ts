@@ -37,3 +37,27 @@ export function updateWindow(draft: ConstraintSetArtifact, index: number, field:
 export function updateTaskNotes(draft: ConstraintSetArtifact, key: string, notes: string): ConstraintSetArtifact {
   return { ...draft, task_defs: draft.task_defs.map((t) => (t.key === key ? { ...t, notes: notes.slice(0, 500) } : t)) };
 }
+
+/** 方案卡里直接新增一条任务：key 自动避开已有值。 */
+export function addTask(draft: ConstraintSetArtifact): ConstraintSetArtifact {
+  const keys = new Set(draft.task_defs.map((t) => t.key));
+  let n = draft.task_defs.length + 1;
+  while (keys.has(`task_${n}`)) n += 1;
+  return {
+    ...draft,
+    task_defs: [...draft.task_defs, {
+      key: `task_${n}`,
+      title: '新任务',
+      category: 'other',
+      duration_min: 60,
+      frequency: { type: 'once' },
+      priority: 'mid',
+      splittable: false,
+      sort_order: draft.task_defs.length,
+    }],
+  };
+}
+
+export function removeTask(draft: ConstraintSetArtifact, key: string): ConstraintSetArtifact {
+  return { ...draft, task_defs: draft.task_defs.filter((t) => t.key !== key) };
+}

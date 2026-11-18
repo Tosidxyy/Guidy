@@ -24,7 +24,6 @@ import { EmptyCalendar } from '@/components/brand/EmptyCalendar';
 import { BlockCard, type BlockVisualState } from './BlockCard';
 import { ConflictBar } from './ConflictBar';
 import { GUTTER_PX, HOUR_PX, PX_PER_MIN, SNAP_MIN, layoutDay, snap } from './layout';
-import { PreviewDiffCard } from './PreviewDiffCard';
 import { QuickAddDialog } from './QuickAddDialog';
 import { SharedBlockDialog } from './SharedBlockDialog';
 
@@ -805,7 +804,6 @@ export function CalendarPanel() {
         <span className="ml-auto tabular">{days[0]} ~ {days[days.length - 1]}</span>
       </footer>
 
-      {preview && <PreviewDiffCard />}
       <QuickAddDialog />
       <SharedBlockDialog block={editingShared} onClose={() => setEditingShared(null)} />
 

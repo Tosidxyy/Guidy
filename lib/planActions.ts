@@ -179,37 +179,6 @@ export async function undoMergedPlans(planIds: string[]): Promise<{ undone: numb
   return { undone, failures: Array.from(new Set(failures)) };
 }
 
-/** 应用「重新排程」预览：已保存计划走服务端 reschedule，未保存计划保持本地应用。 */
-export async function applyRescheduleAction(): Promise<ActionResult> {
-  const store = usePlanStore.getState();
-  const preview = store.preview;
-  if (!preview) return { ok: false, planId: null };
-  const planId = store.state.plan.id;
-  if (!planId) {
-    store.applyPreview();
-    return { ok: true, planId: null };
-  }
-  const ops: ApplyOp[] = [{ op: 'reschedule', scope: 'all', keep_pinned: true }];
-  const planPatch: { horizon_start?: string; horizon_days?: 7 | 14 | 30 | 90 } = {};
-  if (preview.horizon_start !== store.state.plan.horizon_start) planPatch.horizon_start = preview.horizon_start;
-  if (preview.horizon_days !== store.state.plan.horizon_days) planPatch.horizon_days = preview.horizon_days;
-  if (Object.keys(planPatch).length) ops.push({ op: 'update_plan', patch: planPatch });
-  const r = await planController.apply({
-    planId,
-    ops,
-    label: '重新排程',
-    optimistic: {
-      blocks: preview.output.blocks,
-      plan: { ...store.state.plan, horizon_start: preview.horizon_start, horizon_days: preview.horizon_days },
-    },
-  });
-  if (!r.ok) {
-    toast.error(r.reason ?? '重新排程失败');
-    return { ok: false, planId };
-  }
-  usePlanStore.setState({ preview: null, lastCompromises: preview.output.compromises });
-  return { ok: true, planId };
-}
 /**
  * 方案卡保存：草稿整份落库；已保存计划用 diff 生成 ops，走同一 patch 通道（可撤销）。
  */

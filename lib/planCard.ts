@@ -1,5 +1,5 @@
 import type { ApplyOp, Constraint, PlanState, TaskDef } from '@/shared/types';
-import type { ConstraintSetArtifact } from '@/shared/schemas';
+import type { ConstraintSetArtifact, PatchArtifact } from '@/shared/schemas';
 import { canonical } from '@/lib/restoreChat';
 
 /** 从当前计划生成方案卡内容（任务/约束/horizon 都复用同一套卡片编辑）。 */
@@ -94,4 +94,16 @@ export function diffPlanCard(current: PlanState, draft: ConstraintSetArtifact): 
 /** 有任务、但还没有任何时间块：方案卡提供「生成排程」。 */
 export function canGenerateSchedule(state: PlanState): boolean {
   return state.task_defs.length > 0 && state.blocks.length === 0;
+}
+
+const PLAN_CARD_OPS = new Set(['add_task_def', 'update_task_def', 'remove_task_def', 'add_constraint', 'update_constraint', 'remove_constraint', 'update_plan']);
+
+/** 只改任务/约束/计划元数据的 patch 交给方案卡；含块操作或重排的仍走聊天里的确认（需要绝对时间）。 */
+export function patchFitsPlanCard(patch: PatchArtifact, activePlanId: string): boolean {
+  if (!patch.ops.length) return false;
+  return patch.ops.every((op) => {
+    if (!PLAN_CARD_OPS.has(op.op)) return false;
+    if (op.op === 'update_plan' && op.plan_id && op.plan_id !== activePlanId) return false;
+    return true;
+  });
 }

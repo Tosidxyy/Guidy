@@ -1,19 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PanelLeftOpen, Sparkles } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useChat } from '@/lib/useChat';
 import { useChatStore, cursorAfterMessages, shouldAutoRestore } from '@/store/useChatStore';
 import { usePlanStore } from '@/store/usePlanStore';
-import { useSharedCalendar } from '@/store/useSharedCalendar';
 import { useUiStore } from '@/store/useUiStore';
 import { conversationForPlan } from '@/lib/planConversation';
 import { restoreChat } from '@/lib/restoreChat';
 import { appliedPatches } from '@/lib/appliedPatches';
 import { useApplyPatch } from '@/lib/useApplyPatch';
-import { activeOpsOnly } from '@/lib/patchTargets';
-import type { ConstraintSetArtifact, PatchArtifact } from '@/shared/schemas';
-import type { PlanState } from '@/shared/types';
+import type { PatchArtifact } from '@/shared/schemas';
 import { Button } from '@/components/ui/button';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
@@ -37,12 +34,8 @@ export function ChatPanel() {
   const setConversation = useChatStore((s) => s.setConversation);
 
   const planId = usePlanStore((s) => s.state.plan.id);
-  const preview = usePlanStore((s) => s.preview);
-  const previewPatch = usePlanStore((s) => s.previewPatch);
-  const discardPreview = usePlanStore((s) => s.discardPreview);
-  const { apply: applyPatch, isPending: patchPending } = useApplyPatch();
+  const { apply: applyPatch } = useApplyPatch();
 
-  const [confirmedPatch, setConfirmedPatch] = useState<PatchArtifact | null>(null);
   const openDrawer = useUiStore((s) => s.openDrawer);
 
   const me = useQuery({ queryKey: ['me'], queryFn: () => api.me(), retry: false });
@@ -60,7 +53,7 @@ export function ChatPanel() {
   useEffect(() => {
     const el = listRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [messages, artifact, patch, clarifications, error, streaming, confirmedPatch]);
+  }, [messages, artifact, patch, clarifications, error, streaming]);
 
   // 每轮对话在服务端扣减额度；流结束后刷新，页头剩余次数与耗尽提示才是当前值。
   useEffect(() => {
@@ -90,12 +83,7 @@ export function ChatPanel() {
 
   const onConfirmPatch = (p: PatchArtifact) => {
     if (!planId) return;
-    // 预览只对当前计划生效；跨计划 ops 由 useApplyPatch 在保存时分别下发。
-    const layers = qc.getQueriesData<PlanState>({ queryKey: ['plan'] })
-      .map(([, data]) => data)
-      .filter((s): s is PlanState => !!s?.plan?.id);
-    previewPatch({ ...p, ops: activeOpsOnly(p.ops, usePlanStore.getState().state, layers, useSharedCalendar.getState().busyBlocks) });
-    setConfirmedPatch(p);
+    applyPatch(p);
   };
 
   const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant' && m.kind === 'text');
@@ -147,10 +135,10 @@ export function ChatPanel() {
             onDismiss={() => useChatStore.setState({ question: null })}
           />
         )}
-        {patch && planId && !confirmedPatch && !appliedPatches.isApplied(conversationId, patch) && (
+        {patch && planId && !appliedPatches.isApplied(conversationId, patch) && (
           <PatchConfirmCard patch={patch} onConfirm={onConfirmPatch} onCancel={() => useChatStore.setState({ patch: null })} />
         )}
-        {patch && planId && !confirmedPatch && appliedPatches.isApplied(conversationId, patch) && (
+        {patch && planId && appliedPatches.isApplied(conversationId, patch) && (
           <p className="rounded-lg border border-site-line bg-site-surface px-3 py-2 text-[11px] text-site-ink-soft">
             这条调整已经应用过，如需再次修改请直接告诉我。
           </p>
@@ -163,17 +151,6 @@ export function ChatPanel() {
             </p>
             <div className="mt-2 flex justify-end">
               <Button variant="outline" size="sm" onClick={() => useChatStore.setState({ patch: null })}>知道了</Button>
-            </div>
-          </div>
-        )}
-        {confirmedPatch && preview && planId && (
-          <div className="rounded-lg border border-[var(--site-dawn-line)]/40 bg-site-surface p-3">
-            <p className="text-xs text-site-ink">调整预览已生成（右侧日历 ghost 块）。确认保存到云端？</p>
-            <div className="mt-2 flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => { discardPreview(); setConfirmedPatch(null); }}>放弃</Button>
-              <Button size="sm" className="dawn-gradient text-white" disabled={patchPending} onClick={() => applyPatch(confirmedPatch)}>
-                {patchPending ? '保存中…' : '确认保存调整'}
-              </Button>
             </div>
           </div>
         )}
@@ -195,7 +172,7 @@ export function ChatPanel() {
         </p>
       )}
       <PlanCardPanel />
-      <ChatInput streaming={streaming} disabled={quotaExhausted} onSend={(t) => { setConfirmedPatch(null); chat.send(t); }} onInterrupt={() => chat.interrupt()} />
+      <ChatInput streaming={streaming} disabled={quotaExhausted} onSend={(t) => { chat.send(t); }} onInterrupt={() => chat.interrupt()} />
     </aside>
   );
 }
