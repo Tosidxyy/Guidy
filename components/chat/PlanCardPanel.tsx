@@ -40,7 +40,7 @@ export function PlanCardPanel() {
   };
 
   return (
-    <div className="border-t border-site-line bg-site-bg px-3 py-1.5">
+    <div className="relative border-t border-site-line bg-site-bg px-3 py-1.5">
       <div className="flex items-center gap-1">
         <Button
           variant="ghost"
@@ -58,7 +58,7 @@ export function PlanCardPanel() {
       </div>
 
       {open && draft && (
-        <div className="animate-guidy-fade-up mt-1.5 rounded-xl border border-[var(--site-dawn-line)]/40 bg-site-surface p-4 shadow-sm">
+        <div className="animate-guidy-fade-up absolute bottom-full left-2 right-2 z-40 mb-2 rounded-xl border border-[var(--site-dawn-line)]/40 bg-site-surface p-4 shadow-xl">
           <div className="dawn-gradient mb-3 h-0.5 rounded-full" />
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -72,7 +72,7 @@ export function PlanCardPanel() {
             </button>
           </div>
 
-          <div className="max-h-[48vh] overflow-y-auto pr-1">
+          <div className="max-h-[50vh] overflow-y-auto pr-1">
             <ConstraintSetBody
               draft={draft}
               onChange={setDraft}
