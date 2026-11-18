@@ -1,5 +1,6 @@
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
+import { diffPlanCard, planFromArtifact } from '@/lib/planCard';
 import { applyPatch, mergeConflictOps } from '@/shared/engine';
 import { planController } from '@/lib/planRuntime';
 import { queryClient } from '@/lib/queryClient';
@@ -9,11 +10,13 @@ import { usePlanSync } from '@/store/usePlanSync';
 import { useChatStore } from '@/store/useChatStore';
 import { useBlockHistory } from '@/store/useBlockHistory';
 import type { ApplyOp, ConstraintPayload, PlanState, TaskDef } from '@/shared/types';
+import type { ConstraintSetArtifact } from '@/shared/schemas';
 import type { PlanConflict } from '@/shared/engine';
 
 export interface ActionResult {
   ok: boolean;
   planId: string | null;
+  reason?: string;
 }
 
 type LocalFallback = (store: ReturnType<typeof usePlanStore.getState>) => void;
@@ -206,4 +209,26 @@ export async function applyRescheduleAction(): Promise<ActionResult> {
   }
   usePlanStore.setState({ preview: null, lastCompromises: preview.output.compromises });
   return { ok: true, planId };
+}
+/**
+ * 方案卡保存：草稿整份落库；已保存计划用 diff 生成 ops，走同一 patch 通道（可撤销）。
+ */
+export async function savePlanCardAction(draft: ConstraintSetArtifact): Promise<ActionResult> {
+  const store = usePlanStore.getState();
+  const state = store.state;
+  if (!state.plan.id) {
+    store.importState(planFromArtifact(state, draft));
+    const r = await saveDraftAction();
+    return { ok: r.ok, planId: r.planId ?? null, reason: r.reason };
+  }
+  const ops = diffPlanCard(state, draft);
+  if (!ops.length) return { ok: true, planId: state.plan.id };
+  const optimistic = applyPatch(state, ops).state;
+  const r = await planController.apply({
+    planId: state.plan.id,
+    ops,
+    label: '保存方案卡修改',
+    optimistic: { plan: optimistic.plan, task_defs: optimistic.task_defs, constraints: optimistic.constraints, blocks: optimistic.blocks },
+  });
+  return { ok: r.ok, planId: state.plan.id, reason: r.reason };
 }

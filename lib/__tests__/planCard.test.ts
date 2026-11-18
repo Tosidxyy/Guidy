@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { artifactFromPlan, planFromArtifact } from '@/lib/planCard';
+import { artifactFromPlan, diffPlanCard, planFromArtifact } from '@/lib/planCard';
 import type { PlanState } from '@/shared/types';
 
 const plan: PlanState = {
@@ -44,5 +44,42 @@ describe('planCard', () => {
     draft.constraints = [draft.constraints[1], draft.constraints[0]];
     const next = planFromArtifact(plan, draft);
     expect(next.constraints.map((c) => c.id)).toEqual(['c-buffer', 'c-active']);
+  });
+});
+
+describe('diffPlanCard', () => {
+  it('没有改动 → 不产生 ops', () => {
+    expect(diffPlanCard(plan, artifactFromPlan(plan))).toEqual([]);
+  });
+
+  it('任务只带改动字段，新增/删除各一条', () => {
+    const draft = artifactFromPlan(plan);
+    draft.task_defs[0] = { ...draft.task_defs[0], duration_min: 90 };
+    draft.task_defs.push({ key: 'eng', title: '英语', category: 'study', duration_min: 30, frequency: { type: 'daily' }, priority: 'mid', splittable: false, sort_order: 1 });
+    const ops = diffPlanCard(plan, draft);
+    expect(ops).toContainEqual({ op: 'update_task_def', key: 'math', patch: { duration_min: 90 } });
+    expect(ops).toContainEqual({ op: 'add_task_def', value: expect.objectContaining({ key: 'eng' }) });
+
+    const removed = artifactFromPlan({ ...plan, task_defs: [] });
+    expect(diffPlanCard(plan, removed)).toContainEqual({ op: 'remove_task_def', key: 'math' });
+  });
+
+  it('约束就地编辑沿用原 id，新增与删除各一条', () => {
+    const edited = artifactFromPlan(plan);
+    edited.constraints = [{ type: 'active_window', start: '08:00', end: '22:00' }];
+    const ops = diffPlanCard(plan, edited);
+    expect(ops).toContainEqual({ op: 'update_constraint', id: 'c-active', patch: { payload: { type: 'active_window', start: '08:00', end: '22:00' } } });
+    expect(ops).toContainEqual({ op: 'remove_constraint', id: 'c-buffer' });
+
+    const added = artifactFromPlan(plan);
+    added.constraints.push({ type: 'deadline', date: '2026-11-30', label: '报名截止' });
+    expect(diffPlanCard(plan, added)).toEqual([
+      { op: 'add_constraint', value: { type: 'deadline', date: '2026-11-30', label: '报名截止' }, source: 'user', enabled: true },
+    ]);
+  });
+
+  it('开始日期变化 → update_plan', () => {
+    const draft = { ...artifactFromPlan(plan), horizon_start: '2026-11-20' };
+    expect(diffPlanCard(plan, draft)).toEqual([{ op: 'update_plan', patch: { horizon_start: '2026-11-20' } }]);
   });
 });

@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { ChevronDown, ChevronUp, ListChecks, Save, ShieldCheck, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Save, ShieldCheck, X } from 'lucide-react';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
-import { artifactFromPlan, planFromArtifact } from '@/lib/planCard';
-import { saveDraftAction } from '@/lib/planActions';
+import { artifactFromPlan } from '@/lib/planCard';
+import { savePlanCardAction } from '@/lib/planActions';
 import { usePlanStore } from '@/store/usePlanStore';
-import { useUiStore } from '@/store/useUiStore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConstraintSetBody, ConstraintSetFooter } from './ConstraintSetBody';
@@ -19,7 +18,6 @@ export function PlanCardPanel() {
   const [draft, setDraft] = useState<ConstraintSetArtifact | null>(null);
   const [saving, setSaving] = useState(false);
   const state = usePlanStore((s) => s.state);
-  const openDrawer = useUiStore((s) => s.openDrawer);
   const unsaved = state.plan.id === null;
   const enabled = state.constraints.filter((c) => c.enabled).length;
 
@@ -33,13 +31,11 @@ export function PlanCardPanel() {
 
   const save = async () => {
     if (!draft) return;
-    const store = usePlanStore.getState();
-    store.importState(planFromArtifact(store.state, draft));
     setSaving(true);
-    const r = await saveDraftAction();
+    const r = await savePlanCardAction(draft);
     setSaving(false);
     if (!r.ok) { toast.error(r.reason ?? '保存失败'); return; }
-    toast.success('计划已保存到云端');
+    toast.success(unsaved ? '计划已保存到云端' : '修改已保存');
     close();
   };
 
@@ -68,7 +64,7 @@ export function PlanCardPanel() {
             <div>
               <h3 className="font-display text-sm font-semibold text-site-ink">当前方案</h3>
               <p className="mt-0.5 text-xs text-site-ink-soft">
-                {unsaved ? '确认任务与约束后保存到云端。' : '已保存；需要修改请用下方按钮打开约束 / 任务卡片。'}
+                {unsaved ? '直接改任务与约束，保存后落到云端。' : '直接改，保存后同步到云端并可撤销。'}
               </p>
             </div>
             <button type="button" onClick={close} aria-label="收起方案卡" className="rounded p-1 text-site-ink-soft hover:bg-site-surface-2">
@@ -81,27 +77,12 @@ export function PlanCardPanel() {
               draft={draft}
               onChange={setDraft}
               planStart={state.plan.horizon_start}
-              readOnly={!unsaved}
               footer={(
                 <ConstraintSetFooter>
-                  {unsaved ? (
-                    <>
-                      <Button variant="outline" size="sm" onClick={close}>关闭</Button>
-                      <Button size="sm" className="dawn-gradient text-white" disabled={saving} onClick={() => { void save(); }}>
-                        <Save className="mr-1 h-4 w-4" /> {saving ? '保存中…' : '保存计划'}
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button variant="outline" size="sm" onClick={() => openDrawer('constraints')}>
-                        <ShieldCheck className="mr-1 h-3.5 w-3.5" /> 编辑约束
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => openDrawer('tasks')}>
-                        <ListChecks className="mr-1 h-3.5 w-3.5" /> 编辑任务
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={close}>关闭</Button>
-                    </>
-                  )}
+                  <Button variant="outline" size="sm" onClick={close}>关闭</Button>
+                  <Button size="sm" className="dawn-gradient text-white" disabled={saving} onClick={() => { void save(); }}>
+                    <Save className="mr-1 h-4 w-4" /> {saving ? '保存中…' : unsaved ? '保存计划' : '保存修改'}
+                  </Button>
                 </ConstraintSetFooter>
               )}
             />

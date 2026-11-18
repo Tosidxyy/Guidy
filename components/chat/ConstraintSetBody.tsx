@@ -13,13 +13,12 @@ const WINDOW_TYPES = ['busy_window', 'active_window', 'fixed_block'];
 
 /**
  * 「核对约束方案」卡片的主体：开始日期 + 任务 + 约束。
- * AI 确认卡与聊天框上方的方案卡共用这一份，避免两套列表各写一遍。
+ * AI 确认卡与聊天框上方的方案卡共用这一份，两处都可直接编辑。
  */
-export function ConstraintSetBody({ draft, onChange, planStart, readOnly = false, footer }: {
+export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
   draft: ConstraintSetArtifact;
   onChange: (next: ConstraintSetArtifact) => void;
   planStart: string;
-  readOnly?: boolean;
   footer?: React.ReactNode;
 }) {
   const set = (next: ConstraintSetArtifact) => onChange(next);
@@ -32,7 +31,6 @@ export function ConstraintSetBody({ draft, onChange, planStart, readOnly = false
           type="date"
           value={draft.horizon_start ?? planStart}
           aria-label="计划开始日期"
-          disabled={readOnly}
           onChange={(e) => set({ ...draft, horizon_start: e.target.value || planStart })}
           className="h-7 w-36 text-xs"
         />
@@ -47,14 +45,12 @@ export function ConstraintSetBody({ draft, onChange, planStart, readOnly = false
               <Input
                 value={t.title}
                 aria-label={`任务标题 ${t.key}`}
-                disabled={readOnly}
                 onChange={(e) => set(updateTaskTitle(draft, t.key, e.target.value.slice(0, 60)))}
                 className="h-7 flex-1 text-xs"
               />
               <Input
                 type="number" min={15} max={480} value={t.duration_min}
                 aria-label={`任务时长 ${t.key}`}
-                disabled={readOnly}
                 onChange={(e) => set(updateTaskDuration(draft, t.key, Math.max(15, Math.min(480, Number(e.target.value) || 15))))}
                 className="tabular h-7 w-20 text-xs"
               />
@@ -70,11 +66,9 @@ export function ConstraintSetBody({ draft, onChange, planStart, readOnly = false
       <section className="mt-3">
         <div className="mb-1.5 flex items-center justify-between">
           <h4 className="text-xs font-semibold text-site-ink">约束（{draft.constraints.length}）</h4>
-          {!readOnly && (
-            <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => set(addDefaultConstraint(draft))}>
-              <Plus className="mr-0.5 h-3 w-3" /> 补充
-            </Button>
-          )}
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => set(addDefaultConstraint(draft))}>
+            <Plus className="mr-0.5 h-3 w-3" /> 补充
+          </Button>
         </div>
         <ul className="space-y-1.5">
           {draft.constraints.map((c, i) => (
@@ -84,7 +78,6 @@ export function ConstraintSetBody({ draft, onChange, planStart, readOnly = false
                 {c.type === 'mutex' && (
                   <button
                     type="button"
-                    disabled={readOnly}
                     onClick={() => set(toggleMutexStrength(draft, i))}
                     className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', c.strength === 'hard' ? 'bg-site-danger/10 text-site-danger' : 'bg-site-surface-2 text-site-ink-soft')}
                     aria-label={`互斥强度切换，当前${c.strength === 'hard' ? '硬' : '软'}`}
@@ -92,17 +85,15 @@ export function ConstraintSetBody({ draft, onChange, planStart, readOnly = false
                     {c.strength === 'hard' ? '硬性' : '软性'}
                   </button>
                 )}
-                {!readOnly && (
-                  <button type="button" aria-label="删除约束" className="rounded p-1 text-site-ink-soft hover:text-site-danger" onClick={() => set(removeConstraint(draft, i))}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                )}
+                <button type="button" aria-label="删除约束" className="rounded p-1 text-site-ink-soft hover:text-site-danger" onClick={() => set(removeConstraint(draft, i))}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
               </div>
               {WINDOW_TYPES.includes(c.type) && (
                 <div className="mt-1.5 flex items-center gap-1.5">
-                  <Input type="time" value={(c as any).start} aria-label="开始时间" disabled={readOnly} onChange={(e) => set(updateWindow(draft, i, 'start', e.target.value))} className="h-7 w-28 text-xs" />
+                  <Input type="time" value={(c as any).start} aria-label="开始时间" onChange={(e) => set(updateWindow(draft, i, 'start', e.target.value))} className="h-7 w-28 text-xs" />
                   <span className="text-xs text-site-ink-soft">至</span>
-                  <Input type="time" value={(c as any).end} aria-label="结束时间" disabled={readOnly} onChange={(e) => set(updateWindow(draft, i, 'end', e.target.value))} className="h-7 w-28 text-xs" />
+                  <Input type="time" value={(c as any).end} aria-label="结束时间" onChange={(e) => set(updateWindow(draft, i, 'end', e.target.value))} className="h-7 w-28 text-xs" />
                 </div>
               )}
             </li>
