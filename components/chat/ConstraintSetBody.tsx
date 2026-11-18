@@ -1,19 +1,18 @@
-import { Check, Plus, Trash2 } from 'lucide-react';
+import { Check, Lock, Plus, Trash2 } from 'lucide-react';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 import { constraintText } from '@/lib/describe';
 import {
   removeConstraint, addDefaultConstraint, toggleMutexStrength,
   addTask, removeTask, updateTaskDuration, updateTaskNotes, updateTaskTitle, updateWindow,
+  groupSchedules, isSchedule, removeScheduleGroup, scheduleDayText, updateScheduleGroup,
 } from '@/lib/confirmDraft';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { cn } from '@/lib/utils';
 
-const WINDOW_TYPES = ['busy_window', 'active_window', 'fixed_block'];
-
 /**
- * 方案卡主体：开始日期 + 任务 + 约束。
+ * 方案卡主体：开始日期 + 任务 + 固定日程 + 约束规则。
  * AI 提案、当前计划与 AI 的任务/约束 patch 都落在这同一份可编辑内容上。
  */
 export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
@@ -23,6 +22,10 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
   footer?: React.ReactNode;
 }) {
   const set = (next: ConstraintSetArtifact) => onChange(next);
+  const schedules = groupSchedules(draft);
+  const rules = draft.constraints
+    .map((payload, i) => ({ payload, i }))
+    .filter(({ payload }) => !isSchedule(payload));
 
   return (
     <div>
@@ -93,13 +96,44 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
 
       <section className="mt-3">
         <div className="mb-1.5 flex items-center justify-between">
-          <h4 className="text-xs font-semibold text-site-ink">约束（{draft.constraints.length}）</h4>
+          <h4 className="text-xs font-semibold text-site-ink">固定日程（{schedules.length}）</h4>
+        </div>
+        <p className="mb-1.5 text-[11px] leading-snug text-site-ink-soft">上班、上课这类长期固定的时间：排程会自动避开，同一时段的多个工作日合并成一行。</p>
+        <ul className="space-y-1.5">
+          {schedules.map((g) => (
+            <li key={`${g.type}-${g.label}-${g.start}-${g.end}-${g.indices[0]}`} className="rounded-lg border border-site-line bg-site-bg px-2.5 py-2">
+              <div className="flex items-center gap-2">
+                <span className="flex min-w-0 flex-1 items-center gap-1 text-xs font-medium text-site-ink">
+                  <Lock className="h-3.5 w-3.5 shrink-0 text-site-ink-soft" />
+                  <span className="truncate">{g.label}</span>
+                </span>
+                <span className="shrink-0 text-[10px] text-site-ink-soft">{scheduleDayText(g)}</span>
+                <button type="button" aria-label={`删除固定日程 ${g.label}`} className="rounded p-1 text-site-ink-soft hover:text-site-danger" onClick={() => set(removeScheduleGroup(draft, g.indices))}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <Input type="time" value={g.start} aria-label={`固定日程开始时间 ${g.label}`} onChange={(e) => set(updateScheduleGroup(draft, g.indices, 'start', e.target.value))} className="h-7 w-28 text-xs" />
+                <span className="text-xs text-site-ink-soft">至</span>
+                <Input type="time" value={g.end} aria-label={`固定日程结束时间 ${g.label}`} onChange={(e) => set(updateScheduleGroup(draft, g.indices, 'end', e.target.value))} className="h-7 w-28 text-xs" />
+              </div>
+            </li>
+          ))}
+          {schedules.length === 0 && (
+            <li className="rounded-lg border border-dashed border-site-line p-2.5 text-center text-xs text-site-ink-soft">暂无固定日程；在对话里说「工作日 8:30 到 17:30 上班」就会加到这里</li>
+          )}
+        </ul>
+      </section>
+
+      <section className="mt-3">
+        <div className="mb-1.5 flex items-center justify-between">
+          <h4 className="text-xs font-semibold text-site-ink">约束（{rules.length}）</h4>
           <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => set(addDefaultConstraint(draft))}>
             <Plus className="mr-0.5 h-3 w-3" /> 补充
           </Button>
         </div>
         <ul className="space-y-1.5">
-          {draft.constraints.map((c, i) => (
+          {rules.map(({ payload: c, i }) => (
             <li key={i} className="rounded-lg border border-site-line bg-site-bg px-2.5 py-2">
               <div className="flex items-center gap-2">
                 <span className="min-w-0 flex-1 text-xs leading-snug text-site-ink">{constraintText(c)}</span>
@@ -117,17 +151,17 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
-              {WINDOW_TYPES.includes(c.type) && (
+              {c.type === 'active_window' && (
                 <div className="mt-1.5 flex items-center gap-1.5">
-                  <Input type="time" value={(c as any).start} aria-label="开始时间" onChange={(e) => set(updateWindow(draft, i, 'start', e.target.value))} className="h-7 w-28 text-xs" />
+                  <Input type="time" value={c.start} aria-label="开始时间" onChange={(e) => set(updateWindow(draft, i, 'start', e.target.value))} className="h-7 w-28 text-xs" />
                   <span className="text-xs text-site-ink-soft">至</span>
-                  <Input type="time" value={(c as any).end} aria-label="结束时间" onChange={(e) => set(updateWindow(draft, i, 'end', e.target.value))} className="h-7 w-28 text-xs" />
+                  <Input type="time" value={c.end} aria-label="结束时间" onChange={(e) => set(updateWindow(draft, i, 'end', e.target.value))} className="h-7 w-28 text-xs" />
                 </div>
               )}
             </li>
           ))}
-          {draft.constraints.length === 0 && (
-            <li className="rounded-lg border border-dashed border-site-line p-2.5 text-center text-xs text-site-ink-soft">无约束，点「补充」添加</li>
+          {rules.length === 0 && (
+            <li className="rounded-lg border border-dashed border-site-line p-2.5 text-center text-xs text-site-ink-soft">无约束规则，点「补充」添加</li>
           )}
         </ul>
       </section>

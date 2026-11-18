@@ -1,4 +1,4 @@
-import type { ConstraintSetArtifact, ConstraintPayload } from '@/shared/schemas';
+import type { ConstraintPayload, ConstraintSetArtifact } from '@/shared/schemas';
 
 const WINDOW_TYPES = ['busy_window', 'active_window', 'fixed_block'];
 
@@ -60,4 +60,67 @@ export function addTask(draft: ConstraintSetArtifact): ConstraintSetArtifact {
 
 export function removeTask(draft: ConstraintSetArtifact, key: string): ConstraintSetArtifact {
   return { ...draft, task_defs: draft.task_defs.filter((t) => t.key !== key) };
+}
+
+const WEEKDAY_LABEL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+export type ScheduleType = 'busy_window' | 'fixed_block';
+export type SchedulePayload = Extract<ConstraintPayload, { type: ScheduleType }>;
+export const isSchedule = (c: ConstraintPayload): c is SchedulePayload => c.type === 'busy_window' || c.type === 'fixed_block';
+
+export interface ScheduleGroup {
+  indices: number[];
+  type: ScheduleType;
+  label: string;
+  start: string;
+  end: string;
+  days: number[];
+  dates: string[];
+}
+
+/** 固定日程（上班/上课等）：同一标题与时段的多个工作日合成一行。 */
+export function groupSchedules(draft: ConstraintSetArtifact): ScheduleGroup[] {
+  const map = new Map<string, ScheduleGroup>();
+  draft.constraints.forEach((c, i) => {
+    if (!isSchedule(c)) return;
+    const label = c.type === 'fixed_block' ? c.title : (c.label ?? '忙碌');
+    const key = `${c.type}|${label}|${c.start}|${c.end}`;
+    const g = map.get(key) ?? { indices: [], type: c.type, label, start: c.start, end: c.end, days: [], dates: [] };
+    g.indices.push(i);
+    if (c.weekday !== undefined) g.days.push(c.weekday);
+    if (c.date !== undefined) g.dates.push(c.date);
+    map.set(key, g);
+  });
+  return [...map.values()];
+}
+
+function compressWeekdays(days: number[]): string {
+  const out: string[] = [];
+  let i = 0;
+  while (i < days.length) {
+    let j = i;
+    while (j + 1 < days.length && days[j + 1] === days[j] + 1) j += 1;
+    out.push(j > i ? `${WEEKDAY_LABEL[days[i]]}至${WEEKDAY_LABEL[days[j]]}` : WEEKDAY_LABEL[days[i]]);
+    i = j + 1;
+  }
+  return out.join('、');
+}
+
+export function scheduleDayText(g: ScheduleGroup): string {
+  if (g.dates.length) return `${g.dates.slice(0, 3).join('、')}${g.dates.length > 3 ? ' …' : ''}`;
+  const days = [...new Set(g.days)].sort((a, b) => a - b);
+  return days.length ? compressWeekdays(days) : '';
+}
+
+export function updateScheduleGroup(draft: ConstraintSetArtifact, indices: number[], field: 'start' | 'end', value: string): ConstraintSetArtifact {
+  const set = new Set(indices);
+  return {
+    ...draft,
+    constraints: draft.constraints.map((c, i) => (set.has(i) && isSchedule(c) ? { ...c, [field]: value } : c)),
+  };
+}
+
+export function removeScheduleGroup(draft: ConstraintSetArtifact, indices: number[]): ConstraintSetArtifact {
+  const set = new Set(indices);
+  return { ...draft, constraints: draft.constraints.filter((_, i) => !set.has(i)) };
 }

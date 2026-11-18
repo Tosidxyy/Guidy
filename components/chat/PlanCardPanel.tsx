@@ -44,7 +44,9 @@ export function PlanCardPanel() {
   const proposalDraft = proposal ? { ...proposal, horizon_start: proposal.horizon_start ?? state.plan.horizon_start } : null;
   const viewed = draft ?? proposalDraft;
   const taskCount = viewed ? viewed.task_defs.length : state.task_defs.length;
-  const constraintCount = viewed ? viewed.constraints.length : state.constraints.length;
+  const constraintList = viewed ? viewed.constraints : state.constraints.map((c) => c.payload);
+  const scheduleCount = constraintList.filter((c) => c.type === 'busy_window' || c.type === 'fixed_block').length;
+  const ruleCount = constraintList.length - scheduleCount;
   const planTitle = viewed ? viewed.plan_title : state.plan.title;
 
   // AI 给出完整方案时直接展开到这张卡，不再另起确认卡。
@@ -160,7 +162,7 @@ export function PlanCardPanel() {
           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-site-brand" />
           <span className="shrink-0 font-medium text-site-ink">方案卡</span>
           <span className="min-w-0 truncate text-site-ink">{planTitle}</span>
-          <span className="tabular shrink-0">任务 {taskCount} · 约束 {constraintCount}</span>
+          <span className="tabular shrink-0">任务 {taskCount} · 固定 {scheduleCount} · 约束 {ruleCount}</span>
           <Badge variant="secondary" className="ml-0.5 shrink-0 px-1.5 py-0 text-[10px]">{statusText}</Badge>
           {open ? <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0" /> : <ChevronUp className="ml-auto h-3.5 w-3.5 shrink-0" />}
         </Button>

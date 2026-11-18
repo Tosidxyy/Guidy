@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   removeConstraint, addDefaultConstraint, toggleMutexStrength,
-  addTask, removeTask, updateTaskDuration, updateTaskTitle, updateWindow,
+  addTask, removeTask, groupSchedules, scheduleDayText, updateScheduleGroup, removeScheduleGroup,
+  updateTaskDuration, updateTaskTitle, updateWindow,
 } from '@/lib/confirmDraft';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 
@@ -60,5 +61,39 @@ describe('confirmDraft', () => {
     const next = removeTask(addTask(base), 'math');
     expect(next.task_defs.map((t) => t.key)).toEqual(['task_2']);
     expect(removeTask(base, 'nope')).toEqual(base);
+  });
+});
+
+describe('固定日程（busy_window / fixed_block）', () => {
+  const sched: ConstraintSetArtifact = {
+    ...base,
+    constraints: [
+      { type: 'active_window', start: '07:00', end: '23:00' },
+      ...[1, 2, 3, 4, 5].map((weekday) => ({ type: 'busy_window' as const, weekday, start: '08:30', end: '17:30', label: '工作' })),
+      { type: 'daily_cap', category: 'study', max_minutes: 300 },
+    ],
+  };
+
+  it('同一标题与时段的多个工作日合并成一行，并显示周一至周五', () => {
+    const groups = groupSchedules(sched);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].indices).toEqual([1, 2, 3, 4, 5]);
+    expect(scheduleDayText(groups[0])).toBe('周一至周五');
+  });
+
+  it('不是连续工作日时用顿号连接', () => {
+    const groups = groupSchedules({ ...sched, constraints: [sched.constraints[1], sched.constraints[3]] });
+    expect(scheduleDayText(groups[0])).toBe('周一、周三');
+  });
+
+  it('改时间会同时改这一组，删除会移除整组且不动规则', () => {
+    const groups = groupSchedules(sched);
+    const moved = updateScheduleGroup(sched, groups[0].indices, 'end', '18:00');
+    const busy = moved.constraints.filter((c) => c.type === 'busy_window');
+    expect(busy.every((c) => (c as any).end === '18:00')).toBe(true);
+    expect(moved.constraints.filter((c) => c.type === 'active_window')).toHaveLength(1);
+
+    const removed = removeScheduleGroup(moved, groups[0].indices);
+    expect(removed.constraints.map((c) => c.type)).toEqual(['active_window', 'daily_cap']);
   });
 });
