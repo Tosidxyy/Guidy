@@ -166,6 +166,42 @@ describe('跨计划冲突进入 prompt', () => {
   });
 });
 
+describe('对话与计划绑定', () => {
+  const open = { openStream: async () => ({ body: upstreamStream(replyFrames), close() {} }), sendEvents: async () => ({ eventIds: ['e1'] }) };
+
+  async function makePlan(d: Deps) {
+    const { rows } = await import('../db');
+    return rows(await d.db.from('plans').insert({ owner_visitor_id: 'v', title: 'p', horizon_start: '2026-11-18', horizon_days: 7, timezone: 'Asia/Shanghai', status: 'active', version: 1 }).select('*'))[0];
+  }
+
+  it('新对话首次发送带 plan_id → 对话绑定到该计划', async () => {
+    const d = deps(open);
+    const plan = await makePlan(d);
+    await collect(await application(d)(ctx('POST', '/api/chat/send', { text: 'hi', plan_id: plan.id })));
+    expect(d.db.tables.conversations[0].plan_id).toBe(plan.id);
+  });
+
+  it('未绑定对话续聊时补绑当前计划', async () => {
+    const d = deps(open);
+    const plan = await makePlan(d);
+    const { ensureConversation } = await import('../qca/sessions');
+    const conv = await ensureConversation(d.db, 'v', null, '旧对话');
+    await collect(await application(d)(ctx('POST', '/api/chat/send', { text: 'hi', conversation_id: conv.id, plan_id: plan.id })));
+    expect(d.db.tables.conversations[0].plan_id).toBe(plan.id);
+  });
+
+  it('归档对话（计划已删除）续聊 → 新建对话，不复活旧对话', async () => {
+    const d = deps(open);
+    const plan = await makePlan(d);
+    const { rows } = await import('../db');
+    const archived = rows(await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: '已删计划的对话', plan_id: null, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'archived' }).select('*'))[0];
+    await collect(await application(d)(ctx('POST', '/api/chat/send', { text: 'hi', conversation_id: archived.id, plan_id: plan.id })));
+    expect(d.db.tables.conversations).toHaveLength(2);
+    expect(d.db.tables.conversations.find((c: any) => c.id === archived.id)?.status).toBe('archived');
+    expect(d.db.tables.conversations.filter((c: any) => c.status === 'active')).toHaveLength(1);
+  });
+});
+
 describe('chatHistory / interrupt', () => {
   it('history 跨访客 → 403', async () => {
     const d = deps();

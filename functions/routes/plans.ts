@@ -56,7 +56,8 @@ export async function deletePlan(ctx: RouteCtx, deps: Deps, params: string[]): P
   await deps.db.from('task_defs').delete().eq('plan_id', plan.id);
   await deps.db.from('constraints').delete().eq('plan_id', plan.id);
   await deps.db.from('commit_log').delete().eq('plan_id', plan.id);
-  await deps.db.from('conversations').update({ plan_id: null }).eq('plan_id', plan.id).eq('owner_visitor_id', visitor);
+  // 对话随计划归档：保留历史数据，但不再出现在对话列表里，避免删除后左侧对话被自动恢复。
+  await deps.db.from('conversations').update({ plan_id: null, status: 'archived' }).eq('plan_id', plan.id).eq('owner_visitor_id', visitor);
   await deps.db.from('plans').delete().eq('id', plan.id).eq('owner_visitor_id', visitor);
   return Response.json({ ok: true }, { headers: { 'cache-control': 'no-store' } });
 }

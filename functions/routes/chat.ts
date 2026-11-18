@@ -59,7 +59,14 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
     : undefined;
   const timezone = typeof body.timezone === 'string' && body.timezone.length <= 64 ? body.timezone : undefined;
   const requestId = typeof body.request_id === 'string' && body.request_id ? body.request_id : crypto.randomUUID();
-  const conv = await ensureConversation(deps.db, visitor, body.conversation_id ?? null, text.slice(0, 30), body.plan_id ?? null);
+  let conv = await ensureConversation(deps.db, visitor, body.conversation_id ?? null, text.slice(0, 30), body.plan_id ?? null);
+  // 归档对话（所属计划已删除）不再接受写入，否则会重新出现在对话列表里。
+  if (conv.status === 'archived') conv = await ensureConversation(deps.db, visitor, null, text.slice(0, 30), body.plan_id ?? null);
+  // 旧数据里的未绑定对话在首次续聊时补绑当前计划，之后切换/刷新/删除才能按计划归位。
+  else if (conv.plan_id === null && typeof body.plan_id === 'string' && body.plan_id) {
+    await deps.db.from('conversations').update({ plan_id: body.plan_id }).eq('id', conv.id).eq('owner_visitor_id', visitor);
+    conv = { ...conv, plan_id: body.plan_id };
+  }
   const day = todayStr(deps.now?.() ?? new Date());
   await incrementChatTurn(deps.db, visitor, day);
   await assertNoPendingDispatch(deps.db, visitor);

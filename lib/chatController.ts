@@ -37,7 +37,7 @@ export function createChatController(deps: {
         conversation_id: st.conversationId ?? undefined,
         text,
         request_id: newId(),
-        plan_id: st.conversationId ? deps.getPlanId?.() ?? undefined : undefined,
+        plan_id: deps.getPlanId?.() ?? undefined,
         today: new Date().toLocaleDateString('sv-SE'),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       };

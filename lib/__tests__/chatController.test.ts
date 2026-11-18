@@ -41,7 +41,7 @@ describe('chatController.send', () => {
     const [, init] = fetchFn.mock.calls[0];
     expect(JSON.parse((init as RequestInit).body as string)).toMatchObject({ text: '把数学改成120分钟', plan_id: 'plan-1' });
   });
-  it('新会话不携带 plan_id，避免把当前计划带入新对话', async () => {
+  it('新会话首次发送就绑定当前计划，切换/刷新/删除后对话才能按计划归位', async () => {
     const stream = fakeStream();
     const fetchFn = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => ({ ok: true, status: 202 }) as Response);
     const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-new', getPlanId: () => 'plan-1' });
@@ -49,7 +49,16 @@ describe('chatController.send', () => {
     await Promise.resolve();
     const [, init] = fetchFn.mock.calls[0];
     const body = JSON.parse((init as RequestInit).body as string);
-    expect(body.plan_id).toBeUndefined();
+    expect(body.plan_id).toBe('plan-1');
+  });
+  it('草稿计划（plan.id 为空）不带 plan_id', async () => {
+    const stream = fakeStream();
+    const fetchFn = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => ({ ok: true, status: 202 }) as Response);
+    const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-draft', getPlanId: () => null });
+    c.send('帮我排个计划');
+    await Promise.resolve();
+    const [, init] = fetchFn.mock.calls[0];
+    expect(JSON.parse((init as RequestInit).body as string).plan_id).toBeUndefined();
   });
 });
 

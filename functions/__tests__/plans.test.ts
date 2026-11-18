@@ -87,7 +87,7 @@ async function seedPlan(d: Deps, input: any = baseInput) {
 const inputWithConstraint = { ...baseInput, constraints: [{ id: 'c1', payload: { type: 'active_window', start: '07:00', end: '23:00' }, source: 'user', enabled: true }] };
 
 describe('deletePlan', () => {
-  it('本人删除 → 200，plan 及子表清空，对话解绑但保留', async () => {
+  it('本人删除 → 200，plan 及子表清空，对话归档且不再出现在对话列表', async () => {
     const d = deps();
     const plan = await seedPlan(d, inputWithConstraint);
     await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: 'c', plan_id: plan.id, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' });
@@ -101,6 +101,10 @@ describe('deletePlan', () => {
     expect(d.db.tables.commit_log).toHaveLength(0);
     expect(d.db.tables.conversations).toHaveLength(1);
     expect(d.db.tables.conversations[0].plan_id).toBeNull();
+    expect(d.db.tables.conversations[0].status).toBe('archived');
+    // 归档对话不参与恢复：左侧 AI 面板不会把已删计划的对话拉回来。
+    const list = await application(d)(ctx('GET', '/api/conversations'));
+    expect((await list.json()).items).toHaveLength(0);
   });
   it('跨访客 → 403，不删任何表', async () => {
     const d = deps();

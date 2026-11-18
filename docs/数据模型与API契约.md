@@ -120,7 +120,7 @@ CREATE TABLE app.conversations (
   owner_visitor_id text NOT NULL,
   plan_id     uuid REFERENCES app.plans(id) ON DELETE SET NULL,
   qca_session_id text,                        -- 懒初始化后回填
-  status      text NOT NULL DEFAULT 'active' CHECK (status IN ('active','interrupted','failed')),
+  status      text NOT NULL DEFAULT 'active' CHECK (status IN ('active','interrupted','failed')),  -- 另有 'archived'：计划被删除时归档，列表与恢复都过滤
   last_seq    bigint NOT NULL DEFAULT 0,      -- 已持久化最大消息 seq（游标基准）
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
@@ -402,7 +402,7 @@ solve(input: SolveInput): SolveOutput   // 纯函数、确定性
 | --- | --- |
 | `GET /health` | 匿名；`{ ok:true, engine_version:1 }` |
 | `GET /me` | `{ visitor_id, quotas:{ chat_remaining, publish_remaining }, has_recovery_code }` |
-| `GET /conversations?plan_id?` | 当前访客对话列表（含 plan 绑定） |
+| `GET /conversations?plan_id?` | 当前访客对话列表（含 plan 绑定），不含 archived |
 | `POST /chat/send` | 见下 |
 | `GET /chat/history?conversation_id&page` | 持久化消息分页（role/kind/content/payload/seq） |
 | `GET /chat/events?conversation_id&cursor` | SSE 增量回放+续流，见 §7 |
@@ -420,6 +420,7 @@ solve(input: SolveInput): SolveOutput   // 纯函数、确定性
   "request_id": "uuid" }            // 客户端幂等键
 // Response: 202，Content-Type: text/event-stream（事件契约见 §7）
 // 首个事件 accepted；同访客已有 pending 派发 → 409 dispatch_busy
+// 新对话带 plan_id 会绑定到该计划；未绑定对话续聊时补绑；已归档对话续聊会新建对话
 // 配额耗尽 → 429 quota_exceeded；重复 request_id → 回放既有流/结果
 ```
 
