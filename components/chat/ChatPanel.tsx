@@ -19,6 +19,7 @@ import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { ConstraintConfirmCard } from './ConstraintConfirmCard';
 import { PatchConfirmCard } from './PatchConfirmCard';
+import { ContextPeek } from './ContextPeek';
 
 export function ChatPanel() {
   const chat = useChat();
@@ -50,6 +51,18 @@ export function ChatPanel() {
   const conversations = useQuery({ queryKey: ['conversations'], queryFn: () => api.conversations(), retry: false });
   const qc = useQueryClient();
   const wasStreaming = useRef(false);
+  // 聊天跟随底部：只有用户主动往上翻时才停止自动滚动，回到附近后恢复。
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const stickRef = useRef(true);
+  const onListScroll = () => {
+    const el = listRef.current;
+    if (!el) return;
+    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  };
+  useEffect(() => {
+    const el = listRef.current;
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+  }, [messages, artifact, patch, clarifications, error, streaming, confirmedDraft, confirmedPatch]);
 
   // 每轮对话在服务端扣减额度；流结束后刷新，页头剩余次数与耗尽提示才是当前值。
   useEffect(() => {
@@ -114,7 +127,7 @@ export function ChatPanel() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3" aria-live="polite">
+      <div ref={listRef} onScroll={onListScroll} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3" aria-live="polite">
         {messages.length === 0 && (
           <p className="px-1 text-xs leading-relaxed text-site-ink-soft">你想制定什么方案？说说你的目标、科目与时间安排，我会边聊边帮你提取约束，信息够了就在下方生成计划。</p>
         )}
@@ -196,6 +209,7 @@ export function ChatPanel() {
           {quotaExhausted ? '今天的对话额度用完了，明天再来继续规划。' : `今日对话额度还剩 ${chatRemaining} 轮`}
         </p>
       )}
+      <ContextPeek />
       <ChatInput streaming={streaming} disabled={quotaExhausted} onSend={(t) => { setConfirmedDraft(null); setConfirmedPatch(null); chat.send(t); }} onInterrupt={() => chat.interrupt()} />
     </aside>
   );
