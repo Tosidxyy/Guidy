@@ -1,7 +1,7 @@
 import { rows } from '../db.ts';
 import type { Db } from '../db.ts';
 import { requireVisitor } from '../identity.ts';
-import { dayList, weekdayOfDay } from '../../shared/engine/time.ts';
+import { dayList, utcAt, weekdayOfDay } from '../../shared/engine/time.ts';
 import type { Deps, RouteCtx } from '../types.ts';
 
 const DAY_MS = 86400000;
@@ -48,9 +48,8 @@ export async function materializeSharedBusy(db: Db, visitor: string): Promise<vo
       const matches = payload.date !== undefined ? payload.date === day : payload.weekday === wd;
       if (!matches) continue;
       const title = String(payload.label ?? payload.title ?? (payload.type === 'busy_window' ? '忙碌' : '固定日程')).slice(0, 60);
-      const base = Date.parse(`${day}T00:00:00Z`);
-      const startUtc = new Date(base + hhmmToMs(payload.start)).toISOString();
-      const endUtc = new Date(base + hhmmToMs(payload.end)).toISOString();
+      const startUtc = utcAt(day, Math.round(hhmmToMs(payload.start) / 60000), tz);
+      const endUtc = utcAt(day, Math.round(hhmmToMs(payload.end) / 60000), tz);
       const key = `${title}|${startUtc}`;
       if (seen.has(key)) continue;
       seen.add(key);

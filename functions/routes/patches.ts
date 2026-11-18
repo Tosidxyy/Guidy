@@ -63,6 +63,7 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
   const sharedWindows = await sharedRecurringFor(deps.db, visitor, plan_id);
   const bounds = horizonBounds(patched.state.plan);
   const busy = await sharedBusyBlocks(deps.db, visitor, bounds.from, bounds.to);
+  const busyIds = new Set(busy.map((b: any) => b.id));
   const effective = [...patched.state.constraints, ...sharedWindows];
   const pctx = { timezone: patched.state.plan.timezone, horizon_start: patched.state.plan.horizon_start, horizon_days: patched.state.plan.horizon_days, blocks: patched.state.blocks, constraints: effective };
   let bSeq = 0;
@@ -87,7 +88,7 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
     const pinned = [...patched.state.blocks.filter((b) => b.pinned || b.origin === 'manual'), ...busy.map((b: any) => ({ ...b, pinned: true }))];
     const out = solve({ engine_version: ENGINE_VERSION, horizon_start: patched.state.plan.horizon_start, horizon_days: patched.state.plan.horizon_days, timezone: patched.state.plan.timezone, task_defs: patched.state.task_defs, constraints: effective, pinned_blocks: pinned });
     if (out.violations.length) fail('engine_infeasible', 422, { violations: out.violations, compromises: out.compromises });
-    newBlocks = out.blocks;
+    newBlocks = out.blocks.filter((x) => !busyIds.has(x.id));
     compromises = out.compromises;
     server_authoritative = (await resultHash(out.blocks)) !== result_hash;
   }
