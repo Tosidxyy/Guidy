@@ -106,7 +106,7 @@ describe('deletePlan', () => {
   it('本人删除 → 200，plan 及子表清空，绑定对话级联删除且不再出现在对话列表', async () => {
     const d = deps();
     const plan = await seedPlan(d, inputWithConstraint);
-    await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: 'c', plan_id: plan.id, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' });
+    await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: 'c', plan_id: plan.id, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' }).select('id');
     const res = await application(d)(ctx('DELETE', `/api/plans/${plan.id}`));
     expect(res.status).toBe(200);
     expect((await res.json()).ok).toBe(true);
@@ -148,7 +148,7 @@ describe('deletePlan', () => {
 describe('commitPlan conversation binding', () => {
   it('新建 + 本人 null-plan 对话 → 绑定到新 plan.id', async () => {
     const d = deps();
-    const ins = await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: 'c', plan_id: null, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' });
+    const ins = await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: 'c', plan_id: null, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' }).select('id');
     const convId = ins.data[0].id;
     const result_hash = await hashFor(baseInput);
     const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'b1', plan_id: null, conversation_id: convId, input: baseInput, result_hash, engine_version: 1 }));
@@ -158,7 +158,7 @@ describe('commitPlan conversation binding', () => {
   });
   it('对话非本人 → 忽略绑定，commit 仍成功', async () => {
     const d = deps();
-    const ins = await d.db.from('conversations').insert({ owner_visitor_id: 'other', title: 'c', plan_id: null, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' });
+    const ins = await d.db.from('conversations').insert({ owner_visitor_id: 'other', title: 'c', plan_id: null, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' }).select('id');
     const result_hash = await hashFor(baseInput);
     const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'b2', plan_id: null, conversation_id: ins.data[0].id, input: baseInput, result_hash, engine_version: 1 }));
     expect(res.status).toBe(200);
@@ -166,7 +166,7 @@ describe('commitPlan conversation binding', () => {
   });
   it('对话已绑定 → 不重绑', async () => {
     const d = deps();
-    const ins = await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: 'c', plan_id: 'existing-plan', qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' });
+    const ins = await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: 'c', plan_id: 'existing-plan', qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' }).select('id');
     const result_hash = await hashFor(baseInput);
     const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'b3', plan_id: null, conversation_id: ins.data[0].id, input: baseInput, result_hash, engine_version: 1 }));
     expect(res.status).toBe(200);
@@ -182,7 +182,7 @@ describe('commitPlan conversation binding', () => {
   it('未绑定对话 + 已有 plan_id → 409，禁止覆盖旧计划', async () => {
     const d = deps();
     const plan = await seedPlan(d);
-    const ins = await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: '新对话', plan_id: null, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' });
+    const ins = await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: '新对话', plan_id: null, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' }).select('id');
     const result_hash = await hashFor({ ...baseInput, title: '另一个计划' });
     const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'b5', plan_id: plan.id, conversation_id: ins.data[0].id, input: { ...baseInput, title: '另一个计划' }, result_hash, engine_version: 1 }));
     expect(res.status).toBe(409);
@@ -195,7 +195,7 @@ describe('commitPlan conversation binding', () => {
     const d = deps();
     const a = await seedPlan(d);
     const b = await seedPlan(d);
-    const ins = await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: 'A 的对话', plan_id: a.id, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' });
+    const ins = await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: 'A 的对话', plan_id: a.id, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' }).select('id');
     const result_hash = await hashFor(baseInput);
     const res = await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'b6', plan_id: b.id, conversation_id: ins.data[0].id, input: baseInput, result_hash, engine_version: 1 }));
     expect(res.status).toBe(409);

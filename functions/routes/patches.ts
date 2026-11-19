@@ -151,7 +151,7 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
   const idMap = new Map<string, string>();
   try {
     for (const b of stagedBlocks) {
-      const inserted = rows(await deps.db.from('blocks').insert({ plan_id, plan_version: writeVersion, ...blockWriteFields(b) }))[0];
+      const inserted = rows(await deps.db.from('blocks').insert({ plan_id, plan_version: writeVersion, ...blockWriteFields(b) }).select('id'))[0];
       idMap.set(b.id, inserted.id);
     }
     const staged = rows(await deps.db.from('blocks').select('id').eq('plan_id', plan_id).eq('plan_version', writeVersion));

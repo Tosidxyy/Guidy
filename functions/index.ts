@@ -4,7 +4,7 @@ import { createLiveQca } from './qca/live.ts';
 const db = createDatabaseClient();
 const config = {
   cloudApiOrigin: 'https://api.qoder.com.cn',
-  appScope: 'guidy-site-01a1e421-fb71-7745-9db4-db763e874017',
+  appScope: 'guidy-site-01a1f4a2-f7b0-7779-9562-7602d7dfac2c',
   modelId: '',
 };
 const handle = application({ db, requireUser, qca: createLiveQca({ db, config }), config });

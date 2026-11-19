@@ -15,9 +15,11 @@ export function createMemoryDb(seed: Record<string, any[]> = {}): MemoryDb {
       const filters: [string, unknown][] = []; const order: [string, boolean][] = [];
       let mode: 'read' | 'insert' | 'update' | 'delete' = 'read';
       let values: any; let conflict: string[] | null = null; let columns: string | null = null; let count = 1000;
+      // 与云端 PostgREST 一致：写操作只有显式 .select() 才返回行，否则 data 为空。
+      let returning = false;
       const project = (row: any) => (!columns || columns === '*') ? { ...row } : Object.fromEntries(columns.split(',').map((c) => [c.trim(), row[c.trim()]]));
       const q: DbQuery = {
-        select(cols) { columns = cols ?? null; return q; },
+        select(cols) { columns = cols ?? null; returning = true; return q; },
         eq(k, v) { if (v === null) throw Object.assign(new Error('database_invalid_operation'), { code: 'database_invalid_operation', status: 400 }); filters.push([k, v]); return q; },
         is(k, v) { filters.push([k, v]); return q; },
         order(k, o) { order.push([k, o?.ascending !== false]); return q; },
@@ -54,7 +56,8 @@ export function createMemoryDb(seed: Record<string, any[]> = {}): MemoryDb {
               if (mode === 'delete') { for (const row of result) rowsRef.splice(rowsRef.indexOf(row), 1); }
             }
             for (const [k, asc] of [...order].reverse()) result = [...result].sort((a, b) => (a[k] < b[k] ? -1 : a[k] > b[k] ? 1 : 0) * (asc ? 1 : -1));
-            return { data: result.slice(0, count).map(project), error: null };
+            const out = mode !== 'read' && !returning ? [] : result.slice(0, count).map(project);
+            return { data: out, error: null };
           }).then(onF as any, onR as any);
         },
       };

@@ -24,22 +24,22 @@ function assertNoError(result: { error: { code: string; status: number } | null 
 /**
  * 严格包装：任何一次查询失败（含写操作）都会抛出，避免 insert/update/delete 的
  * 错误被静默丢弃、接口仍返回 200。application() 用它包住依赖注入的 db。
+ * 不用 Proxy：平台 SDK 的查询方法是非可配置只读属性，代理包装会触发 TypeError。
  */
 export function strictDb(db: Db): Db {
-  const wrap = (q: DbQuery): DbQuery => new Proxy(q, {
-    get(target, prop) {
-      if (prop === 'then') {
-        return (onFulfilled?: (v: unknown) => unknown, onRejected?: (e: unknown) => unknown) =>
-          new Promise((resolve, reject) => {
-            target.then((r) => {
-              try { assertNoError(r); resolve(r); } catch (e) { reject(e); }
-            }, reject);
-          }).then(onFulfilled, onRejected);
+  const METHODS = ['select', 'eq', 'is', 'order', 'limit', 'insert', 'insertIfAbsent', 'update', 'delete'] as const;
+  return {
+    from(table: string): DbQuery {
+      let q: any = db.from(table);
+      const wrapper: any = {
+        then(onFulfilled?: (v: unknown) => unknown, onRejected?: (e: unknown) => unknown) {
+          return Promise.resolve(q).then((r: any) => { assertNoError(r); return r; }).then(onFulfilled, onRejected);
+        },
+      };
+      for (const m of METHODS) {
+        wrapper[m] = (...args: unknown[]) => { q = q[m](...args); return wrapper; };
       }
-      const value = Reflect.get(target, prop, target);
-      if (typeof value !== 'function') return value;
-      return (...args: unknown[]) => wrap((value as (...a: unknown[]) => DbQuery).apply(target, args));
+      return wrapper as DbQuery;
     },
-  });
-  return { from: (table: string) => wrap(db.from(table)) };
+  };
 }

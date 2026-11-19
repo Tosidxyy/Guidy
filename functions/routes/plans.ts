@@ -167,7 +167,7 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const claimInserted = rows(await deps.db.from('commit_claims').insertIfAbsent(
     { idempotency_key: claimKey, visitor_id: visitor, plan_id: null, state: 'pending', fence: 1, fingerprint },
     { onConflict: 'idempotency_key' },
-  )).length > 0;
+  ).select('idempotency_key')).length > 0;
   if (!claimInserted) {
     const existing = rows(await deps.db.from('commit_claims').select('*').eq('idempotency_key', claimKey).limit(1))[0];
     if (!existing) fail('commit_in_progress', 409, { retry_after_ms: 2000 });
