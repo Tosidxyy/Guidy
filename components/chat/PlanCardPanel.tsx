@@ -160,7 +160,7 @@ export function PlanCardPanel() {
           aria-expanded={open}
           className="h-7 min-w-0 flex-1 justify-start gap-1.5 px-2 text-[11px] font-normal text-site-ink-soft hover:bg-site-surface-2 hover:text-site-ink"
         >
-          <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-site-brand" />
+          <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-site-ink" />
           <span className="shrink-0 font-medium text-site-ink">方案卡</span>
           <span className="min-w-0 truncate text-site-ink">{planTitle}</span>
           <span className="tabular shrink-0">任务 {taskCount + scheduleCount} · 约束 {ruleCount}</span>
@@ -170,8 +170,8 @@ export function PlanCardPanel() {
       </div>
 
       {open && draft && (
-        <div className="mt-1.5 overflow-hidden rounded-(--site-radius) border border-[var(--site-dawn-line)]/40 bg-site-surface">
-          <div className="dawn-gradient h-0.5 rounded-full" />
+        <div className="mt-1.5 overflow-hidden rounded-(--site-radius) border border-site-line bg-site-surface">
+          <div className="h-px bg-site-line" />
           <div className="flex items-start justify-between gap-3 px-4 pt-3">
             <div>
               <h3 className="font-display text-sm font-semibold text-site-ink">{draft.plan_title || '方案卡'}</h3>
@@ -183,7 +183,7 @@ export function PlanCardPanel() {
           </div>
 
           {foreignPatch && !patchAlreadyApplied && (
-          <section className="mx-4 mt-3 rounded-lg border border-[var(--site-dawn-line)]/40 bg-site-bg p-2.5">
+          <section className="mx-4 mt-3 rounded-lg border border-site-line bg-site-bg p-2.5">
             <p className="text-xs font-semibold text-site-ink">排程调整 · {foreignPatch.summary}</p>
             <ul className="mt-1.5 max-h-28 space-y-1 overflow-y-auto">
               {foreignPatch.ops.map((op, i) => (
@@ -194,7 +194,7 @@ export function PlanCardPanel() {
             </ul>
             <div className="mt-2 flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => useChatStore.setState({ patch: null })}>放弃</Button>
-              <Button size="sm" className="dawn-gradient text-white" disabled={patchPending} onClick={() => applyPatchOps(foreignPatch)}>
+              <Button size="sm" disabled={patchPending} onClick={() => applyPatchOps(foreignPatch)}>
                 {patchPending ? '应用中…' : '应用调整'}
               </Button>
             </div>
@@ -211,7 +211,7 @@ export function PlanCardPanel() {
                   {proposal ? (
                     <>
                       <Button variant="outline" size="sm" onClick={() => { useChatStore.setState({ artifact: null, clarifications: [] }); close(); }}>取消</Button>
-                      <Button size="sm" className="dawn-gradient text-white" disabled={isPending || draft.task_defs.length === 0} onClick={() => commit(draft)}>
+                      <Button size="sm" disabled={isPending || draft.task_defs.length === 0} onClick={() => commit(draft)}>
                         {isPending ? '生成中…' : '确认并生成'}
                       </Button>
                     </>
@@ -219,11 +219,11 @@ export function PlanCardPanel() {
                     <>
                       <Button variant="outline" size="sm" onClick={close}>关闭</Button>
                       {needsSchedule ? (
-                        <Button size="sm" className="dawn-gradient text-white" disabled={saving} onClick={() => { void saveAndGenerate(); }}>
+                        <Button size="sm" disabled={saving} onClick={() => { void saveAndGenerate(); }}>
                           {saving ? '生成中…' : '保存并生成排程'}
                         </Button>
                       ) : !unsaved ? (
-                        <Button size="sm" className="dawn-gradient text-white" disabled={saving} onClick={() => { void saveSaved(); }}>
+                        <Button size="sm" disabled={saving} onClick={() => { void saveSaved(); }}>
                           <Save className="mr-1 h-4 w-4" /> {saving ? '保存中…' : '保存修改'}
                         </Button>
                       ) : null}

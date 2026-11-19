@@ -41,13 +41,13 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
     <div
       role="dialog"
       aria-label="待确认的问题"
-      className="animate-guidy-fade-up rounded-(--site-radius) border border-[var(--site-dawn-line)]/40 bg-site-surface p-4 shadow-sm"
+      className="animate-guidy-fade-up rounded-(--site-radius) border border-site-line bg-site-surface p-4 shadow-sm"
     >
-      <div className="dawn-gradient mb-3 h-0.5 rounded-full" />
+      <div className="mb-3 h-px bg-site-line" />
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="font-display flex items-center gap-1.5 text-sm font-semibold text-site-ink">
-            <HelpCircle className="h-4 w-4 text-site-brand" />
+            <HelpCircle className="h-4 w-4 text-site-ink" />
             {artifact.title ?? '还需要确认'}
           </h3>
           <p className="mt-0.5 text-xs text-site-ink-soft">
@@ -61,7 +61,7 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
         </button>
       </div>
 
-      <ul className="mt-3 space-y-3">
+      <ul className="guidy-stagger mt-3 space-y-3">
         {artifact.questions.map((q, i) => {
           const showInput = custom[i] || !q.options?.length;
           return (
@@ -79,8 +79,8 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
                       className={cn(
                         'rounded-full border px-2.5 py-1 text-[11px] transition-colors',
                         active
-                          ? 'border-site-brand bg-site-brand/10 font-medium text-site-brand'
-                          : 'border-site-line bg-site-surface text-site-ink-soft hover:border-site-brand/50 hover:text-site-ink',
+                          ? 'border-site-ink bg-site-ink/10 font-medium text-site-ink'
+                          : 'border-site-line bg-site-surface text-site-ink-soft hover:border-site-ink/40 hover:text-site-ink',
                       )}
                     >
                       {option}
@@ -94,8 +94,8 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
                   className={cn(
                     'rounded-full border border-dashed px-2.5 py-1 text-[11px] transition-colors',
                     custom[i]
-                      ? 'border-site-brand bg-site-brand/10 font-medium text-site-brand'
-                      : 'border-site-line bg-site-surface text-site-ink-soft hover:border-site-brand/50 hover:text-site-ink',
+                      ? 'border-site-ink bg-site-ink/10 font-medium text-site-ink'
+                      : 'border-site-line bg-site-surface text-site-ink-soft hover:border-site-ink/40 hover:text-site-ink',
                   )}
                 >
                   {CUSTOM_ANSWER_LABEL}
@@ -122,7 +122,6 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
           <Button variant="outline" size="sm" onClick={onDismiss}>稍后再答</Button>
           <Button
             size="sm"
-            className="dawn-gradient text-white"
             disabled={answered === 0}
             onClick={() => onAnswer(composeAnswers(artifact, answers))}
           >

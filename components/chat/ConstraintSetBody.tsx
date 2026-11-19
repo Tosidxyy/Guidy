@@ -58,7 +58,7 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
             <Plus className="mr-0.5 h-3 w-3" /> 添加任务
           </Button>
         </div>
-        <ul className="space-y-1.5">
+        <ul className="guidy-stagger space-y-1.5">
           {draft.task_defs.map((t) => (
             <li key={t.key} className="rounded-lg border border-site-line bg-site-bg px-2.5 py-1.5">
               <div className="flex items-center gap-2">
@@ -123,7 +123,7 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
             <Plus className="mr-0.5 h-3 w-3" /> 补充
           </Button>
         </div>
-        <ul className="space-y-1.5">
+        <ul className="guidy-stagger space-y-1.5">
           {rules.map(({ payload: c, i }) => (
             <li key={i} className="rounded-lg border border-site-line bg-site-bg px-2.5 py-2">
               <div className="flex items-center gap-2">
@@ -168,7 +168,7 @@ export function ConstraintSetFooter({ children }: { children: React.ReactNode })
 
 export function ConfirmGenerateButton({ disabled, onClick }: { disabled?: boolean; onClick: () => void }) {
   return (
-    <Button size="sm" className="dawn-gradient text-white" disabled={disabled} onClick={onClick}>
+    <Button size="sm" disabled={disabled} onClick={onClick}>
       <Check className="mr-1 h-4 w-4" /> 确认并生成
     </Button>
   );

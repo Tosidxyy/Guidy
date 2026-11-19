@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { PanelLeftOpen, Sparkles } from 'lucide-react';
+import { PanelLeftOpen, MessageCircle } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useChat } from '@/lib/useChat';
 import { useChatStore, cursorAfterMessages, shouldAutoRestore } from '@/store/useChatStore';
@@ -90,7 +90,7 @@ export function ChatPanel() {
         <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="对话列表" title="对话与计划" onClick={() => openDrawer('plans')}>
           <PanelLeftOpen className="h-4 w-4" />
         </Button>
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-site-ink"><Sparkles className="h-4 w-4 text-site-brand" /> AI 对话排程</h2>
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-site-ink"><MessageCircle className="h-4 w-4 text-site-ink" /> AI 对话排程</h2>
       </div>
         <div className="flex items-center gap-1">
           {me.data && <span className="tabular text-[10px] text-site-ink-soft">今日剩余 {me.data.quotas.chat_remaining}</span>}
