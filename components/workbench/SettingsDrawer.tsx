@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { CalendarDays, Download, Moon, Settings2, Sun, Upload } from 'lucide-react';
+import { CalendarDays, Download, Moon, Settings2, Sun, Trash2, Upload } from 'lucide-react';
 import { ConstraintSchema, TaskDefSchema } from '@/shared/schemas';
 import type { PlanState } from '@/shared/types';
 import { api } from '@/lib/api';
 import { buildIcs, icsFileName } from '@/lib/ics';
 import { isPersistedPlanState } from '@/lib/storage';
+import { useRecovery } from '@/lib/useRecovery';
 import { usePlanStore } from '@/store/usePlanStore';
+import { useChatStore } from '@/store/useChatStore';
 import { useUiStore } from '@/store/useUiStore';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
@@ -29,6 +32,9 @@ export function SettingsDrawer() {
   const setVisibleRange = useUiStore((s) => s.setVisibleRange);
   const state = usePlanStore((s) => s.state);
   const importState = usePlanStore((s) => s.importState);
+  const streaming = useChatStore((s) => s.streaming);
+  const { deleteAll, isDeleting } = useRecovery();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const qc = useQueryClient();
@@ -218,7 +224,30 @@ export function SettingsDrawer() {
               }}
             />
           </section>
+
+          <Separator />
+
+          <section className="space-y-2">
+            <Label>删除数据</Label>
+            <p className="text-xs leading-relaxed text-site-ink-soft">永久删除当前身份下的全部计划、对话、共享日历与恢复码，不可恢复。建议先导出 JSON 备份。</p>
+            <Button variant="destructive" className="w-full" disabled={streaming || isDeleting} onClick={() => setConfirmDelete(true)}>
+              <Trash2 className="mr-1.5 h-4 w-4" /> {isDeleting ? '删除中…' : '删除我的全部数据'}
+            </Button>
+          </section>
         </div>
+
+        <AlertDialog open={confirmDelete} onOpenChange={(v) => { if (!v) setConfirmDelete(false); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="font-display">删除全部数据？</AlertDialogTitle>
+              <AlertDialogDescription>将永久删除你的所有计划、对话记录、共享日历块与恢复码，此操作不可恢复。确定继续？</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction onClick={() => { setConfirmDelete(false); deleteAll(); }}>确认删除</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );
