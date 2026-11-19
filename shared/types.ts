@@ -61,10 +61,24 @@ export interface SolveInput {
   pinned_blocks: Block[];
 }
 
+export interface UnplacedWork {
+  task_key: string;
+  title: string;
+  target_minutes: number;
+  placed_minutes: number;
+  missing_minutes: number;
+  reason: string;
+}
+
+export type Feasibility = 'FEASIBLE' | 'PARTIAL' | 'INFEASIBLE' | 'UNKNOWN';
+
 export interface SolveOutput {
   blocks: Block[];
   violations: Violation[];
   compromises: Compromise[];
+  /** FEASIBLE=全部硬约束满足；PARTIAL=部分任务未排（不可视为成功）；INFEASIBLE=完全排不下；UNKNOWN=求解超时/无法判定（当前同步算法保留）。 */
+  feasibility: Feasibility;
+  unplaced: UnplacedWork[];
   stats: { placed: number; unplaced: number; solve_ms: number };
 }
 

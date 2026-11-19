@@ -302,7 +302,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
         const pinned = patched.state.blocks.filter((b) => b.pinned || b.origin === 'manual');
         output = solve({ engine_version: ENGINE_VERSION, horizon_start: state.plan.horizon_start, horizon_days: state.plan.horizon_days, timezone: state.plan.timezone, task_defs: patched.state.task_defs, constraints: [...withShared(patched.state.constraints), ...sharedBlockCuts(useSharedCalendar.getState().busyBlocks, state.plan.timezone)], pinned_blocks: pinned });
       } else {
-        output = { blocks: patched.state.blocks, violations: [], compromises: [], stats: { placed: patched.state.blocks.length, unplaced: 0, solve_ms: 0 } };
+        output = { blocks: patched.state.blocks, violations: [], compromises: [], feasibility: 'FEASIBLE', unplaced: [], stats: { placed: patched.state.blocks.length, unplaced: 0, solve_ms: 0 } };
       }
       const diff = diffBlocks(state.blocks, output.blocks);
       set({ preview: { output, diff, reason: patch.summary, horizon_start: patched.state.plan.horizon_start, horizon_days: patched.state.plan.horizon_days }, lastCompromises: output.compromises });

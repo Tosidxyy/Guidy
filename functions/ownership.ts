@@ -1,5 +1,6 @@
 import { rows } from './db.ts';
 import type { Db } from './db.ts';
+import { SHARED_BLOCK_PLAN_ID } from '../shared/constants.ts';
 
 async function deleteWhere(db: Db, table: string, col: string, val: string): Promise<number> {
   const n = rows(await db.from(table).select(col).eq(col, val)).length;
@@ -23,8 +24,8 @@ export async function deleteVisitorData(db: Db, visitor: string): Promise<Record
   }
   // 公共日历块（plan_id 为空）不属于任何计划，必须按 owner 单独清理；
   // 否则「删除全部数据」后日历上仍留着上班等忙时块。
-  const publicBlocks = rows(await db.from('blocks').select('id').is('plan_id', null).eq('owner_visitor_id', visitor)).length;
-  if (publicBlocks) rows(await db.from('blocks').delete().is('plan_id', null).eq('owner_visitor_id', visitor));
+  const publicBlocks = rows(await db.from('blocks').select('id').eq('plan_id', SHARED_BLOCK_PLAN_ID).eq('owner_visitor_id', visitor)).length;
+  if (publicBlocks) rows(await db.from('blocks').delete().eq('plan_id', SHARED_BLOCK_PLAN_ID).eq('owner_visitor_id', visitor));
   deleted.blocks += publicBlocks;
   deleted.commit_log = await deleteWhere(db, 'commit_log', 'visitor_id', visitor);
   deleted.conversations = await deleteWhere(db, 'conversations', 'owner_visitor_id', visitor);
@@ -39,7 +40,7 @@ export async function transferOwnership(db: Db, from: string, to: string): Promi
   const plans = rows(await db.from('plans').update({ owner_visitor_id: to }).eq('owner_visitor_id', from).select('id'));
   const conversations = rows(await db.from('conversations').update({ owner_visitor_id: to }).eq('owner_visitor_id', from).select('id'));
   // 公共日历块不挂在计划下，按 owner 直接跟随；否则认领后共享日历会留在旧身份上。
-  rows(await db.from('blocks').update({ owner_visitor_id: to }).eq('owner_visitor_id', from).is('plan_id', null).select('id'));
+  rows(await db.from('blocks').update({ owner_visitor_id: to }).eq('owner_visitor_id', from).eq('plan_id', SHARED_BLOCK_PLAN_ID).select('id'));
   rows(await db.from('dispatch_intents').update({ visitor_id: to }).eq('visitor_id', from).select('request_id'));
   rows(await db.from('commit_log').update({ visitor_id: to }).eq('visitor_id', from).select('preview_id'));
   // quotas 有 (visitor_id, day) 唯一键：续跑时限流可能已给 to 重建今日行，

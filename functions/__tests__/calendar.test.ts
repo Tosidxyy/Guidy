@@ -3,6 +3,7 @@ import { application } from '../app';
 import { createMemoryDb } from '../../dev/fake-db';
 import { createFakeQca } from '../../dev/fake-qca';
 import { resultHash, solve } from '../engine';
+import { SHARED_BLOCK_PLAN_ID } from '../../shared/constants';
 import type { Deps, RouteCtx } from '../types';
 
 function deps(db = createMemoryDb()): Deps {
@@ -32,7 +33,7 @@ describe('共享日历：忙时实例化为公共块', () => {
 
     const first = await (await app(ctx('GET', '/api/calendar'))).json();
     expect(first.blocks.length).toBeGreaterThan(0);
-    expect(first.blocks.every((b: any) => b.plan_id === null && b.title === '上班')).toBe(true);
+    expect(first.blocks.every((b: any) => b.plan_id === SHARED_BLOCK_PLAN_ID && b.title === '上班')).toBe(true);
 
     const after = await (await app(ctx('GET', `/api/plans/${plan.plan.id}`))).json();
     expect(after.constraints.some((c: any) => c.payload.type === 'busy_window')).toBe(false);
@@ -81,6 +82,30 @@ describe('共享日历：固定日程 commit 当场物化为普通块', () => {
     if (!isWorkday(b.start_utc)) continue;
     expect(hhmm(b.start_utc) < '17:30' && hhmm(b.end_utc) > '09:00').toBe(false);
   }
+  });
+});
+
+describe('精确时间的学习：fixed_block 不重复落库', () => {
+  it('同名 fixed_block 计入任务，计划只有 1 个块，共享日历不物化 fixed_block', async () => {
+    const app = application(deps());
+    const input = {
+      title: '学习', horizon_start: '2026-11-20', horizon_days: 1, timezone: tz,
+      task_defs: [{ key: 'study_2h', title: '学习', category: 'study', duration_min: 120, frequency: { type: 'once' }, priority: 'mid', splittable: false, sort_order: 0 }],
+      constraints: [
+        { id: crypto.randomUUID(), payload: { type: 'active_window', start: '07:00', end: '23:00' }, source: 'user', enabled: true },
+        { id: crypto.randomUUID(), payload: { type: 'fixed_block', title: '学习', category: 'study', date: '2026-11-20', start: '14:00', end: '16:00' }, source: 'user', enabled: true },
+      ],
+    };
+    const hash = await resultHash(solve({ engine_version: 1, ...input, pinned_blocks: [] }).blocks);
+    const res = await app(ctx('POST', '/api/plans/commit', { preview_id: 'link-1', plan_id: null, input, result_hash: hash, engine_version: 1 }));
+    expect(res.status).toBe(200);
+    const committed = await res.json();
+    const study = committed.blocks.filter((b: any) => b.title === '学习');
+    expect(study).toHaveLength(1);
+    expect(study[0].task_key).toBe('study_2h');
+    expect(committed.constraints.some((c: any) => c.payload.type === 'busy_window' || c.payload.type === 'fixed_block')).toBe(false);
+    const cal = await (await app(ctx('GET', '/api/calendar'))).json();
+    expect(cal.blocks.filter((b: any) => b.title === '学习')).toHaveLength(0);
   });
 });
 

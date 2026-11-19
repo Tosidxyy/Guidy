@@ -12,7 +12,7 @@ import { appFrame, insertMessage, appendAssistant, advanceCursor, sha256Hex } fr
 import { readSSE } from '../qca/sse.mjs';
 import { LIMITS, ENGINE_VERSION } from '../shared/constants.ts';
 import { solve } from '../engine.ts';
-import { findConflicts, type ConflictPlan } from '../shared/engine/conflicts.ts';
+import { findConflicts, type ConflictPlan, type PlanConflict } from '../shared/engine/conflicts.ts';
 import { trimArtifactToFit } from '../shared/engine/fit.ts';
 import { formatAvailability, weeklyAvailability, type AvailabilitySource } from '../shared/engine/availability.ts';
 import { sharedBusyBlocks } from './calendar.ts';
@@ -20,7 +20,7 @@ import { ensureProfileRow, ensureLearned } from './profile.ts';
 import { constraintText } from '../../lib/describe.ts';
 import type { OtherPlanContext } from '../prompt.ts';
 import type { Deps, RouteCtx, AppEvent } from '../types.ts';
-import type { PlanState } from '../shared/types.ts';
+import type { PlanState, Violation } from '../shared/types.ts';
 import type { Block } from '../shared/types.ts';
 
 export const interruptRegistry = new Map<string, AbortController>();
@@ -52,7 +52,7 @@ function windowSummary(constraints: any[]): { id: string; text: string }[] {
 }
 
 // 新对话（草稿）没有活动计划：给一份只读的共享日历摘要，避免让用户重复说空闲时间。
-async function loadSharedCalendar(db: Deps['db'], visitor: string): Promise<{ others: OtherPlanContext[]; sources: AvailabilitySource[] }> {
+async function loadSharedCalendar(db: Deps['db'], visitor: string): Promise<{ conflicts: PlanConflict[]; others: OtherPlanContext[]; sources: AvailabilitySource[] }> {
   const plans = rows(await db.from('plans').select('*').eq('owner_visitor_id', visitor).order('updated_at', { ascending: false }).limit(3));
   const out: OtherPlanContext[] = [];
   const sources: AvailabilitySource[] = [];
@@ -64,21 +64,23 @@ async function loadSharedCalendar(db: Deps['db'], visitor: string): Promise<{ ot
     sources.push({ constraints, blocks });
     out.push({ id: p.id, title: p.title, horizon_start: p.horizon_start, horizon_days: p.horizon_days, timezone: p.timezone, blocks, tasks, windows: windowSummary(constraints) });
   }
-  return { others: out, sources };
+  return { conflicts: [], others: out, sources };
 }
 // 其他计划：块只取与活动计划 horizon 相交的（控制 token），
 // 但「已有时段」（忙时/可安排）是每周重复的安排，与 horizon 无关，始终带上。
 async function loadRelatedPlans(db: Deps['db'], visitor: string, active: PlanState) {
+  // 只接收 loadPlanState 从库里载入的计划，id 必非空（PlanState 的 null 仅用于前端草稿）
+  const activeId = active.plan.id!;
   const plans = rows(await db.from('plans').select('*').eq('owner_visitor_id', visitor).order('updated_at', { ascending: false }));
   const activeRange = horizonRange(active.plan);
-  const conflictSources: ConflictPlan[] = [{ id: active.plan.id, title: active.plan.title, blocks: active.blocks }];
+  const conflictSources: ConflictPlan[] = [{ id: activeId, title: active.plan.title, blocks: active.blocks }];
   const others: OtherPlanContext[] = [];
   // 空的新计划自带的 07:00–23:00 只是默认值，不代表用户真实可用时间；
   // 有块或任务定义后它的约束才算数。
   const activeEstablished = active.blocks.length > 0 || active.task_defs.length > 0;
   const sources: AvailabilitySource[] = [{ constraints: activeEstablished ? active.constraints : [], blocks: active.blocks }];
   for (const p of plans) {
-    if (p.id === active.plan.id) continue;
+    if (p.id === activeId) continue;
     if (others.length >= 3) break;
     const blocks = rows(await db.from('blocks').select('*').eq('plan_id', p.id));
     const constraints = rows(await db.from('constraints').select('*').eq('plan_id', p.id));
@@ -101,7 +103,7 @@ async function loadRelatedPlans(db: Deps['db'], visitor: string, active: PlanSta
       windows,
     });
   }
-  const conflicts = conflictSources.length > 1 ? findConflicts(conflictSources, { onlyPlanId: active.plan.id }) : [];
+  const conflicts = conflictSources.length > 1 ? findConflicts(conflictSources, { onlyPlanId: activeId }) : [];
   return { conflicts, others, sources };
 }
 
@@ -178,7 +180,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         let finalText = '';
         let bestText = '';
         let repairNote = '';
-        let pendingViolations: { task_key: string; reason: string }[] = [];
+        let pendingViolations: Violation[] = [];
         let lastEventId: string | null = conv.last_event_id;
         let terminalState: 'completed' | 'failed' | 'interrupted' = 'failed';
         for (let attempt = 0; attempt < 3; attempt++) {

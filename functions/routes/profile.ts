@@ -6,6 +6,7 @@ import type { Db } from '../db.ts';
 import { requireVisitor } from '../identity.ts';
 import { localDay, localMinutes, weekdayOfDay } from '../shared/engine/time.ts';
 import { summarizeHabit, type LearnedHabit, type LocalActivity, type Profile } from '../shared/profile.ts';
+import { SHARED_BLOCK_PLAN_ID } from '../shared/constants.ts';
 import type { Deps, RouteCtx } from '../types.ts';
 
 const TZ = 'Asia/Shanghai';
@@ -58,7 +59,7 @@ export async function ensureLearned(db: Db, visitor: string, profile: Profile, f
     const blocks = rows(await db.from('blocks').select('start_utc,end_utc,title').eq('plan_id', p.id));
     activities.push(...collectActivities(blocks as any[], p.timezone ?? TZ));
   }
-  const shared = rows(await db.from('blocks').select('start_utc,end_utc,title').is('plan_id', null).eq('owner_visitor_id', visitor));
+  const shared = rows(await db.from('blocks').select('start_utc,end_utc,title').eq('plan_id', SHARED_BLOCK_PLAN_ID).eq('owner_visitor_id', visitor));
   activities.push(...collectActivities(shared as any[], TZ));
   const inWindow = activities.filter((a) => a.day >= from && a.day <= to).slice(0, MAX_BLOCKS);
   const learned = summarizeHabit(inWindow, today);

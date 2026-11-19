@@ -95,6 +95,8 @@ export function buildSystemPrompt(): string {
     '- preferred_period：{type:"preferred_period", task_key 或 category（二选一）, period, strength:"soft"}。strength 只能是 soft。只在用户明确说过时段偏好时使用。',
     '- buffer：{type:"buffer", minutes:0–120 整数}。',
     '- fixed_block：{type:"fixed_block", title≤60, category, weekday 或 date（二选一）, start:"HH:mm", end:"HH:mm"(须晚于 start)}。',
+    '- 用户指定了明确的具体时段（如「明天下午2点学习两小时」）：输出一条该标题的 once 任务 + 一条同日同名的 fixed_block，时长与时段与用户所说一致。系统会把同名固定块计入该任务，不会再重复排一次；不要另外再安排这条任务的其它时段。',
+    '- fixed_block 仅用于用户明确给出时间的承诺（会议/上课/预约等），不要凭空生成；没有明确时间的任务交给系统排程。',
     '- deadline：{type:"deadline", date:"YYYY-MM-DD", label≤30}。',
     'weekday：0=周日、1=周一 … 6=周六。所有时间用 HH:mm 本地时区。',
     '',

@@ -1,5 +1,5 @@
 import { DEFAULT_ACTIVE, DEFAULT_MUTEX_GAP, MIN_FRAGMENT_MIN, PERIOD_BOUNDS, PRIORITY_WEIGHT } from '../constants.ts';
-import type { Block, Compromise, Constraint, SolveInput, SolveOutput, TaskDef, Violation } from '../types.ts';
+import type { Block, Compromise, Constraint, Feasibility, SolveInput, SolveOutput, TaskDef, UnplacedWork, Violation } from '../types.ts';
 import { dayList, gapBetween, hhmmToMin, localDay, localMinutes, subtractIntervals, utcAt, weekdayOfDay, type Interval } from './time.ts';
 
 interface DayContext {
@@ -41,6 +41,7 @@ export function solve(input: SolveInput): SolveOutput {
   const days = dayList(horizon_start, horizon_days, tz);
   const compromises: Compromise[] = [];
   const violations: Violation[] = [];
+  const targetMinutes = new Map<string, number>();
   let idCounter = 0;
   const usedIds = new Set<string>();
   const nextId = () => {
@@ -63,6 +64,12 @@ export function solve(input: SolveInput): SolveOutput {
   // 结构矛盾前置检测：硬性同日互斥 × 每日任务必然无解（对方至少占一天）。
   // 提前给出指向互斥约束的精确违例，避免落成「可用时段不足」这类误导文案。
   const taskByKey = new Map(input.task_defs.map((t) => [t.key, t]));
+  // 同名固定块视为该任务的落位（用户指定了具体时间，如「明天下午2点学习两小时」）。
+  const tasksByTitle = new Map<string, TaskDef[]>();
+  for (const t of input.task_defs) {
+    const k = t.title.trim();
+    tasksByTitle.set(k, [...(tasksByTitle.get(k) ?? []), t]);
+  }
   const structuralBlocked = new Set<string>();
   for (const rule of mutexRules) {
     if (rule.strength !== 'hard' || rule.mode !== 'no_same_day' || rule.kind !== 'task') continue;
@@ -128,29 +135,6 @@ export function solve(input: SolveInput): SolveOutput {
     consumeCap(ctx.day, block.category, interval.end - interval.start);
   };
 
-  for (const c of constraints) {
-    if (c.payload.type !== 'fixed_block') continue;
-    const p = c.payload;
-    for (const ctx of ctxByDay.values()) {
-      const hit = p.date !== undefined ? p.date === ctx.day : p.weekday === ctx.weekday;
-      if (!hit) continue;
-      const interval = { start: hhmmToMin(p.start), end: hhmmToMin(p.end) };
-      registerBlock(ctx, {
-        id: nextId(), title: p.title, category: p.category,
-        start_utc: utcAt(ctx.day, interval.start, tz), end_utc: utcAt(ctx.day, interval.end, tz),
-        priority: 'high', pinned: true, origin: 'fixed',
-      }, interval);
-    }
-  }
-
-  for (const pinned of input.pinned_blocks) {
-    const day = localDay(pinned.start_utc, tz);
-    const ctx = ctxByDay.get(day);
-    if (!ctx) continue;
-    const interval = { start: localMinutes(pinned.start_utc, tz), end: localMinutes(pinned.end_utc, tz) };
-    registerBlock(ctx, { ...pinned }, interval);
-  }
-
   const pinnedByTask = new Map<string, { count: number; days: Set<string> }>();
   for (const pinned of input.pinned_blocks) {
     if (!pinned.task_key) continue;
@@ -160,6 +144,39 @@ export function solve(input: SolveInput): SolveOutput {
     entry.count += 1;
     entry.days.add(day);
     pinnedByTask.set(pinned.task_key, entry);
+  }
+
+  for (const c of constraints) {
+    if (c.payload.type !== 'fixed_block') continue;
+    const p = c.payload;
+    const sameTitle = tasksByTitle.get(p.title.trim()) ?? [];
+    const linked = sameTitle.length === 1 ? sameTitle[0] : undefined;
+    for (const ctx of ctxByDay.values()) {
+      const hit = p.date !== undefined ? p.date === ctx.day : p.weekday === ctx.weekday;
+      if (!hit) continue;
+      const interval = { start: hhmmToMin(p.start), end: hhmmToMin(p.end) };
+      registerBlock(ctx, {
+        id: nextId(), title: p.title, category: p.category,
+        ...(linked ? { task_key: linked.key } : {}),
+        start_utc: utcAt(ctx.day, interval.start, tz), end_utc: utcAt(ctx.day, interval.end, tz),
+        priority: 'high', pinned: true, origin: 'fixed',
+      }, interval);
+      // 同名任务已在固定时段落位：计入完成量，避免再排一次同样的任务。
+      if (linked) {
+        const entry = pinnedByTask.get(linked.key) ?? { count: 0, days: new Set<string>() };
+        entry.count += 1;
+        entry.days.add(ctx.day);
+        pinnedByTask.set(linked.key, entry);
+      }
+    }
+  }
+
+  for (const pinned of input.pinned_blocks) {
+    const day = localDay(pinned.start_utc, tz);
+    const ctx = ctxByDay.get(day);
+    if (!ctx) continue;
+    const interval = { start: localMinutes(pinned.start_utc, tz), end: localMinutes(pinned.end_utc, tz) };
+    registerBlock(ctx, { ...pinned }, interval);
   }
 
   const mutexConflict = (ctx: DayContext, candidate: { task_key?: string; category: string }, interval: Interval): MutexRule | null => {
@@ -218,7 +235,11 @@ export function solve(input: SolveInput): SolveOutput {
       const avail = slot.end - s;
       if (!task.splittable && avail < task.duration_min) continue;
       if (task.splittable && avail < MIN_FRAGMENT_MIN) continue;
-      out.push({ start: s, end: s + Math.min(avail, task.duration_min) });
+      // 每日上限是硬约束：单个块不得超过当天剩余额度（拆分任务按剩余额度切片）。
+      const capLeft = capFor(ctx.day, task.category);
+      const length = task.splittable ? Math.min(avail, task.duration_min, capLeft) : Math.min(avail, task.duration_min);
+      if (task.splittable && length < MIN_FRAGMENT_MIN) continue;
+      out.push({ start: s, end: s + length });
     }
     return out;
   };
@@ -341,6 +362,7 @@ export function solve(input: SolveInput): SolveOutput {
       target = task.frequency.type === 'daily' ? days.length : 1;
       while (placedCount < target && placeOne()) placedCount += 1;
     }
+    targetMinutes.set(task.key, target * task.duration_min);
 
     if (placedCount < target && !structuralBlocked.has(task.key)) {
       const missing = target - placedCount;
@@ -355,11 +377,39 @@ export function solve(input: SolveInput): SolveOutput {
   }
 
   outputBlocks.sort((a, b) => a.start_utc.localeCompare(b.start_utc) || a.title.localeCompare(b.title));
+  const placedByKey = new Map<string, number>();
+  let scheduledMinutes = 0;
+  for (const b of outputBlocks) {
+    const minutes = Math.round((Date.parse(b.end_utc) - Date.parse(b.start_utc)) / 60000);
+    if (b.origin !== 'fixed') scheduledMinutes += minutes;
+    if (!b.task_key) continue;
+    placedByKey.set(b.task_key, (placedByKey.get(b.task_key) ?? 0) + minutes);
+  }
+  const unplaced: UnplacedWork[] = [];
+  for (const t of input.task_defs) {
+    const target = targetMinutes.get(t.key) ?? t.duration_min;
+    const done = placedByKey.get(t.key) ?? 0;
+    if (done >= target) continue;
+    const detail = violations.find((v) => v.task_key === t.key);
+    unplaced.push({
+      task_key: t.key,
+      title: t.title,
+      target_minutes: target,
+      placed_minutes: done,
+      missing_minutes: target - done,
+      reason: detail?.reason ?? '可用时段不足',
+    });
+  }
+  const feasibility: Feasibility = violations.length === 0
+    ? 'FEASIBLE'
+    : (scheduledMinutes > 0 || outputBlocks.length > 0 ? 'PARTIAL' : 'INFEASIBLE');
   const placed = outputBlocks.filter((b) => b.origin === 'engine').length;
   return {
     blocks: outputBlocks,
     violations,
     compromises,
-    stats: { placed, unplaced: violations.length, solve_ms: 0 },
+    feasibility,
+    unplaced,
+    stats: { placed, unplaced: unplaced.length, solve_ms: 0 },
   };
 }

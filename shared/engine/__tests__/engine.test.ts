@@ -94,6 +94,37 @@ describe('engine solve', () => {
     expect(localMinutes(fixed!.start_utc, TZ)).toBe(840);
   });
 
+  it('E5b 同名 fixed_block 计入任务落位：不再重复排一次', () => {
+    const out = solve(input({
+      task_defs: [task({ key: 'study', title: '学习', duration_min: 120, frequency: { type: 'once' } })],
+      constraints: [active(), cons({ type: 'fixed_block', title: '学习', category: 'study', date: '2026-11-20', start: '14:00', end: '16:00' })],
+    }));
+    const study = out.blocks.filter((b) => b.title === '学习');
+    expect(study).toHaveLength(1);
+    expect(study[0].task_key).toBe('study');
+    expect(study[0].origin).toBe('fixed');
+    expect(localDay(study[0].start_utc, TZ)).toBe('2026-11-20');
+    expect(localMinutes(study[0].start_utc, TZ)).toBe(840);
+    expect(out.violations).toHaveLength(0);
+  });
+
+  it('E-feasibility：满排 FEASIBLE；有缺口 PARTIAL + unplaced 明细', () => {
+    const ok = solve(input({ task_defs: [task({ key: 'a', duration_min: 60, frequency: { type: 'once' } })], constraints: [active()] }));
+    expect(ok.feasibility).toBe('FEASIBLE');
+    expect(ok.unplaced).toHaveLength(0);
+
+    const bad = solve(input({
+      task_defs: [task({ key: 'paper', title: '论文', duration_min: 300, frequency: { type: 'per_week', count: 5 }, splittable: true })],
+      constraints: [active(), cons({ type: 'daily_cap', category: 'study', max_minutes: 120 })],
+    }));
+    expect(bad.feasibility).toBe('PARTIAL');
+    const u = bad.unplaced.find((x) => x.task_key === 'paper');
+    expect(u).toBeTruthy();
+    expect(u!.target_minutes).toBe(1500);
+    expect(u!.placed_minutes).toBeLessThan(1500);
+    expect(u!.missing_minutes).toBe(1500 - u!.placed_minutes);
+  });
+
   it('E6 mutex hard no_same_day：math/english 不同日', () => {
     const out = solve(input({
       task_defs: [

@@ -5,7 +5,7 @@ import { rows } from '../db.ts';
 import type { Db } from '../db.ts';
 import { requireVisitor } from '../identity.ts';
 import { solve, resultHash } from '../engine.ts';
-import { ENGINE_VERSION, LIMITS, QUOTAS } from '../shared/constants.ts';
+import { ENGINE_VERSION, LIMITS, QUOTAS, SHARED_BLOCK_PLAN_ID } from '../shared/constants.ts';
 import { TaskDefSchema, ConstraintSchema, PlanBlockSchema, HorizonDaysSchema } from '../shared/schemas.ts';
 import { horizonBounds, sharedBusyBlocks, materializeSharedBusy, MATERIALIZED_NOTE } from './calendar.ts';
 import type { Deps, RouteCtx } from '../types.ts';
@@ -68,7 +68,7 @@ export async function deletePlan(ctx: RouteCtx, deps: Deps, params: string[]): P
   // 共享日历是计划的投影：删掉最后一个计划后，物化出来的忙时块一并清理，日历回到空态。
   const remaining = rows(await deps.db.from('plans').select('id').eq('owner_visitor_id', visitor));
   if (!remaining.length) {
-    const materialized = rows(await deps.db.from('blocks').select('id').is('plan_id', null).eq('owner_visitor_id', visitor).eq('notes', MATERIALIZED_NOTE));
+    const materialized = rows(await deps.db.from('blocks').select('id').eq('plan_id', SHARED_BLOCK_PLAN_ID).eq('owner_visitor_id', visitor).eq('notes', MATERIALIZED_NOTE));
     for (const b of materialized as { id: string }[]) {
       await deps.db.from('blocks').delete().eq('id', b.id).eq('owner_visitor_id', visitor);
     }
@@ -97,7 +97,7 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const busy = await sharedBusyBlocks(deps.db, visitor, bounds.from, bounds.to);
   const busyIds = new Set(busy.map((b: any) => b.id));
   const output = solve({ engine_version: ENGINE_VERSION, horizon_start: input.horizon_start, horizon_days: input.horizon_days, timezone: input.timezone, task_defs: input.task_defs, constraints: mergeConstraints(input.constraints, sharedWindows), pinned_blocks: busy.map((b: any) => ({ ...b, pinned: true })) });
-  if (output.violations.length) fail('engine_infeasible', 422, { violations: output.violations, compromises: output.compromises });
+  if (output.violations.length) fail('engine_infeasible', 422, { violations: output.violations, compromises: output.compromises, feasibility: output.feasibility, unplaced: output.unplaced });
   const serverHash = await resultHash(output.blocks);
   const server_authoritative = serverHash !== result_hash;
   let plan;
@@ -133,7 +133,14 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
   }
   const blocks = rows(await deps.db.from('blocks').select('*').eq('plan_id', plan.id).order('start_utc', { ascending: true }));
   const constraints = rows(await deps.db.from('constraints').select('*').eq('plan_id', plan.id));
-  return Response.json({ plan, task_defs: input.task_defs, constraints, blocks, version: plan.version, server_authoritative, violations: [], compromises: output.compromises });
+  // 落库自检：读回的计划块必须与求解结果一致，否则明确失败而不是返回 200。
+  const expected = output.blocks.filter((x) => !busyIds.has(x.id));
+  const expectedMinutes = expected.reduce((m, b) => m + Math.round((Date.parse(b.end_utc) - Date.parse(b.start_utc)) / 60000), 0);
+  const actualMinutes = blocks.reduce((m: number, b: any) => m + Math.round((Date.parse(b.end_utc) - Date.parse(b.start_utc)) / 60000), 0);
+  if (blocks.length !== expected.length || actualMinutes !== expectedMinutes) {
+    fail('write_verification_failed', 500, { expected_blocks: expected.length, actual_blocks: blocks.length, expected_minutes: expectedMinutes, actual_minutes: actualMinutes, plan_id: plan.id });
+  }
+  return Response.json({ plan, task_defs: input.task_defs, constraints, blocks, version: plan.version, server_authoritative, violations: [], compromises: output.compromises, feasibility: output.feasibility, unplaced: output.unplaced });
 }
 const SaveSchema = z.object({
   plan_id: z.string().uuid().nullable().optional(),

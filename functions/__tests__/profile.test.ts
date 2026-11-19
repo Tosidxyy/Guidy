@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { application } from '../app';
 import { createMemoryDb } from '../../dev/fake-db';
 import { createFakeQca } from '../../dev/fake-qca';
+import { ensureSharedPlan } from '../routes/calendar';
 import type { Deps, RouteCtx } from '../types';
 
 function deps(db = createMemoryDb()): Deps {
@@ -32,9 +33,10 @@ describe('profile 路由', () => {
   });
   it('画像从日历块统计；访客之间隔离', async () => {
     const d = deps();
+    await ensureSharedPlan(d.db);
     for (const [i, day] of ['2026-11-16', '2026-11-17', '2026-11-18'].entries()) {
       await d.db.from('blocks').insert({
-        plan_id: null, owner_visitor_id: 'v', title: '晨跑', category: 'fitness',
+        plan_id: '00000000-0000-0000-0000-000000000000', owner_visitor_id: 'v', title: '晨跑', category: 'fitness',
         start_utc: `${day}T23:00:00.000Z`, end_utc: `${day}T23:40:00.000Z`,
         priority: 'mid', pinned: false, origin: 'manual', notes: null,
       }).select('id');

@@ -1,4 +1,5 @@
 import { createRouter, type Route } from './router.ts';
+import { strictDb } from './db.ts';
 import type { Deps, RouteCtx } from './types.ts';
 import { health } from './routes/health.ts';
 import { me } from './routes/me.ts';
@@ -11,6 +12,8 @@ import { recoveryGenerate, recoveryClaim } from './routes/recovery.ts';
 import { deleteAll } from './routes/data.ts';
 import { getProfile, updateProfile, learnProfile } from './routes/profile.ts';
 export function application(deps: Deps) {
+  // 写失败必须可见：所有查询经严格包装，错误直接抛出而不是随 200 响应被吞掉。
+  const strict: Deps = { ...deps, db: strictDb(deps.db) };
   const routes: Route[] = [
     { method: 'GET', pattern: /^\/api\/health$/, handler: health },
     { method: 'GET', pattern: /^\/api\/me$/, handler: me },
@@ -35,5 +38,5 @@ export function application(deps: Deps) {
     { method: 'POST', pattern: /^\/api\/data\/delete-all$/, handler: deleteAll },
   ];
   const router = createRouter(routes);
-  return (ctx: RouteCtx) => router(ctx, deps);
+  return (ctx: RouteCtx) => router(ctx, strict);
 }

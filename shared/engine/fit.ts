@@ -1,6 +1,6 @@
-import { solve } from './solve';
-import type { ConstraintSetArtifact } from '../schemas';
-import type { Block, TaskDef } from '../types';
+import { solve } from './solve.ts';
+import type { ConstraintSetArtifact } from '../schemas.ts';
+import type { Block, TaskDef } from '../types.ts';
 
 export type FitPlanMeta = { horizon_start: string; timezone: string };
 

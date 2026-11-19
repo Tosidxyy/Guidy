@@ -1,5 +1,10 @@
 export const ENGINE_VERSION = 1 as const;
 
+// blocks.plan_id 在云端为 NOT NULL 且外键引用 plans(id)：共享日历块用哨兵计划承接。
+// 只在 DB 边界使用；前端 Block 类型没有 plan_id 字段，感知不到哨兵。
+export const SHARED_BLOCK_PLAN_ID = '00000000-0000-0000-0000-000000000000';
+export const SHARED_PLAN_OWNER = '__shared_calendar__';
+
 export const CATEGORIES = [
   { key: 'study', label: '学习', color: '#0f1419', icon: 'book-open' },
   { key: 'fitness', label: '健身', color: '#292f33', icon: 'dumbbell' },

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMemoryDb } from '../../dev/fake-db';
 import { deleteVisitorData, transferOwnership } from '../ownership';
+import { SHARED_BLOCK_PLAN_ID } from '../../shared/constants';
 
 function seedDb() {
   return createMemoryDb({
@@ -10,8 +11,8 @@ function seedDb() {
     ],
     blocks: [
       { id: 'b1', plan_id: 'p1', title: '块', start_utc: '2026-11-16T01:00:00Z', end_utc: '2026-11-16T02:00:00Z' },
-      { id: 'bp1', plan_id: null, owner_visitor_id: 'o', title: '上班', start_utc: '2026-11-16T01:00:00Z', end_utc: '2026-11-16T09:30:00Z' },
-      { id: 'bp2', plan_id: null, owner_visitor_id: 'x', title: '他人的忙时', start_utc: '2026-11-16T01:00:00Z', end_utc: '2026-11-16T09:30:00Z' },
+      { id: 'bp1', plan_id: SHARED_BLOCK_PLAN_ID, owner_visitor_id: 'o', title: '上班', start_utc: '2026-11-16T01:00:00Z', end_utc: '2026-11-16T09:30:00Z' },
+      { id: 'bp2', plan_id: SHARED_BLOCK_PLAN_ID, owner_visitor_id: 'x', title: '他人的忙时', start_utc: '2026-11-16T01:00:00Z', end_utc: '2026-11-16T09:30:00Z' },
     ],
     task_defs: [{ id: 't1', plan_id: 'p1', key: 'k', title: '任务', category: 'study', duration_min: 60, frequency: { type: 'daily' } }],
     constraints: [{ id: 'k1', plan_id: 'p1', type: 'active_window', start: '07:00', end: '23:00' }],
