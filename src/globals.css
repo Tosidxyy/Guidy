@@ -326,3 +326,57 @@
 .guidy-prose :where(table) { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 0.5rem 0; font-size: 0.85em; }
 .guidy-prose :where(th, td) { border: 1px solid var(--site-line); padding: 0.3rem 0.5rem; text-align: left; vertical-align: top; white-space: nowrap; }
 .guidy-prose :where(th) { background: var(--site-surface-2); font-weight: 600; }
+
+/* ── 开屏：背景虚化与静态 logo 隐藏（收位同帧恢复） ───────────── */
+.intro-blur {
+  filter: blur(18px);
+}
+.intro-hide-logo [data-intro-target] {
+  opacity: 0;
+}
+.guidy-intro-reveal {
+  animation: guidy-intro-reveal 900ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes guidy-intro-reveal {
+  from { mask-position: 100% 100%; -webkit-mask-position: 100% 100%; }
+  to { mask-position: 0% 0%; -webkit-mask-position: 0% 0%; }
+}
+
+/* ── Agent 对话边框蓝色流光（streaming 加速） ─────────────────── */
+@property --flow-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+:root {
+  --site-flow: #1d9bf0;
+}
+.dark {
+  --site-flow: #4da3ff;
+}
+.guidy-flow-border {
+  position: relative;
+}
+.guidy-flow-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(from var(--flow-angle), transparent 0deg 250deg, var(--site-flow) 300deg, color-mix(in srgb, var(--site-flow) 55%, #ffffff) 330deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: guidy-flow-spin var(--flow-duration, 3.2s) linear infinite;
+  pointer-events: none;
+}
+.guidy-flow-border[data-streaming='true'] {
+  --flow-duration: 0.9s;
+}
+.guidy-flow-border[data-streaming='true']::before {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--site-flow) 45%, transparent));
+}
+@keyframes guidy-flow-spin {
+  to { --flow-angle: 360deg; }
+}

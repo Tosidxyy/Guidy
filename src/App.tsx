@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { CalendarDays, MessageSquare } from 'lucide-react';
 import { useUiStore } from '@/store/useUiStore';
@@ -15,12 +15,15 @@ import { TasksDrawer } from '@/components/workbench/TasksDrawer';
 import { SettingsDrawer } from '@/components/workbench/SettingsDrawer';
 import { PlansDrawer } from '@/components/workbench/PlansDrawer';
 import { PrivacyFooter } from '@/components/brand/PrivacyFooter';
+import { BrandIntro } from '@/components/brand/BrandIntro';
 import { CalendarPanel } from '@/components/calendar/CalendarPanel';
 
 export default function App() {
   const theme = useUiStore((s) => s.theme);
   const mobileTab = useUiStore((s) => s.mobileTab);
   const setMobileTab = useUiStore((s) => s.setMobileTab);
+  const [intro, setIntro] = useState(true);
+  const [introBlur, setIntroBlur] = useState(true);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -51,7 +54,7 @@ export default function App() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex h-dvh flex-col bg-site-bg text-site-ink">
+      <div className={cn('flex h-dvh flex-col bg-site-bg text-site-ink transition-[filter] duration-500', intro && introBlur && 'intro-blur', intro && 'intro-hide-logo')}>
         <TopBar />
         <main className="flex min-h-0 flex-1 gap-3 p-3">
           <div className={cn('min-h-0 w-full lg:block lg:w-[38%] lg:shrink-0', mobileTab === 'chat' ? 'block' : 'hidden')}>
@@ -92,6 +95,7 @@ export default function App() {
         <PlansDrawer />
         <Toaster position="top-center" closeButton />
       </div>
+      {intro && <BrandIntro onDone={() => setIntro(false)} onUnblur={() => setIntroBlur(false)} />}
     </TooltipProvider>
   );
 }

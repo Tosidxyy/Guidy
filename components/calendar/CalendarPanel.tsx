@@ -689,7 +689,7 @@ export function CalendarPanel() {
   };
 
   return (
-    <section className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-(--site-radius) border border-site-line bg-site-surface shadow-sm" aria-label="计划日历">
+    <section className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-(--site-radius) border border-site-ink/15 bg-site-surface shadow-sm" aria-label="计划日历">
       <ConflictBar
         conflicts={conflicts}
         activePlanId={state.plan.id}
@@ -709,7 +709,7 @@ export function CalendarPanel() {
                 type="button"
                 onClick={() => { setDayAnchor(d); useUiStore.getState().setView('day'); }}
                 className={cn(
-                  'flex flex-col items-center gap-0.5 border-l border-site-line-soft py-2 transition-colors hover:bg-site-surface-2',
+                  'flex flex-col items-center gap-0.5 border-l border-site-line py-2 transition-colors hover:bg-site-surface-2',
                   isToday && 'bg-site-surface-2/60',
                 )}
                 title="切换到日视图"
@@ -747,9 +747,9 @@ export function CalendarPanel() {
             return (
               <div
                 key={day}
-                className={cn('relative border-l border-site-line-soft', isToday && 'bg-site-surface-2/60')}
+                className={cn('relative border-l border-site-line', isToday && 'bg-site-surface-2/60')}
                 style={{
-                  backgroundImage: `repeating-linear-gradient(to bottom, var(--site-line-soft) 0, var(--site-line-soft) 1px, transparent 1px, transparent ${HOUR_PX}px)`,
+                  backgroundImage: `repeating-linear-gradient(to bottom, var(--site-line) 0, var(--site-line) 1px, transparent 1px, transparent ${HOUR_PX}px)`,
                 }}
                 onDoubleClick={(e) => onColumnDoubleClick(e, day)}
                 onPointerDown={onColumnPointerDown}
@@ -771,7 +771,7 @@ export function CalendarPanel() {
                     style={{
                       top: (Math.max(w.start, visibleStart) - visibleStart) * PX_PER_MIN,
                       height: (Math.min(w.end, visibleEnd) - Math.max(w.start, visibleStart)) * PX_PER_MIN,
-                      background: 'repeating-linear-gradient(-45deg, color-mix(in srgb, var(--site-ink-soft) 7%, transparent) 0 6px, transparent 6px 12px)',
+                      background: 'repeating-linear-gradient(-45deg, color-mix(in srgb, var(--site-ink-soft) 10%, transparent) 0 6px, transparent 6px 12px)',
                     }}
                   >
                     <span className="mt-1 rounded bg-site-surface/80 px-1.5 py-0.5 text-[10px] text-site-ink-soft">{w.label}</span>
