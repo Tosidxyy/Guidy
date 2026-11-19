@@ -1,14 +1,14 @@
 export const ENGINE_VERSION = 1 as const;
 
 export const CATEGORIES = [
-  { key: 'study', label: '学习', color: '#4C6EF5', icon: 'book-open' },
-  { key: 'fitness', label: '健身', color: '#2F9E6E', icon: 'dumbbell' },
-  { key: 'reading', label: '阅读', color: '#D98E04', icon: 'library' },
-  { key: 'work', label: '工作', color: '#0E8A9E', icon: 'briefcase' },
-  { key: 'life', label: '生活', color: '#E2694F', icon: 'home' },
-  { key: 'creative', label: '创造', color: '#9C5BD1', icon: 'palette' },
-  { key: 'rest', label: '休息', color: '#7C8AA0', icon: 'moon' },
-  { key: 'other', label: '其他', color: '#8C7A6B', icon: 'shapes' },
+  { key: 'study', label: '学习', color: '#0f1419', icon: 'book-open' },
+  { key: 'fitness', label: '健身', color: '#292f33', icon: 'dumbbell' },
+  { key: 'reading', label: '阅读', color: '#43494d', icon: 'library' },
+  { key: 'work', label: '工作', color: '#5c6367', icon: 'briefcase' },
+  { key: 'life', label: '生活', color: '#757c81', icon: 'home' },
+  { key: 'creative', label: '创造', color: '#8e959a', icon: 'palette' },
+  { key: 'rest', label: '休息', color: '#a7aeb3', icon: 'moon' },
+  { key: 'other', label: '其他', color: '#c0c7cb', icon: 'shapes' },
 ] as const;
 
 export type CategoryKey = (typeof CATEGORIES)[number]['key'];

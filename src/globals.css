@@ -18,72 +18,73 @@
   scrollbar-gutter: stable;
 }
 
-/* ── Guidy 设计令牌：晨光时间轴 ─────────────────────────────── */
+/* ── Guidy 设计令牌：X 单色 ─────────────────────────────── */
 :root {
-  --site-bg: #f7f5f0;
-  --site-fg: #232733;
-  --site-accent: #4c6ef5;
+  --site-bg: #ffffff;
+  --site-fg: #0f1419;
+  --site-accent: #0f1419;
   --site-on-accent: #ffffff;
   --site-surface: #ffffff;
-  --site-muted: #5c6270;
-  --site-border: #e4dfd5;
+  --site-muted: #536471;
+  --site-border: #eff3f4;
   --site-font: "Inter", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
-  --site-radius: 10px;
+  --site-radius: 16px;
   --site-space: 1;
   --site-type: 1;
   --site-motion: 1;
 
-  --site-surface-2: #f1eee7;
-  --site-ink-soft: #5c6270;
-  --site-line: #e4dfd5;
-  --site-line-soft: #efeae1;
-  --site-scrim: rgba(35, 39, 51, 0.45);
+  --site-surface-2: #f7f9f9;
+  --site-ink-soft: #536471;
+  --site-line: #eff3f4;
+  --site-line-soft: #f7f9f9;
+  --site-scrim: rgba(15, 20, 25, 0.45);
 
-  --site-brand: #4c6ef5;
-  --site-brand-ink: #ffffff;
-  --site-dawn: linear-gradient(135deg, #ffb86b 0%, #ff7e5f 45%, #6a5ae0 100%);
-  --site-dawn-soft: rgba(255, 126, 95, 0.07);
-  --site-dawn-line: #ff7e5f;
+  --site-success: #00ba7c;
+  --site-warning: #946300;
+  --site-warning-text: #946300;
+  --site-danger: #f4212e;
+  --site-info: #0f1419;
 
-  --site-success: #2f9e6e;
-  --site-warning: #d98e04;
-  --site-warning-text: #a66a00;
-  --site-danger: #d64545;
-  --site-info: #4c6ef5;
-
-  --site-cat-study: #4c6ef5;
-  --site-cat-fitness: #2f9e6e;
-  --site-cat-reading: #d98e04;
-  --site-cat-work: #0e8a9e;
-  --site-cat-life: #e2694f;
-  --site-cat-creative: #9c5bd1;
-  --site-cat-rest: #7c8aa0;
-  --site-cat-other: #8c7a6b;
+  --site-cat-study: #0f1419;
+  --site-cat-fitness: #292f33;
+  --site-cat-reading: #43494d;
+  --site-cat-work: #5c6367;
+  --site-cat-life: #757c81;
+  --site-cat-creative: #8e959a;
+  --site-cat-rest: #a7aeb3;
+  --site-cat-other: #c0c7cb;
 
   --site-font-display: "Space Grotesk", "Inter", "PingFang SC", "Microsoft YaHei", sans-serif;
   --site-motion-quick: calc(120ms * var(--site-motion));
-  --site-motion-standard: calc(200ms * var(--site-motion));
-  --site-motion-slow: calc(320ms * var(--site-motion));
-  --site-ease-glide: cubic-bezier(0.22, 1, 0.36, 1);
+  --site-motion-standard: calc(180ms * var(--site-motion));
+  --site-motion-slow: calc(240ms * var(--site-motion));
+  --site-ease-glide: cubic-bezier(0.16, 1, 0.3, 1);
   --site-ease-snap: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .dark {
-  --site-bg: #13151b;
-  --site-fg: #edeef2;
-  --site-accent: #6d8dff;
-  --site-on-accent: #ffffff;
-  --site-surface: #1b1e26;
-  --site-muted: #9aa0ae;
-  --site-border: #2e3340;
-  --site-surface-2: #232733;
-  --site-ink-soft: #9aa0ae;
-  --site-line: #2e3340;
-  --site-line-soft: #262b36;
+  --site-bg: #000000;
+  --site-fg: #e7e9ea;
+  --site-accent: #e7e9ea;
+  --site-on-accent: #000000;
+  --site-surface: #000000;
+  --site-muted: #71767b;
+  --site-border: #2f3336;
+  --site-surface-2: #16181c;
+  --site-ink-soft: #71767b;
+  --site-line: #2f3336;
+  --site-line-soft: #16181c;
   --site-scrim: rgba(0, 0, 0, 0.6);
-  --site-brand: #6d8dff;
-  --site-dawn-soft: rgba(255, 126, 95, 0.1);
-  --site-warning-text: #e8a13c;
+  --site-warning: #ffd400;
+  --site-warning-text: #ffd400;
+  --site-cat-study: #f5f8fa;
+  --site-cat-fitness: #dbe0e3;
+  --site-cat-reading: #c1c7cb;
+  --site-cat-work: #a7aeb3;
+  --site-cat-life: #8d949a;
+  --site-cat-creative: #737a80;
+  --site-cat-rest: #596066;
+  --site-cat-other: #3f464c;
 }
 
 :root {
@@ -104,7 +105,7 @@
   --destructive: var(--site-danger);
   --border: var(--site-border);
   --input: var(--site-border);
-  --ring: var(--site-brand);
+  --ring: var(--site-accent);
   --radius: var(--site-radius);
   --chart-1: var(--site-cat-study);
   --chart-2: var(--site-cat-fitness);
@@ -116,12 +117,12 @@
   --chart-8: var(--site-cat-other);
   --sidebar: var(--site-surface);
   --sidebar-foreground: var(--site-fg);
-  --sidebar-primary: var(--site-brand);
-  --sidebar-primary-foreground: var(--site-brand-ink);
+  --sidebar-primary: var(--site-accent);
+  --sidebar-primary-foreground: var(--site-on-accent);
   --sidebar-accent: var(--site-surface-2);
   --sidebar-accent-foreground: var(--site-fg);
   --sidebar-border: var(--site-border);
-  --sidebar-ring: var(--site-brand);
+  --sidebar-ring: var(--site-accent);
 }
 
 @theme inline {
@@ -163,7 +164,7 @@
   --color-site-ink-soft: var(--site-ink-soft);
   --color-site-line: var(--site-line);
   --color-site-line-soft: var(--site-line-soft);
-  --color-site-brand: var(--site-brand);
+  --color-site-brand: var(--site-accent);
   --color-site-success: var(--site-success);
   --color-site-warning: var(--site-warning);
   --color-site-warning-text: var(--site-warning-text);
@@ -187,10 +188,9 @@
   --text-3xl: calc(1.875rem * var(--site-type));
   --text-4xl: calc(2.25rem * var(--site-type));
   --text-5xl: calc(3rem * var(--site-type));
-  --default-transition-duration: calc(150ms * var(--site-motion));
+  --default-transition-duration: calc(180ms * var(--site-motion));
   --animate-guidy-shake: guidy-shake 240ms ease-in-out;
   --animate-guidy-shimmer: guidy-shimmer 1.4s linear infinite;
-  --animate-guidy-breathe: guidy-breathe 1s ease-in-out infinite;
   --animate-guidy-settle: guidy-settle var(--site-motion-standard) var(--site-ease-snap);
   --animate-guidy-fade-up: guidy-fade-up var(--site-motion-slow) var(--site-ease-glide) both;
 }
@@ -204,10 +204,6 @@
 @keyframes guidy-shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
-}
-@keyframes guidy-breathe {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
 }
 @keyframes guidy-settle {
   0% { transform: scale(0.96); opacity: 0.6; }
@@ -249,22 +245,27 @@
     background: var(--site-bg);
     color: var(--site-fg);
     font-family: var(--site-font);
+    font-size: 15px;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
 
   ::selection {
-    background: rgba(255, 126, 95, 0.25);
+    background: color-mix(in srgb, var(--site-fg) 20%, transparent);
   }
 
   :focus-visible {
-    outline: 2px solid var(--site-brand);
+    outline: 2px solid var(--site-accent);
     outline-offset: 2px;
     border-radius: 4px;
   }
 
   button, a {
-    transition-duration: calc(150ms * var(--site-motion));
+    transition-duration: var(--site-motion-quick);
+  }
+
+  body {
+    transition: background-color calc(160ms * var(--site-motion)) ease-out, color calc(160ms * var(--site-motion)) ease-out;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -279,18 +280,11 @@
 @layer utilities {
   .font-display {
     font-family: var(--site-font-display);
+    font-weight: 700;
+    letter-spacing: -0.02em;
   }
   .tabular {
     font-variant-numeric: tabular-nums;
-  }
-  .dawn-gradient {
-    background-image: var(--site-dawn);
-  }
-  .dawn-text {
-    background-image: var(--site-dawn);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
   }
   .guidy-noise {
     position: relative;
@@ -308,18 +302,21 @@
     background-size: 200% 100%;
     animation: guidy-shimmer 1.4s linear infinite;
   }
+  .guidy-stagger > * {
+    animation: guidy-fade-up var(--site-motion-slow) var(--site-ease-glide) both;
+  }
+  .guidy-stagger > *:nth-child(2) { animation-delay: 24ms; }
+  .guidy-stagger > *:nth-child(3) { animation-delay: 48ms; }
+  .guidy-stagger > *:nth-child(4) { animation-delay: 72ms; }
+  .guidy-stagger > *:nth-child(5) { animation-delay: 96ms; }
+  .guidy-stagger > *:nth-child(6) { animation-delay: 120ms; }
+  .guidy-stagger > *:nth-child(7) { animation-delay: 144ms; }
+  .guidy-stagger > *:nth-child(8) { animation-delay: 168ms; }
 }
 
 .guidy-cursor {
-  background: linear-gradient(180deg, var(--site-dawn-line), var(--site-brand));
-  animation: guidy-cursor-breathe 1s ease-in-out infinite;
-}
-@keyframes guidy-cursor-breathe {
-  0%, 100% { opacity: 0.25; }
-  50% { opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .guidy-cursor { animation: none; opacity: 1; }
+  background: var(--site-fg);
+  opacity: 1;
 }
 .guidy-prose :where(p, ul, ol) { margin: 0.25rem 0; }
 .guidy-prose :where(ul, ol) { padding-left: 1.1rem; }

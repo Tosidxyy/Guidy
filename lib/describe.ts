@@ -8,7 +8,7 @@ export function categoryLabel(key: string): string {
 }
 
 export function categoryColor(key: string): string {
-  return CATEGORY_MAP[key]?.color ?? '#8C7A6B';
+  return CATEGORY_MAP[key] ? `var(--site-cat-${key})` : 'var(--site-cat-other)';
 }
 
 export function frequencyText(f: Frequency): string {
