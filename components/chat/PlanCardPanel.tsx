@@ -175,7 +175,7 @@ export function PlanCardPanel() {
             </ul>
             <div className="mt-2 flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => useChatStore.setState({ patch: null })}>放弃</Button>
-              <Button size="sm" disabled={patchPending} onClick={() => applyPatchOps(foreignPatch)}>
+              <Button size="sm" disabled={patchPending} onClick={() => { setDraft(null); void applyPatchOps(foreignPatch); }}>
                 {patchPending ? '应用中…' : '应用调整'}
               </Button>
             </div>
