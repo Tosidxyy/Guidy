@@ -239,7 +239,7 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
       const old = existingPlanRow;
       writeVersion = Number(old.version ?? 1) + 1;
       oldActive = old.active_version == null ? null : Number(old.active_version);
-      const claim = rows(await deps.db.from('plans').update({ version: writeVersion }).eq('id', effectivePlanId).eq('owner_visitor_id', visitor).eq('version', Number(old.version ?? 1)).select('id'));
+      const claim = rows(await deps.db.from('plans').update({ version: writeVersion, pending_fence: fence }).eq('id', effectivePlanId).eq('owner_visitor_id', visitor).eq('version', Number(old.version ?? 1)).select('id'));
       if (!claim.length) fail('commit_conflict', 409, { reason: '计划正在被另一个提交修改，请重试' });
       plan = { ...old, version: writeVersion };
       await deps.db.from('commit_claims').update({ plan_id: effectivePlanId, claimed_version: writeVersion }).eq('idempotency_key', claimKey).eq('fence', fence);
@@ -247,7 +247,7 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
       const count = rows(await deps.db.from('plans').select('id').eq('owner_visitor_id', visitor)).length;
       if (count >= QUOTAS.plansPerVisitor) fail('plan_quota_exceeded', 429, { limit: QUOTAS.plansPerVisitor });
       // 先建草稿壳（active_version=0 → 块不可见）；发布时再转 active，崩溃只会留下空草稿。
-      plan = rows(await deps.db.from('plans').insert({ owner_visitor_id: visitor, title: input.title, horizon_start: input.horizon_start, horizon_days: input.horizon_days, timezone: input.timezone, status: 'draft', version: 1, active_version: 0 }).select('*'))[0];
+      plan = rows(await deps.db.from('plans').insert({ owner_visitor_id: visitor, title: input.title, horizon_start: input.horizon_start, horizon_days: input.horizon_days, timezone: input.timezone, status: 'draft', version: 1, active_version: 0, pending_fence: fence }).select('*'))[0];
       await deps.db.from('commit_claims').update({ plan_id: plan.id, claimed_version: writeVersion }).eq('idempotency_key', claimKey).eq('fence', fence);
     }
     const planIdForWrite = plan.id;
@@ -277,15 +277,17 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
     const payload = { title: input.title, horizon_start: input.horizon_start, horizon_days: input.horizon_days, timezone: input.timezone, status: 'active', active_version: writeVersion, config, updated_at: new Date().toISOString() };
     let flipped: any;
     if (effectivePlanId) {
+      // 发布 CAS：visitor + active_version + 本次认领的 pending_fence 在同一行条件更新中原子校验。
+      // 若被接管（fence 已递增/pending_fence 被覆盖），这里必然 0 行，无法发布。
       const flipTo = async (matcher: 'null' | 'undefined') => {
-        const q = deps.db.from('plans').update(payload).eq('id', planIdForWrite).eq('owner_visitor_id', visitor);
+        const q = deps.db.from('plans').update(payload).eq('id', planIdForWrite).eq('owner_visitor_id', visitor).eq('pending_fence', fence);
         return rows(await (matcher === 'null' ? q.is('active_version', null) : q.is('active_version', undefined)).select('*'))[0];
       };
       flipped = oldActive != null
-        ? rows(await deps.db.from('plans').update(payload).eq('id', planIdForWrite).eq('owner_visitor_id', visitor).eq('active_version', oldActive).select('*'))[0]
+        ? rows(await deps.db.from('plans').update(payload).eq('id', planIdForWrite).eq('owner_visitor_id', visitor).eq('active_version', oldActive).eq('pending_fence', fence).select('*'))[0]
         : ((await flipTo('null')) ?? (await flipTo('undefined')));
     } else {
-      flipped = rows(await deps.db.from('plans').update(payload).eq('id', planIdForWrite).eq('owner_visitor_id', visitor).eq('active_version', 0).select('*'))[0];
+      flipped = rows(await deps.db.from('plans').update(payload).eq('id', planIdForWrite).eq('owner_visitor_id', visitor).eq('active_version', 0).eq('pending_fence', fence).select('*'))[0];
     }
     if (!flipped) throw Object.assign(new Error('commit_conflict'), { code: 'commit_conflict', status: 409, details: { reason: '计划状态已被其他提交改变，本次不发布' } });
     plan = flipped;

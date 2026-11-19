@@ -105,3 +105,40 @@ npm run build           # tsc + vite + function package 通过
 ## 8. 停止扩张声明
 
 按任务要求，本轮完成后不再扩张底层架构；除非后续测试发现新的阻断性问题，否则仅进行缺陷修复与必要回归。
+---
+
+## 9. 专项复核：Fencing Token 发布竞态（2026-11-19 追加）
+
+### 竞态是否存在
+
+- **复核前**：`assertFence()` 是对 `commit_claims` 的独立 SELECT，发布是随后对 `plans` 的单行 UPDATE（CAS `id + owner_visitor_id + active_version`）。
+  - 场景“A 检查 fence=1 → B 接管并**完成**发布 → A 恢复发布”：B 的发布把 `active_version` 从 N 改为 N+2，A 的 CAS `active_version=N` 必然 0 行 → **A 无法覆盖 B**（已由 active_version CAS 保护）。
+  - **但存在残余窗口**：A 通过 fence 检查后暂停，B 接管（fence=2）却**尚未发布**时，A 恢复仍能凭 `active_version=N` CAS 发布成功——即 fence 检查与发布之间不是原子验证（TOCTOU）。
+- **复核后**：新增数据库级原子保护 `plans.pending_fence`（迁移 `0012_pending_fence.sql`）。
+  - 版本认领时同一行写入 `pending_fence = 本次执行的 fence`（`functions/routes/plans.ts` 版本认领 update）；
+  - 发布 CAS 同时要求 `pending_fence = fence`（`functions/routes/plans.ts` 发布 update 的三个分支）；
+  - B 的接管/认领会覆盖 `pending_fence`，因此即使 B 尚未发布，A 恢复后的发布也必然 0 行 → `409 commit_conflict`，无法发布。
+  - 最终发布操作在**同一行条件更新**中原子校验：`visitor_id + active_version + pending_fence`；fence/state 的权威来源同时体现为 `pending_fence` 与认领行的 fence/state。
+
+### 精确竞态测试（`functions/__tests__/publish-race.test.ts`，全部通过）
+
+测试用“发布闸门”在 **fence 检查之后、发布 UPDATE 真正执行之前**暂停（不是检查之前）：
+
+1. `A 通过 fence 检查后暂停 → B 接管并完成发布 → A 恢复必须 409 且不覆盖 B`：断言 A=409 commit_conflict；plan 的 config/active_version 与块 id 全部等于 B 的发布；A 的暂存版本行无残留；认领行 fence=2、state=done。
+2. `A 被接管但 B 尚未发布时，A 恢复也无法发布`：仅模拟接管（claim.fence=2、plans.pending_fence=2），A 发布 → 409，active_version 保持 1、标题未变（证明 pending_fence 原子校验生效）。
+3. `相反情况：A 在租约有效时先发布成功，随后 B（旧期望）必须版本冲突`：B 先认领版本并停在发布前，A 正常发布成功；B 恢复 → 409，A 的 config/active_version/块未被覆盖。
+4. `同 key 在 A 成功后重试 → 直接回放，不产生新版本`。
+
+### 验证结果
+
+```
+npx vitest run functions/__tests__/publish-race.test.ts   # 4/4 通过
+npx vitest run                                            # 66 文件 / 537 用例通过
+npm run check:function                                    # 通过
+npm run build                                             # 通过
+```
+
+### 迁移状态
+
+- 新增 `0012_pending_fence.sql`（`ALTER TABLE app.plans ADD COLUMN pending_fence integer`，可空）。
+- 与 0007–0011 一样**尚未应用到云端**（本轮无部署授权）；云端运行新代码前必须先应用该迁移，否则发布 CAS 会因缺少列而失败（strictDb 会显式报错，不会静默）。
