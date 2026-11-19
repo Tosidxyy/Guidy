@@ -1,24 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
+import { useUiStore } from '@/store/useUiStore';
 
 const GLIDE = 'cubic-bezier(0.16, 1, 0.3, 1)';
 const REVEAL_START = 100;
-const SEG_STAGGER = 55;
-const SEG_FADE = 300;
+const SEG_STAGGER = 22;
+const SEG_FADE = 260;
 const WORD_START = 900;
 const WORD_MS = 500;
 const FLY_START = 1700;
 const FLY_MS = 600;
 
-const SYMBOL_MASK: React.CSSProperties = {
-  maskImage: 'url(/brand/symbol-black.png)',
-  maskSize: 'contain',
-  maskRepeat: 'no-repeat',
-  maskPosition: 'center',
-  WebkitMaskImage: 'url(/brand/symbol-black.png)',
-  WebkitMaskSize: 'contain',
-  WebkitMaskRepeat: 'no-repeat',
-  WebkitMaskPosition: 'center',
-};
+/** 主题对应的透明底符号贴图（免 mask，合成器友好）；主题取自 store，首渲染即正确。 */
+function symbolTexture(dark: boolean): string {
+  return dark ? 'url(/brand/symbol-white.png)' : 'url(/brand/symbol-black.png)';
+}
 
 /** 道路中心线站点（图标盒百分比）+ 行进方向；分段clip沿路径排序：尾→左弯→右上→尖。 */
 const BASE_STATIONS: [number, number, number, number][] = [
@@ -32,15 +27,20 @@ const BASE_STATIONS: [number, number, number, number][] = [
   [74, 22, 0.8, -0.6],
   [80, 18, 0.8, -0.6],
 ];
-/** 加密站点：相邻中点插值，段间重叠更大 → 显形边缘柔和无硬切面。 */
+/** 加密站点：每相邻站插 4 个中点 → 41 段，前沿连续推进无跳格。 */
 const STATIONS: [number, number, number, number][] = BASE_STATIONS.flatMap((s, i) => {
   if (i === BASE_STATIONS.length - 1) return [s];
   const n = BASE_STATIONS[i + 1];
-  return [s, [(s[0] + n[0]) / 2, (s[1] + n[1]) / 2, (s[2] + n[2]) / 2, (s[3] + n[3]) / 2] as [number, number, number, number]];
+  const out: [number, number, number, number][] = [s];
+  for (let k = 1; k <= 4; k++) {
+    const t = k / 5;
+    out.push([s[0] + (n[0] - s[0]) * t, s[1] + (n[1] - s[1]) * t, s[2] + (n[2] - s[2]) * t, s[3] + (n[3] - s[3]) * t]);
+  }
+  return out;
 });
 
-/** 站点处垂直于行进方向的带状clip（沿路径重叠，保证柔和过渡）。 */
-function bandPolygon(x: number, y: number, tx: number, ty: number): string {
+/** 站点处垂直于行进方向的带状clip；返回子层bbox（图标%）与子层局部clip，子层纹理只覆盖带区。 */
+function band(x: number, y: number, tx: number, ty: number) {
   const len = Math.hypot(tx, ty);
   const ux = tx / len;
   const uy = ty / len;
@@ -54,7 +54,12 @@ function bandPolygon(x: number, y: number, tx: number, ty: number): string {
     [x + px * half + ux * thick, y + py * half + uy * thick],
     [x - px * half + ux * thick, y - py * half + uy * thick],
   ];
-  return `polygon(${pts.map(([a, b]) => `${a.toFixed(2)}% ${b.toFixed(2)}%`).join(', ')})`;
+  const left = Math.min(...pts.map((p) => p[0]));
+  const top = Math.min(...pts.map((p) => p[1]));
+  const w = Math.max(...pts.map((p) => p[0])) - left;
+  const h = Math.max(...pts.map((p) => p[1])) - top;
+  const poly = `polygon(${pts.map(([a, b]) => `${(((a - left) / w) * 100).toFixed(2)}% ${(((b - top) / h) * 100).toFixed(2)}%`).join(', ')})`;
+  return { poly, left, top, w, h };
 }
 
 /**
@@ -70,6 +75,8 @@ export function BrandIntro({ onDone, onUnblur }: { onDone: () => void; onUnblur:
   const cbRef = useRef({ onDone, onUnblur });
   cbRef.current = { onDone, onUnblur };
   const [size] = useState(() => Math.min(250, Math.round(window.innerWidth * 0.5)));
+  const theme = useUiStore((s) => s.theme);
+  const tex = symbolTexture(theme === 'dark');
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -154,14 +161,29 @@ export function BrandIntro({ onDone, onUnblur }: { onDone: () => void; onUnblur:
   return (
     <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-5">
       <span ref={markRef} aria-hidden="true" className="relative block" style={{ width: size, height: size, transformOrigin: 'top left' }}>
-        {STATIONS.map(([x, y, tx, ty], i) => (
-          <span
-            key={i}
-            data-seg={i}
-            className="absolute inset-0 block"
-            style={{ backgroundColor: 'var(--site-fg)', clipPath: bandPolygon(x, y, tx, ty), opacity: 0, ...SYMBOL_MASK }}
-          />
-        ))}
+        {STATIONS.map(([x, y, tx, ty], i) => {
+          const b = band(x, y, tx, ty);
+          return (
+            <span
+              key={i}
+              data-seg={i}
+              className="absolute block"
+              style={{
+                left: `${b.left}%`,
+                top: `${b.top}%`,
+                width: `${b.w}%`,
+                height: `${b.h}%`,
+                backgroundImage: tex,
+                backgroundSize: `${size}px ${size}px`,
+                backgroundPosition: `${(-b.left / 100) * size}px ${(-b.top / 100) * size}px`,
+                backgroundRepeat: 'no-repeat',
+                clipPath: b.poly,
+                opacity: 0,
+                willChange: 'opacity',
+              }}
+            />
+          );
+        })}
       </span>
       <span
         ref={wordRef}
