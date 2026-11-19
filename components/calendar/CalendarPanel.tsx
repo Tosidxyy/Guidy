@@ -25,6 +25,8 @@ import { BlockCard, type BlockVisualState } from './BlockCard';
 import { ConflictBar } from './ConflictBar';
 import { GUTTER_PX, HOUR_PX, PX_PER_MIN, SNAP_MIN, layoutDay, snap } from './layout';
 import { QuickAddDialog } from './QuickAddDialog';
+import { ParallelReview } from './ParallelReview';
+import { loadPairs, pairKey } from '@/lib/parallel';
 
 const WEEKDAY_LABEL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -152,6 +154,66 @@ export function CalendarPanel() {
   }, [state.plan.id, switchPlan]);
 
   const tz = state.plan.timezone;
+
+  // 并行对变化（接受/取消）→ 触发合并渲染重算。
+  const [parallelTick, setParallelTick] = useState(0);
+  useEffect(() => {
+    const onChange = () => setParallelTick((t) => t + 1);
+    window.addEventListener('guidy:parallel-changed', onChange);
+    return () => window.removeEventListener('guidy:parallel-changed', onChange);
+  }, []);
+
+  // 已接受的并行对 → 显示层合并为一个「A + B」块（底层仍是独立块，备注拼接、逐行标题）。
+  const { displayBlocks, compositeIds } = useMemo(() => {
+    const pairs = loadPairs();
+    if (!pairs.size || !state.blocks.length || !foreign.length) {
+      return { displayBlocks: combinedBlocks, compositeIds: new Set<string>() };
+    }
+    const foreignArr = foreign.map((f) => f.block);
+    const groups = new Map<string, { own: (typeof state.blocks)[number]; others: (typeof state.blocks)[number][] }>();
+    const dayMin = (b: (typeof state.blocks)[number]) => ({ day: localDay(b.start_utc, tz), s: localMinutes(b.start_utc, tz), e: localMinutes(b.end_utc, tz) });
+    for (const own of state.blocks) {
+      const oi = dayMin(own);
+      for (const fb of foreignArr) {
+        if (!pairs.has(pairKey(own.id, fb.id))) continue;
+        const fi = dayMin(fb);
+        if (!(oi.day === fi.day && oi.s < fi.e && fi.s < oi.e)) continue;
+        const g = groups.get(own.id) ?? { own, others: [] };
+        if (!g.others.some((x) => x.id === fb.id)) g.others.push(fb);
+        groups.set(own.id, g);
+      }
+    }
+    if (!groups.size) return { displayBlocks: combinedBlocks, compositeIds: new Set<string>() };
+    const consumed = new Set<string>();
+    const composites: (typeof state.blocks)[number][] = [];
+    for (const [ownId, g] of groups) {
+      if (!g.others.length) continue;
+      consumed.add(ownId);
+      g.others.forEach((o) => consumed.add(o.id));
+      const all = [g.own, ...g.others];
+      composites.push({
+        id: `parallel-${ownId}`,
+        title: all.map((b) => b.title).join(' + '),
+        category: g.own.category,
+        start_utc: new Date(Math.min(...all.map((b) => Date.parse(b.start_utc)))).toISOString(),
+        end_utc: new Date(Math.max(...all.map((b) => Date.parse(b.end_utc)))).toISOString(),
+        priority: 'high',
+        pinned: false,
+        origin: 'engine',
+        notes: all.map((b) => b.notes).filter(Boolean).join('；') || undefined,
+      });
+    }
+    return {
+      displayBlocks: [
+        ...state.blocks.filter((b) => !consumed.has(b.id)),
+        ...foreignArr.filter((b) => !consumed.has(b.id)),
+        ...busyBlocks,
+        ...composites,
+      ],
+      compositeIds: new Set(composites.map((c) => c.id)),
+    };
+  }, [combinedBlocks, state.blocks, foreign, busyBlocks, tz, parallelTick]);
+
   const today = todayStr(tz);
   const anchor = dayAnchor ?? today;
 
@@ -165,7 +227,7 @@ export function CalendarPanel() {
   const bodyH = (visibleEnd - visibleStart) * PX_PER_MIN;
   const cols = { gridTemplateColumns: `${GUTTER_PX}px repeat(${days.length}, minmax(0, 1fr))` };
 
-  const positioned = useMemo(() => days.map((d) => layoutDay(combinedBlocks, d, tz)), [days, combinedBlocks, tz]);
+  const positioned = useMemo(() => days.map((d) => layoutDay(displayBlocks, d, tz)), [days, displayBlocks, tz]);
 
   const busyByDay = useMemo(() => days.map((d) => {
     const wd = weekdayOfDay(d, tz);
@@ -637,6 +699,7 @@ export function CalendarPanel() {
         : preview
           ? ghostVisual(p.block.id)
           : invalidIds.includes(p.block.id) ? 'invalid' : selectedIds.includes(p.block.id) ? 'selected' : 'normal';
+      const composite = compositeIds.has(p.block.id);
       return (
         <BlockCard
           key={p.block.id}
@@ -648,12 +711,13 @@ export function CalendarPanel() {
           leftPct={(p.lane / p.lanes) * 100}
           widthPct={100 / p.lanes}
           visual={visual}
-          planLabel={foreignInfo?.planLabel}
+          planLabel={composite ? '并行' : foreignInfo?.planLabel}
+          titleLines={composite ? p.block.title.split(' + ') : undefined}
           compact={(p.endMin - p.startMin) * PX_PER_MIN < 40}
-          onPointerDown={(e, b) => beginDrag(e, b, 'move', foreignInfo, busy)}
-          onResizeDown={(e, b) => beginDrag(e, b, 'resize', foreignInfo, busy)}
-          onOpen={foreignInfo ? undefined : (b) => openDrawer('block', b.id)}
-          onClick={foreignInfo ? () => {
+          onPointerDown={composite ? undefined : (e, b) => beginDrag(e, b, 'move', foreignInfo, busy)}
+          onResizeDown={composite ? undefined : (e, b) => beginDrag(e, b, 'resize', foreignInfo, busy)}
+          onOpen={composite || foreignInfo ? undefined : (b) => openDrawer('block', b.id)}
+          onClick={foreignInfo && !composite ? () => {
             if (Date.now() - lastForeignDrag.current < 400) return;
             setForeignTarget({ planId: foreignInfo.planId, planTitle: foreignInfo.planLabel, blockTitle: p.block.title, drag: false });
           } : undefined}
@@ -845,6 +909,7 @@ export function CalendarPanel() {
       </footer>
 
       <QuickAddDialog />
+      <ParallelReview />
 
       <AlertDialog open={!!foreignTarget} onOpenChange={(v) => { if (!v) setForeignTarget(null); }}>
         <AlertDialogContent>

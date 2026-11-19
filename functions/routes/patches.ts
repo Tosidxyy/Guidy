@@ -9,6 +9,7 @@ import { ENGINE_VERSION } from '../../shared/constants.ts';
 import { ApplyOpSchema } from '../../shared/schemas.ts';
 import { getOwnedPlan, sharedRecurringFor } from './plans.ts';
 import { horizonBounds, sharedBusyBlocks, materializeSharedBusy } from './calendar.ts';
+import { localDay, localMinutes, minToHHmm } from '../../shared/engine/time.ts';
 import type { Deps, RouteCtx } from '../types.ts';
 import type { PlanState } from '../../shared/types.ts';
 
@@ -35,6 +36,32 @@ async function loadState(db: Db, visitor: string, planId: string): Promise<PlanS
   const constraints = rows(await db.from('constraints').select('*').eq('plan_id', planId));
   const blocks = rows(await db.from('blocks').select('*').eq('plan_id', planId).order('start_utc', { ascending: true }));
   return { plan, task_defs, constraints, blocks } as PlanState;
+}
+
+/** 其他计划的块 → 当日忙时裁剪，供本计划重排避让（跨计划全局日历）。 */
+async function otherPlanBusyCuts(db: Db, visitor: string, planId: string, tz: string): Promise<any[]> {
+  const plans = rows(await db.from('plans').select('id').eq('owner_visitor_id', visitor));
+  const cuts: any[] = [];
+  for (const p of plans as any[]) {
+    if (p.id === planId) continue;
+    const blocks = rows(await db.from('blocks').select('*').eq('plan_id', p.id));
+    for (const b of blocks as any[]) {
+      cuts.push({
+        id: `cut-other-${b.id}`,
+        payload: {
+          type: 'busy_window',
+          date: localDay(b.start_utc, tz),
+          start: minToHHmm(localMinutes(b.start_utc, tz)),
+          end: minToHHmm(localMinutes(b.end_utc, tz)),
+          label: b.title,
+        },
+        source: 'user',
+        enabled: true,
+      });
+      if (cuts.length >= 200) return cuts;
+    }
+  }
+  return cuts;
 }
 
 export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Response> {
@@ -94,7 +121,9 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
   const shouldReschedule = patched.requiresReschedule && (state.blocks.length > 0 || explicitReschedule) && !explicitLayout;
   if (shouldReschedule) {
     const pinned = [...patched.state.blocks.filter((b) => b.pinned || b.origin === 'manual'), ...busy.map((b: any) => ({ ...b, pinned: true }))];
-    const out = solve({ engine_version: ENGINE_VERSION, horizon_start: patched.state.plan.horizon_start, horizon_days: patched.state.plan.horizon_days, timezone: patched.state.plan.timezone, task_defs: patched.state.task_defs, constraints: effective, pinned_blocks: pinned });
+    // 其他计划的块并入忙时：拒绝并行后的自动重排要真正避开它们。
+    const otherCuts = await otherPlanBusyCuts(deps.db, visitor, plan_id, patched.state.plan.timezone);
+    const out = solve({ engine_version: ENGINE_VERSION, horizon_start: patched.state.plan.horizon_start, horizon_days: patched.state.plan.horizon_days, timezone: patched.state.plan.timezone, task_defs: patched.state.task_defs, constraints: [...effective, ...otherCuts], pinned_blocks: pinned });
     if (out.violations.length) fail('engine_infeasible', 422, { violations: out.violations, compromises: out.compromises });
     newBlocks = out.blocks.filter((x) => !busyIds.has(x.id));
     compromises = out.compromises;

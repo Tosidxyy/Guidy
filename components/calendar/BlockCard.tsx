@@ -18,6 +18,8 @@ interface Props {
   visual: BlockVisualState;
   compact: boolean;
   planLabel?: string;
+  /** 并行合并块：逐行显示标题（防文字重叠）。 */
+  titleLines?: string[];
   onPointerDown?: (e: React.PointerEvent, block: Block) => void;
   onResizeDown?: (e: React.PointerEvent, block: Block) => void;
   onOpen?: (block: Block) => void;
@@ -26,7 +28,7 @@ interface Props {
 
 export const BlockCard = memo(function BlockCard({
   block, startMin, endMin, top, height, leftPct, widthPct, visual, compact,
-  planLabel, onPointerDown, onResizeDown, onOpen, onClick,
+  planLabel, titleLines, onPointerDown, onResizeDown, onOpen, onClick,
 }: Props) {
   const ghost = visual.startsWith('ghost');
   const interactive = !ghost && visual !== 'dimmed';
@@ -72,9 +74,19 @@ export const BlockCard = memo(function BlockCard({
     >
       <div className={cn('flex h-full flex-col px-1.5', compact ? 'justify-center py-0' : 'py-1')}>
         <div className="flex items-center gap-1 min-w-0">
+          {titleLines?.length ? (
+            <span className="flex min-w-0 flex-col" style={{ color: 'var(--site-fg)' }}>
+              {titleLines.map((line, i) => (
+                <span key={i} className={i === 0 ? 'truncate text-xs font-semibold leading-tight' : 'truncate text-[10px] leading-tight opacity-90'}>
+                  {i > 0 ? `+ ${line}` : line}
+                </span>
+              ))}
+            </span>
+          ) : (
           <span className="truncate text-xs font-semibold leading-tight" style={{ color: 'var(--site-fg)' }}>
             {block.title}
           </span>
+          )}
           {block.pinned && <Pin className="h-3 w-3 shrink-0" style={{ color: 'var(--cat)' }} aria-label="已钉住" />}
           {block.origin === 'fixed' && <Lock className="h-3 w-3 shrink-0 text-site-ink-soft" aria-label="固定" />}
           {planLabel && <span className="ml-auto max-w-[55%] truncate rounded bg-site-surface/85 px-1 text-[9px] leading-tight text-site-ink-soft">{planLabel}</span>}

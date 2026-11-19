@@ -10,8 +10,8 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { TopBar } from '@/components/workbench/TopBar';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { BlockDrawer } from '@/components/workbench/BlockDrawer';
-import { TasksDrawer } from '@/components/workbench/TasksDrawer';
 import { SettingsDrawer } from '@/components/workbench/SettingsDrawer';
+import { FeedbackDialog } from '@/components/workbench/FeedbackDialog';
 import { PrivacyFooter } from '@/components/brand/PrivacyFooter';
 import { BrandIntro } from '@/components/brand/BrandIntro';
 import { CalendarPanel } from '@/components/calendar/CalendarPanel';
@@ -87,8 +87,8 @@ export default function App() {
         <PrivacyFooter />
 
         <BlockDrawer />
-        <TasksDrawer />
         <SettingsDrawer />
+        <FeedbackDialog />
         <Toaster position="top-center" closeButton />
       </div>
       {intro && <BrandIntro onDone={() => setIntro(false)} onUnblur={() => setIntroBlur(false)} />}
