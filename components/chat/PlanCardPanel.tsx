@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
@@ -80,9 +80,8 @@ export function PlanCardPanel() {
     setAttention(true);
   }, [foreignPatch, patchAlreadyApplied]);
 
-  // 打开时回到 AI 提案（若有），否则当前计划；清除编辑草稿以保证看到最新提案。
+  // 打开时保留编辑草稿（AI patch 的结果暂存在草稿里，清掉会看到旧/空内容）。
   const openPlan = () => {
-    setDraft(null);
     setAttention(false);
     setOpen(true);
   };
@@ -90,16 +89,6 @@ export function PlanCardPanel() {
   const close = () => {
     setOpen(false);
   };
-
-  // 外部改动（AI patch / 其他入口保存）后，已保存计划的卡片要跟着变，避免用旧快照覆盖云端。
-  const syncedVersion = useRef(state.plan.version);
-  useEffect(() => {
-    if (!open || proposal) { syncedVersion.current = state.plan.version; return; }
-    if (syncedVersion.current === state.plan.version) return;
-    syncedVersion.current = state.plan.version;
-    if (unsaved) return;
-    setDraft(null);
-  }, [state.plan.version, open, proposal, unsaved]);
 
   const toggle = () => {
     if (open) close();
