@@ -11,7 +11,8 @@ function deps(db = createMemoryDb()): Deps {
 function ctx(method: string, path: string, body?: unknown, user = 'v'): RouteCtx {
   return { request: new Request('http://127.0.0.1:8000/functions/v1/app' + path, { method, body: body ? JSON.stringify(body) : undefined, headers: body ? { 'content-type': 'application/json' } : {} }), user: { id: user } };
 }
-const today = new Date().toLocaleDateString('sv-SE');
+// 与路由一致：学习画像的“今天”按 Asia/Shanghai 计算（机器本地时区可能是其他时区）。
+const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
 
 describe('profile 路由', () => {
   it('GET 首次访问创建空自述并返回画像', async () => {

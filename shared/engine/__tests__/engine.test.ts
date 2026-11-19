@@ -334,6 +334,17 @@ describe('engine solve', () => {
     expect(soft.soft.length).toBeGreaterThan(0);
   });
 
+  it('E19b 未设置可安排时段时，默认 07:00–23:00 不拒绝清晨明确安排（如 05:30 日出）', () => {
+    const ctx = { timezone: 'America/Denver', horizon_start: '2026-11-26', horizon_days: 4, blocks: [], constraints: [] };
+    const r = validatePlacement({ title: '日出', category: 'life', start_utc: '2026-11-29T12:30:00.000Z', end_utc: '2026-11-29T15:00:00.000Z' }, ctx);
+    expect(r.ok).toBe(true);
+    expect(r.soft.some((v) => v.reason.includes('默认起居时段'))).toBe(true);
+    // 显式设置了可安排时段时，仍然硬拒绝区间外落点
+    const strict = { ...ctx, constraints: [cons({ type: 'active_window', start: '07:00', end: '23:00' })] };
+    const rejected = validatePlacement({ title: '日出', category: 'life', start_utc: '2026-11-29T12:30:00.000Z', end_utc: '2026-11-29T15:00:00.000Z' }, strict);
+    expect(rejected.ok).toBe(false);
+  });
+
   it('E20 result_hash 稳定且敏感', async () => {
     const blocks: Block[] = [
       { id: '1', title: 'a', category: 'study', start_utc: '2026-11-16T01:00:00.000Z', end_utc: '2026-11-16T02:00:00.000Z', priority: 'mid', pinned: false, origin: 'engine' },

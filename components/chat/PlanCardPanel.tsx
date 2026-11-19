@@ -222,7 +222,7 @@ export function PlanCardPanel() {
             <ul className="mt-1.5 max-h-28 space-y-1 overflow-y-auto">
               {foreignPatch.ops.map((op, i) => (
                 <li key={i} className="rounded border border-site-line bg-site-surface px-2 py-1 text-[11px] leading-snug text-site-ink">
-                  {patchOpText(op, (key) => state.task_defs.find((t) => t.key === key)?.title ?? key)}
+                  {patchOpText(op, (key) => state.task_defs.find((t) => t.key === key)?.title ?? key, state.plan.timezone)}
                 </li>
               ))}
             </ul>

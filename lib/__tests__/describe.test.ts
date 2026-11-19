@@ -25,3 +25,13 @@ describe('patchOpText', () => {
     expect(patchOpText({ op: 'move_block', id: 'b1', start_utc: '2026-11-16T09:00:00Z', end_utc: '2026-11-16T10:00:00Z' })).toContain('09:00');
   });
 });
+
+describe('patchOpText：按计划时区显示本地时间', () => {
+  it('丹佛计划：21:00Z 显示 14:00，12:30Z 显示 05:30', async () => {
+    const { patchOpText } = await import('@/lib/describe');
+    const op = { op: 'add_block' as const, value: { title: '高铁', category: 'life' as const, start_utc: '2026-11-28T21:00:00.000Z', end_utc: '2026-11-28T23:30:00.000Z', priority: 'high' as const, pinned: false } };
+    expect(patchOpText(op, undefined, 'America/Denver')).toContain('11-28 14:00');
+    const sunrise = { op: 'add_block' as const, value: { ...op.value, title: '日出', start_utc: '2026-11-29T12:30:00.000Z', end_utc: '2026-11-29T15:00:00.000Z' } };
+    expect(patchOpText(sunrise, undefined, 'America/Denver')).toContain('05:30');
+  });
+});

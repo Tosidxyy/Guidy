@@ -1,4 +1,5 @@
 import { CATEGORY_MAP, PERIOD_LABEL } from '../shared/constants.ts';
+import { localDay, localMinutes, minToHHmm } from '../shared/engine/time.ts';
 import type { ApplyOp, ConstraintPayload, Frequency, TaskDef } from '../shared/types.ts';
 
 const WEEKDAY_LABEL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -64,7 +65,13 @@ export function daysUntil(dateStr: string): number {
   return Math.round((target.getTime() - now.getTime()) / 86400000);
 }
 
-export function patchOpText(op: ApplyOp, taskTitle?: (key: string) => string): string {
+function localStamp(iso: string, tz?: string): string {
+  if (!tz) return iso.slice(5, 16).replace('T', ' ');
+  const day = localDay(iso, tz).slice(5);
+  return `${day} ${minToHHmm(localMinutes(iso, tz))}`;
+}
+
+export function patchOpText(op: ApplyOp, taskTitle?: (key: string) => string, timezone?: string): string {
   const title = (key: string) => taskTitle?.(key) ?? key;
   switch (op.op) {
     case 'add_task_def':
@@ -80,11 +87,11 @@ export function patchOpText(op: ApplyOp, taskTitle?: (key: string) => string): s
     case 'remove_constraint':
       return `删除约束 ${op.id}`;
     case 'add_block':
-      return `新增日程「${op.value.title}」${op.value.start_utc.slice(5, 16).replace('T', ' ')}`;
+      return `新增日程「${op.value.title}」${localStamp(op.value.start_utc, timezone)}`;
     case 'update_block':
       return `调整日程 ${op.id}`;
     case 'move_block':
-      return `移动日程到 ${op.start_utc.slice(5, 16).replace('T', ' ')}`;
+      return `移动日程到 ${localStamp(op.start_utc, timezone)}`;
     case 'remove_block':
       return `删除日程 ${op.id}`;
     case 'reschedule':

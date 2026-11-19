@@ -35,14 +35,20 @@ export function validatePlacement(candidate: PlacementCandidate, ctx: PlacementC
   if (end <= start) return fail('结束时间必须晚于开始时间', '调整时长');
 
   const active = constraints.filter((c) => c.payload.type === 'active_window');
-  const inActive = active.length === 0
-    ? start >= 420 && end <= 1380
-    : active.some((c) => {
-        const p = c.payload as Extract<Constraint['payload'], { type: 'active_window' }>;
-        if (p.weekdays && !p.weekdays.includes(weekday)) return false;
-        return start >= hhmmToMin(p.start) && end <= hhmmToMin(p.end);
-      });
-  if (!inActive) return fail('落在每日可安排时段之外', '移到可用时段内，或修改可安排时段约束');
+  if (active.length === 0) {
+    // 用户从未设置可安排时段时，07:00–23:00 只是排程默认值，不是硬约束：
+    // 用户明确安排的活动（如 05:30 看日出）必须能落位，仅给出软提示。
+    if (start < 420 || end > 1380) {
+      soft.push({ reason: '落在默认起居时段（07:00–23:00）之外', suggestion: '如需限制活动时段，请添加可安排时段约束' });
+    }
+  } else {
+    const inActive = active.some((c) => {
+      const p = c.payload as Extract<Constraint['payload'], { type: 'active_window' }>;
+      if (p.weekdays && !p.weekdays.includes(weekday)) return false;
+      return start >= hhmmToMin(p.start) && end <= hhmmToMin(p.end);
+    });
+    if (!inActive) return fail('落在每日可安排时段之外', '移到可用时段内，或修改可安排时段约束');
+  }
 
   for (const c of constraints) {
     if (c.payload.type !== 'busy_window') continue;
