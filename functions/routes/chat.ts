@@ -10,7 +10,8 @@ import { parseModelText } from '../artifacts.ts';
 import { buildUserMessage, ARTIFACT_REPAIR } from '../prompt.ts';
 import { appFrame, insertMessage, appendAssistant, advanceCursor, sha256Hex } from '../sse-app.ts';
 import { readSSE } from '../qca/sse.mjs';
-import { LIMITS } from '../../shared/constants.ts';
+import { LIMITS, ENGINE_VERSION } from '../../shared/constants.ts';
+import { solve } from '../engine.ts';
 import { findConflicts, type ConflictPlan } from '../../shared/engine/conflicts.ts';
 import { formatAvailability, weeklyAvailability, type AvailabilitySource } from '../../shared/engine/availability.ts';
 import { sharedBusyBlocks } from './calendar.ts';
@@ -164,6 +165,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         const collected: AppEvent[] = [];
         const assistantSeq = nextSeq();
         let finalText = '';
+        let repairNote = '';
         let lastEventId: string | null = conv.last_event_id;
         let terminalState: 'completed' | 'failed' | 'interrupted' = 'failed';
         for (let attempt = 0; attempt < 3; attempt++) {
@@ -171,7 +173,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           const projector = createProjector(nextSeq, assistantSeq);
           const upstream = await deps.qca.openStream(sessionId, { lastEventId: conv.last_event_id ?? undefined, signal: abort.signal });
           try {
-            await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others, availability, sharedBlocks: sharedForPrompt }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}` : ''), `${requestId}:${attempt}`);
+            await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others, availability, sharedBlocks: sharedForPrompt }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}${repairNote}` : ''), `${requestId}:${attempt}`);
             for await (const frame of readSSE(upstream.body, { signal: abort.signal })) {
               const ev = JSON.parse(frame.data);
               if (frame.id) lastEventId = frame.id;
@@ -190,6 +192,26 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           if (!projector.isTerminal()) { terminalState = 'failed'; break; }
           const expectsArtifact = /```json|^\s*\{/.test(finalText);
           const parsed = parseModelText(finalText, day);
+          if (parsed && parsed.kind === 'constraint_set') {
+            // 预求解：不可行就把具体原因喂回修复重试，避免把排不下的方案交给用户。
+            const sharedCons = related.sources.flatMap((s) => s.constraints).filter((c) => c.payload.type === 'busy_window' || c.payload.type === 'fixed_block');
+            const pre = solve({
+              engine_version: ENGINE_VERSION,
+              horizon_start: parsed.value.horizon_start ?? planState?.plan.horizon_start ?? day,
+              horizon_days: parsed.value.horizon_days,
+              timezone: planState?.plan.timezone ?? timezone ?? 'Asia/Shanghai',
+              task_defs: parsed.value.task_defs,
+              constraints: [
+                ...parsed.value.constraints.map((p, i) => ({ id: `pre-${i}`, payload: p, source: 'ai' as const, enabled: true })),
+                ...sharedCons,
+              ],
+              pinned_blocks: busyBlocks.map((b) => ({ ...b, pinned: true })),
+            });
+            if (pre.violations.length && attempt < 2) {
+              repairNote = `\n预求解发现不可行：${pre.violations.map((v) => v.reason).join('；')}。请调整次数/时长/每日上限/可安排时段后重新输出 constraint_set。`;
+              continue;
+            }
+          }
           if (parsed) {
             const art: AppEvent = { event: 'artifact', data: { seq: nextSeq(), kind: parsed.kind, payload: parsed.value } };
             emit(art); collected.push(art);

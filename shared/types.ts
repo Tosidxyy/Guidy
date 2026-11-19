@@ -1,6 +1,6 @@
 import type { Category, Constraint, Priority, TaskDef } from './schemas.ts';
 
-export type HorizonDays = 7 | 14 | 30 | 90;
+export type HorizonDays = number;
 
 export type { ApplyOp, Category, Constraint, ConstraintPayload, Frequency, ManualBlock, PatchOp, Period, Priority, TaskDef } from './schemas.ts';
 

@@ -52,7 +52,7 @@ const TASK_FIELDS: (keyof TaskDef)[] = ['title', 'category', 'duration_min', 'fr
 export function diffPlanCard(current: PlanState, draft: ConstraintSetArtifact): ApplyOp[] {
   const ops: ApplyOp[] = [];
 
-  const planPatch: { title?: string; horizon_start?: string; horizon_days?: 7 | 14 | 30 | 90 } = {};
+  const planPatch: { title?: string; horizon_start?: string; horizon_days?: number } = {};
   const title = draft.plan_title.trim().slice(0, 60);
   if (title && title !== current.plan.title) planPatch.title = title;
   if (draft.horizon_start && draft.horizon_start !== current.plan.horizon_start) planPatch.horizon_start = draft.horizon_start;

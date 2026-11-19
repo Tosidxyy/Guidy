@@ -13,6 +13,7 @@ import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { QuestionCard } from './QuestionCard';
 import { PlanCardPanel } from './PlanCardPanel';
+import { PlansDrawer } from '@/components/workbench/PlansDrawer';
 
 export function ChatPanel() {
   const chat = useChat();
@@ -117,6 +118,7 @@ export function ChatPanel() {
         <span className="flow-bottom" />
         <span className="flow-left" />
       </div>
+      <PlansDrawer />
       <div className="flex items-center justify-between border-b border-site-line px-3 py-2">
         <div className="flex items-center gap-1">
         <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="对话列表" title="对话与计划" onClick={() => openDrawer('plans')}>

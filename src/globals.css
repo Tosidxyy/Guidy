@@ -343,7 +343,7 @@
   --site-flow: #4da3ff;
 }
 .guidy-flow-border {
-  border-color: color-mix(in srgb, var(--site-flow) 28%, var(--site-line));
+  border-color: color-mix(in srgb, var(--site-flow) 18%, var(--site-line));
 }
 .guidy-flow-ring {
   position: absolute;
@@ -355,36 +355,46 @@
 }
 .guidy-flow-ring span {
   position: absolute;
-  opacity: 0.9;
+  opacity: 0.95;
+  filter: blur(0.4px) drop-shadow(0 0 5px color-mix(in srgb, var(--site-flow) 50%, transparent)) drop-shadow(0 0 14px color-mix(in srgb, var(--site-flow) 30%, transparent));
 }
 .guidy-flow-ring .flow-top {
   top: 0;
   left: 0;
-  height: 2px;
+  height: 1.5px;
   width: 45%;
-  background: linear-gradient(90deg, transparent, var(--site-flow) 45%, color-mix(in srgb, var(--site-flow) 55%, #ffffff) 60%, transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--site-flow) 70%, #ffffff) 45%, var(--site-flow) 55%, transparent);
 }
 .guidy-flow-ring .flow-right {
   top: 0;
   right: 0;
-  width: 2px;
+  width: 1.5px;
   height: 45%;
-  background: linear-gradient(180deg, transparent, var(--site-flow) 45%, color-mix(in srgb, var(--site-flow) 55%, #ffffff) 60%, transparent);
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--site-flow) 70%, #ffffff) 45%, var(--site-flow) 55%, transparent);
 }
 .guidy-flow-ring .flow-bottom {
   bottom: 0;
   left: 0;
-  height: 2px;
+  height: 1.5px;
   width: 45%;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--site-flow) 55%, #ffffff) 40%, var(--site-flow) 55%, transparent);
+  background: linear-gradient(90deg, transparent, var(--site-flow) 45%, color-mix(in srgb, var(--site-flow) 70%, #ffffff) 55%, transparent);
 }
 .guidy-flow-ring .flow-left {
   top: 0;
   left: 0;
-  width: 2px;
+  width: 1.5px;
   height: 45%;
-  background: linear-gradient(0deg, transparent, color-mix(in srgb, var(--site-flow) 55%, #ffffff) 40%, var(--site-flow) 55%, transparent);
+  background: linear-gradient(0deg, transparent, var(--site-flow) 45%, color-mix(in srgb, var(--site-flow) 70%, #ffffff) 55%, transparent);
 }
 .guidy-flow-border[data-streaming='true'] .guidy-flow-ring span {
-  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--site-flow) 55%, transparent));
+  filter: blur(0.4px) drop-shadow(0 0 7px color-mix(in srgb, var(--site-flow) 70%, transparent)) drop-shadow(0 0 20px color-mix(in srgb, var(--site-flow) 45%, transparent));
+}
+/* 方案卡就绪提示：柔光脉冲（opacity 合成器动画） */
+.guidy-card-pulse {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--site-flow) 45%, transparent), 0 0 14px color-mix(in srgb, var(--site-flow) 35%, transparent);
+  animation: guidy-pulse 1.6s ease-in-out infinite;
+}
+@keyframes guidy-pulse {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.85; }
 }

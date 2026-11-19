@@ -3,11 +3,14 @@ import { ConstraintPayloadSchema, ConstraintSetArtifactSchema, FrequencySchema, 
 
 describe('长期计划与任务备注', () => {
   const base = { type: 'constraint_set' as const, plan_title: '三分化', task_defs: [{ key: 'push', title: '推日', category: 'fitness' as const, duration_min: 60, frequency: { type: 'daily' as const }, priority: 'mid' as const, splittable: false, sort_order: 0, notes: '卧推 3×8；肩推 3×10' }], constraints: [], clarifications_needed: [] };
-  it('horizon_days 支持 30/90，任务可带备注', () => {
+  it('horizon_days 支持 1–365 任意整数，任务可带备注', () => {
     const r = ConstraintSetArtifactSchema.safeParse({ ...base, horizon_days: 90 });
     expect(r.success).toBe(true);
     expect(ConstraintSetArtifactSchema.safeParse({ ...base, horizon_days: 30 }).success).toBe(true);
-    expect(ConstraintSetArtifactSchema.safeParse({ ...base, horizon_days: 45 }).success).toBe(false);
+    expect(ConstraintSetArtifactSchema.safeParse({ ...base, horizon_days: 45 }).success).toBe(true);
+    expect(ConstraintSetArtifactSchema.safeParse({ ...base, horizon_days: 27 }).success).toBe(true);
+    expect(ConstraintSetArtifactSchema.safeParse({ ...base, horizon_days: 0 }).success).toBe(false);
+    expect(ConstraintSetArtifactSchema.safeParse({ ...base, horizon_days: 366 }).success).toBe(false);
     if (r.success) expect(r.data.task_defs[0].notes).toContain('卧推');
   });
   it('备注超过 500 字被拒绝', () => {

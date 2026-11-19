@@ -34,10 +34,10 @@ describe('artifacts', () => {
       constraints: [{ type: 'deadline', date, label: '初试' }],
     });
     const span = (r: ReturnType<typeof parseModelText>) => (r?.kind === 'constraint_set' ? r.value.horizon_days : null);
-    expect(span(parseModelText(JSON.stringify(withDeadline(90, '2026-12-15')), '2026-11-19'))).toBe(30);
-    expect(span(parseModelText(JSON.stringify(withDeadline(30, '2026-11-23')), '2026-11-19'))).toBe(7);
-    expect(span(parseModelText(JSON.stringify(withDeadline(7, '2027-01-18')), '2026-11-19'))).toBe(90);
-    expect(span(parseModelText(JSON.stringify(withDeadline(90, '2026-12-15', '2026-12-01')), '2026-11-19'))).toBe(30);
+    expect(span(parseModelText(JSON.stringify(withDeadline(90, '2026-12-15')), '2026-11-19'))).toBe(27);
+    expect(span(parseModelText(JSON.stringify(withDeadline(30, '2026-11-23')), '2026-11-19'))).toBe(5);
+    expect(span(parseModelText(JSON.stringify(withDeadline(7, '2027-01-18')), '2026-11-19'))).toBe(61);
+    expect(span(parseModelText(JSON.stringify(withDeadline(90, '2026-12-15', '2026-12-01')), '2026-11-19'))).toBe(15);
     expect(span(parseModelText(JSON.stringify(withDeadline(30, '2026-11-01')), '2026-11-19'))).toBe(30);
     expect(span(parseModelText(JSON.stringify({ ...validSet, horizon_days: 90 }), '2026-11-19'))).toBe(90);
   });

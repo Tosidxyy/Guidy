@@ -5,7 +5,7 @@ export const CategoryEnum = z.enum([
 ]);
 export const PriorityEnum = z.enum(['high', 'mid', 'low']);
 export const PeriodEnum = z.enum(['morning', 'afternoon', 'evening', 'night']);
-export const HorizonDaysSchema = z.union([z.literal(7), z.literal(14), z.literal(30), z.literal(90)]);
+export const HorizonDaysSchema = z.number().int().min(1).max(365);
 export const HHmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, '时间格式须为 HH:mm');
 export const Weekday = z.number().int().min(0).max(6);
 

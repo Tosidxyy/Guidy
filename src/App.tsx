@@ -13,7 +13,6 @@ import { ConstraintDrawer } from '@/components/workbench/ConstraintDrawer';
 import { BlockDrawer } from '@/components/workbench/BlockDrawer';
 import { TasksDrawer } from '@/components/workbench/TasksDrawer';
 import { SettingsDrawer } from '@/components/workbench/SettingsDrawer';
-import { PlansDrawer } from '@/components/workbench/PlansDrawer';
 import { PrivacyFooter } from '@/components/brand/PrivacyFooter';
 import { BrandIntro } from '@/components/brand/BrandIntro';
 import { CalendarPanel } from '@/components/calendar/CalendarPanel';
@@ -92,7 +91,6 @@ export default function App() {
         <BlockDrawer />
         <TasksDrawer />
         <SettingsDrawer />
-        <PlansDrawer />
         <Toaster position="top-center" closeButton />
       </div>
       {intro && <BrandIntro onDone={() => setIntro(false)} onUnblur={() => setIntroBlur(false)} />}

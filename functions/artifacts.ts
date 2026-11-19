@@ -5,7 +5,6 @@ export type ParsedArtifact =
   | { kind: 'patch'; value: PatchArtifact }
   | { kind: 'question_card'; value: QuestionCardArtifact };
 
-const HORIZON_TIERS = [7, 14, 30, 90] as const;
 const DAY_MS = 86400000;
 
 /** 截止日硬护栏：跨度取 ≥「开始日→截止日」自然天数的最小档位，模型输出再大也拉回。 */
@@ -15,7 +14,7 @@ function clampHorizonToDeadline(value: ConstraintSetArtifact, today: string): Co
   const start = value.horizon_start ?? today;
   const span = Math.round((Date.parse(`${deadline.date}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / DAY_MS) + 1;
   if (span <= 0) return value;
-  const fit = HORIZON_TIERS.find((h) => h >= span) ?? 90;
+  const fit = Math.min(365, Math.max(1, span));
   return fit === value.horizon_days ? value : { ...value, horizon_days: fit };
 }
 

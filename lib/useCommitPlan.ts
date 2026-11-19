@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { buildCommitInput } from '@/lib/commitInput';
 import { solveArtifact } from '@/lib/preview';
+import { relaxDraft } from '@/lib/relaxPlan';
 import { usePlanStore } from '@/store/usePlanStore';
 import { usePlanSync } from '@/store/usePlanSync';
 import { useChatStore } from '@/store/useChatStore';
@@ -27,8 +28,20 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
       });
       return api.commit(body);
     },
-    onError: (err) => {
+    onError: (err, draft) => {
       const e = err instanceof ApiError ? err : new ApiError('service_unavailable', 503, '提交失败，请重试');
+      if (e.code === 'engine_infeasible' && draft) {
+        const store = usePlanStore.getState();
+        const relaxed = relaxDraft(draft, { horizon_start: store.state.plan.horizon_start, timezone: store.state.plan.timezone }, store.state.blocks);
+        if (relaxed) {
+          toast.error('当前约束下排不下全部任务', {
+            description: `可自动放宽：${relaxed.changes.join('；')}`,
+            duration: 12000,
+            action: { label: '自动放宽重试', onClick: () => mutation.mutate(relaxed.draft) },
+          });
+          return;
+        }
+      }
       toast.error(e.message, { description: e.diagnosticId ? `诊断 ID：${e.diagnosticId}` : undefined });
     },
     onSuccess: (serverPlan: any) => {

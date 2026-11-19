@@ -116,9 +116,9 @@ describe('buildUserMessage — 跨计划上下文', () => {
   });
   it('system prompt 的截止日跨度规则可计算', () => {
     const text = buildSystemPrompt();
-    expect(text).toContain('最小档位');
+    expect(text).toContain('实际自然天数');
     expect(text).toContain('不得越过截止日');
-    expect(text).toContain('默认 horizon_days=90');
+    expect(text).toContain('未表述时默认 30');
   });
   it('注入可安排时段并约束追问选项', () => {
     const text = buildUserMessage({ message: '帮我排训练', plan, history: [], today: '2026-11-18', availability: '周一至周五：无可安排时段；周六、周日：09:00–22:00' });
@@ -147,8 +147,8 @@ describe('buildUserMessage — 跨计划上下文', () => {
   });
   it('长期计划与任务备注的契约写进 prompt', () => {
     const text = buildSystemPrompt();
-    expect(text).toContain('horizon_days:7|14|30|90');
-    expect(text).toContain('默认 horizon_days=90');
+    expect(text).toContain('horizon_days:int(1–365)');
+    expect(text).toContain('未表述时默认 30');
     expect(text).toContain('task_defs[].notes');
   });
   it('没有其他计划时不出现该段', () => {

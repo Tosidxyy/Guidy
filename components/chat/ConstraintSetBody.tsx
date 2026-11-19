@@ -8,7 +8,6 @@ import {
 } from '@/lib/confirmDraft';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { cn } from '@/lib/utils';
 
 /**
@@ -38,17 +37,7 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
           onChange={(e) => set({ ...draft, horizon_start: e.target.value || planStart })}
           className="h-7 w-36 text-xs"
         />
-        <NativeSelect
-          value={String(draft.horizon_days)}
-          aria-label="计划跨度"
-          onChange={(e) => set({ ...draft, horizon_days: Number(e.target.value) as 7 | 14 | 30 | 90 })}
-          className="h-7 w-24 text-xs"
-        >
-          <NativeSelectOption value="7">连续 7 天</NativeSelectOption>
-          <NativeSelectOption value="14">连续 14 天</NativeSelectOption>
-          <NativeSelectOption value="30">连续 30 天</NativeSelectOption>
-          <NativeSelectOption value="90">连续 90 天</NativeSelectOption>
-        </NativeSelect>
+        <span className="tabular ml-auto text-[11px] text-site-ink-soft">{draft.horizon_days ?? 30} 天</span>
       </div>
 
       <section className="mt-3">

@@ -11,7 +11,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 type Confirm = { kind: 'switch' | 'new' | 'delete'; id?: string; title?: string } | null;
 
@@ -49,14 +48,27 @@ export function PlansDrawer() {
   };
 
   return (
-    <Sheet open={open} onOpenChange={(v) => { if (!v) closeDrawer(); }}>
-      <SheetContent side="left" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
-        <SheetHeader className="border-b border-site-line px-5 py-4">
-          <SheetTitle className="font-display flex items-center gap-2"><FolderOpen className="h-4 w-4 text-site-ink" /> 对话与计划</SheetTitle>
-          <SheetDescription>每个对话对应一个计划；切换会切换日历的活动层。</SheetDescription>
-        </SheetHeader>
+    <>
+      <div
+        className={cn('absolute inset-0 z-40 bg-site-scrim/40 transition-opacity duration-200', open ? 'opacity-100' : 'pointer-events-none opacity-0')}
+        onClick={closeDrawer}
+        aria-hidden="true"
+      />
+      <div
+        role="dialog"
+        aria-label="对话与计划"
+        inert={!open}
+        className={cn(
+          'absolute inset-y-0 left-0 z-50 flex w-[85%] max-w-[320px] flex-col border-r border-site-line bg-site-surface shadow-xl transition-transform duration-300 ease-out',
+        )}
+        style={{ translate: open ? '0 0' : '-100% 0' }}
+      >
+        <div className="border-b border-site-line px-5 py-4">
+          <h2 className="font-display flex items-center gap-2 text-sm font-semibold text-site-ink"><FolderOpen className="h-4 w-4 text-site-ink" /> 对话与计划</h2>
+          <p className="mt-0.5 text-xs text-site-ink-soft">每个对话对应一个计划；切换会切换日历的活动层。</p>
+        </div>
 
-        <div className="flex-1 space-y-3 px-5 py-4">
+        <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
           <Button className="w-full" onClick={requestNew} disabled={busy}><Plus className="mr-1.5 h-4 w-4" /> 新建对话（新计划）</Button>
           {streaming && <p className="text-[11px] text-site-ink-soft">对话进行中，请先中断再管理计划。</p>}
           {isLoading && <p className="text-xs text-site-ink-soft">加载中…</p>}
@@ -91,8 +103,9 @@ export function PlansDrawer() {
             <p className="text-xs text-site-ink-soft">还没有对话。新建对话会同时创建一个新计划。</p>
           )}
         </div>
+      </div>
 
-        <AlertDialog open={!!confirm} onOpenChange={(v) => { if (!v) setConfirm(null); }}>
+      <AlertDialog open={!!confirm} onOpenChange={(v) => { if (!v) setConfirm(null); }}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle className="font-display">{confirm?.kind === 'delete' ? `删除计划「${confirm.title}」？` : '放弃未保存的更改？'}</AlertDialogTitle>
@@ -115,7 +128,6 @@ export function PlansDrawer() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </SheetContent>
-    </Sheet>
+    </>
   );
 }

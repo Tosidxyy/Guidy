@@ -698,6 +698,7 @@ export function CalendarPanel() {
         onIgnore={(c) => setIgnoredConflicts((prev) => (prev.includes(c.key) ? prev : [...prev, c.key]))}
         onMergeAll={() => { void runMerge(conflicts); }}
       />
+      <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={scrollRef} className="scrollbar-gutter-stable relative min-h-0 flex-1 overflow-y-auto">
         <div className="sticky top-0 z-30 grid border-b border-site-line bg-site-surface/95 backdrop-blur" style={cols}>
           <div className="flex items-end justify-center pb-1 text-[10px] text-site-ink-soft">GMT{formatTzOffset(tz)}</div>
@@ -814,21 +815,22 @@ export function CalendarPanel() {
             />
           )}
         </div>
+      </div>
 
-        {isEmpty && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-site-surface/85 backdrop-blur-sm">
-            <EmptyCalendar className="h-40 w-64" />
-            <div className="text-center">
-              <p className="font-display text-lg font-semibold text-site-ink">日历还是空的</p>
-              <p className="mt-1 text-sm text-site-ink-soft">双击任意时段快速添加任务，或直接和左侧 AI 聊出你的计划。</p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setQuickAdd({ day: days[0], minutes: 540 })}>
-                <CalendarPlus className="mr-1.5 h-4 w-4" /> 添加任务
-              </Button>
-            </div>
+      {isEmpty && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-site-surface/85 backdrop-blur-sm">
+          <EmptyCalendar className="h-40 w-64" />
+          <div className="text-center">
+            <p className="font-display text-lg font-semibold text-site-ink">日历还是空的</p>
+            <p className="mt-1 text-sm text-site-ink-soft">双击任意时段快速添加任务，或直接和左侧 AI 聊出你的计划。</p>
           </div>
-        )}
+          <div className="pointer-events-auto flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setQuickAdd({ day: days[0], minutes: 540 })}>
+              <CalendarPlus className="mr-1.5 h-4 w-4" /> 添加任务
+            </Button>
+          </div>
+        </div>
+      )}
       </div>
 
       <footer className="flex items-center gap-3 border-t border-site-line px-3 py-1.5 text-[11px] text-site-ink-soft">

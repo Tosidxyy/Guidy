@@ -24,6 +24,7 @@ import { ConstraintSetBody, ConstraintSetFooter } from './ConstraintSetBody';
  */
 export function PlanCardPanel() {
   const [open, setOpen] = useState(false);
+  const [attention, setAttention] = useState(false);
   const [draft, setDraft] = useState<ConstraintSetArtifact | null>(null);
   const [saving, setSaving] = useState(false);
   const state = usePlanStore((s) => s.state);
@@ -50,20 +51,20 @@ export function PlanCardPanel() {
   const ruleCount = constraintList.length - scheduleCount;
   const planTitle = viewed ? viewed.plan_title : state.plan.title;
 
-  // AI 给出完整方案时直接展开到这张卡，不再另起确认卡。
+  // AI 给出完整方案：更新草稿与计数，但不自动展开；入口闪烁提示用户手动呼出确认。
   useEffect(() => {
     if (!proposal) return;
     setDraft({ ...proposal, horizon_start: proposal.horizon_start ?? usePlanStore.getState().state.plan.horizon_start });
-    setOpen(true);
+    setAttention(true);
   }, [proposal]);
 
-  // 只改任务/约束的 AI patch 也交给方案卡：用户在同一张卡里核对、补充后再保存。
+  // 只改任务/约束的 AI patch 也交给方案卡：更新草稿与计数，闪烁提示手动核对。
   useEffect(() => {
     if (!patch) return;
     const current = usePlanStore.getState().state;
     if (!current.plan.id || !patchFitsPlanCard(patch, current.plan.id)) return;
     setDraft(artifactFromPlan(applyPatch(current, patch.ops).state));
-    setOpen(true);
+    setAttention(true);
     useChatStore.setState({ patch: null });
   }, [patch]);
 
@@ -73,7 +74,7 @@ export function PlanCardPanel() {
   useEffect(() => {
     if (!foreignPatch) return;
     if (patchAlreadyApplied) { useChatStore.setState({ patch: null }); return; }
-    setOpen(true);
+    setAttention(true);
     if (!usePlanStore.getState().state.plan.id) return;
     setDraft((prev) => prev ?? artifactFromPlan(usePlanStore.getState().state));
   }, [foreignPatch, patchAlreadyApplied]);
@@ -83,6 +84,7 @@ export function PlanCardPanel() {
     const current = usePlanStore.getState().state;
     const p = useChatStore.getState().artifact;
     setDraft(p ? { ...p, horizon_start: p.horizon_start ?? current.plan.horizon_start } : artifactFromPlan(current));
+    setAttention(false);
     setOpen(true);
   };
 
@@ -158,8 +160,9 @@ export function PlanCardPanel() {
           size="sm"
           onClick={toggle}
           aria-expanded={open}
-          className="h-7 min-w-0 flex-1 justify-start gap-1.5 px-2 text-[11px] font-normal text-site-ink-soft hover:bg-site-surface-2 hover:text-site-ink"
+          className="relative h-7 min-w-0 flex-1 justify-start gap-1.5 px-2 text-[11px] font-normal text-site-ink-soft hover:bg-site-surface-2 hover:text-site-ink"
         >
+          {attention && !open && <span aria-hidden="true" className="guidy-card-pulse pointer-events-none absolute inset-0 rounded-md" />}
           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-site-ink" />
           <span className="shrink-0 font-medium text-site-ink">方案卡</span>
           <span className="min-w-0 truncate text-site-ink">{planTitle}</span>
