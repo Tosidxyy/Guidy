@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { LogoMark } from './Logo';
 
 const GLIDE = 'cubic-bezier(0.16, 1, 0.3, 1)';
-const REVEAL_MS = 900;
+const REVEAL_MS = 1100;
 const WORD_MS = 300;
 const HOLD_MS = 300;
 const FLY_MS = 600;
@@ -81,28 +81,44 @@ export function BrandIntro({ onDone, onUnblur }: { onDone: () => void; onUnblur:
     }, REVEAL_MS + WORD_MS + HOLD_MS));
     timers.push(window.setTimeout(finish, REVEAL_MS + WORD_MS + HOLD_MS + FLY_MS + 150));
 
-    const skip = () => finish();
-    window.addEventListener('pointerdown', skip);
+    const skip = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') finish();
+    };
     window.addEventListener('keydown', skip);
     return () => {
       timers.forEach(clearTimeout);
-      window.removeEventListener('pointerdown', skip);
       window.removeEventListener('keydown', skip);
     };
   }, []);
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-6" aria-hidden="true">
-      <span ref={markRef} className="guidy-intro-reveal block" style={{ width: size, height: size, transformOrigin: 'top left', ...REVEAL_MASK }}>
+    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-6">
+      <span ref={markRef} aria-hidden="true" className="guidy-intro-reveal block" style={{ width: size, height: size, transformOrigin: 'top left', ...REVEAL_MASK }}>
         <LogoMark size={size} />
       </span>
       <span
         ref={wordRef}
+        aria-hidden="true"
         className="font-display font-bold tracking-[-0.02em] text-site-ink"
         style={{ fontSize: 'clamp(28px, 6vmin, 48px)', transformOrigin: 'top left', opacity: 0 }}
       >
         Guidy
       </span>
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label="跳过开屏动画"
+        onClick={() => {
+          if (!doneRef.current) {
+            doneRef.current = true;
+            cbRef.current.onUnblur();
+            cbRef.current.onDone();
+          }
+        }}
+        className="absolute bottom-6 right-6 rounded-full border border-site-line bg-site-surface/80 px-3 py-1 text-xs text-site-ink-soft backdrop-blur transition-colors hover:text-site-ink"
+      >
+        跳过 ›
+      </button>
     </div>
   );
 }

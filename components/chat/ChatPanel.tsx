@@ -85,6 +85,17 @@ export function ChatPanel() {
 
   return (
     <aside data-streaming={streaming ? 'true' : 'false'} className="guidy-flow-border guidy-noise flex h-full min-h-0 w-full flex-col overflow-hidden rounded-(--site-radius) border border-site-ink/15 bg-site-bg shadow-sm" aria-label="AI 对话排程">
+      <svg className="guidy-flow-ring" aria-hidden="true">
+        <defs>
+          <linearGradient id="guidy-flow-grad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" style={{ stopColor: 'var(--site-flow)' }} />
+            <stop offset="0.5" style={{ stopColor: 'color-mix(in srgb, var(--site-flow) 55%, #ffffff)' }} />
+            <stop offset="1" style={{ stopColor: 'var(--site-flow)' }} />
+          </linearGradient>
+        </defs>
+        <rect className="guidy-flow-base" x="1" y="1" pathLength={100} style={{ width: 'calc(100% - 2px)', height: 'calc(100% - 2px)', rx: 'var(--site-radius)' }} />
+        <rect className="guidy-flow-arc" x="1" y="1" pathLength={100} style={{ width: 'calc(100% - 2px)', height: 'calc(100% - 2px)', rx: 'var(--site-radius)' }} />
+      </svg>
       <div className="flex items-center justify-between border-b border-site-line px-3 py-2">
         <div className="flex items-center gap-1">
         <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="对话列表" title="对话与计划" onClick={() => openDrawer('plans')}>
