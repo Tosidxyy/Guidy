@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { HelpCircle, Send, X } from 'lucide-react';
 import type { QuestionCardArtifact } from '@/shared/schemas';
-import { composeAnswers, shouldSendImmediately } from '@/lib/questionCard';
+import { composeAnswers, shouldSendImmediately, CUSTOM_ANSWER_LABEL } from '@/lib/questionCard';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 /**
- * 信息不足时的追问卡片：单问题点选项直接发送；多问题先各选一项，
- * 再统一「发送回答」，避免只答了第一个就发出去。
+ * 信息不足时的追问卡片：单问题点普通选项直接发送；多问题先各选一项再统一发送。
+ * 每题末尾固定追加「自定义回答」：选中后展开输入框，卡片转为确认模式，写完再发。
  */
 export function QuestionCard({ artifact, onAnswer, onDismiss }: {
   artifact: QuestionCardArtifact;
@@ -15,12 +16,21 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
   onDismiss: () => void;
 }) {
   const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [custom, setCustom] = useState<Record<number, boolean>>({});
   const immediate = shouldSendImmediately(artifact);
-  const answered = Object.keys(answers).length;
+  const needsInput = artifact.questions.some((q) => !q.options?.length);
+  const confirmMode = !immediate || needsInput || Object.values(custom).some(Boolean);
+  const answered = Object.values(answers).filter((v) => v.trim()).length;
   const total = artifact.questions.length;
 
   const pick = (index: number, option: string) => {
-    if (immediate) {
+    if (option === CUSTOM_ANSWER_LABEL) {
+      setCustom((prev) => ({ ...prev, [index]: true }));
+      setAnswers((prev) => ({ ...prev, [index]: '' }));
+      return;
+    }
+    setCustom((prev) => ({ ...prev, [index]: false }));
+    if (!confirmMode) {
       onAnswer(composeAnswers(artifact, { [index]: option }));
       return;
     }
@@ -41,7 +51,9 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
             {artifact.title ?? '还需要确认'}
           </h3>
           <p className="mt-0.5 text-xs text-site-ink-soft">
-            {immediate ? '选一个答案直接回复，或在下方输入框补充。' : `每题选一项，选完一起发送（${answered}/${total}）。也可以在下方输入框补充。`}
+            {confirmMode
+              ? `每题选一项或自定义回答，选完一起发送（${answered}/${total}）。也可以在下方输入框补充。`
+              : '选一个答案直接回复；选「自定义回答」可输入自己的答案。'}
           </p>
         </div>
         <button type="button" onClick={onDismiss} aria-label="忽略这些问题" className="rounded p-1 text-site-ink-soft hover:bg-site-surface-2">
@@ -50,13 +62,14 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
       </div>
 
       <ul className="mt-3 space-y-3">
-        {artifact.questions.map((q, i) => (
-          <li key={i} className="rounded-lg border border-site-line bg-site-bg px-3 py-2">
-            <p className="text-xs leading-snug text-site-ink">{q.text}</p>
-            {q.options?.length ? (
+        {artifact.questions.map((q, i) => {
+          const showInput = custom[i] || !q.options?.length;
+          return (
+            <li key={i} className="rounded-lg border border-site-line bg-site-bg px-3 py-2">
+              <p className="text-xs leading-snug text-site-ink">{q.text}</p>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {q.options.map((option) => {
-                  const active = answers[i] === option;
+                {(q.options ?? []).map((option) => {
+                  const active = !custom[i] && answers[i] === option;
                   return (
                     <button
                       key={option}
@@ -74,13 +87,37 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
                     </button>
                   );
                 })}
+                <button
+                  type="button"
+                  aria-pressed={!!custom[i]}
+                  onClick={() => pick(i, CUSTOM_ANSWER_LABEL)}
+                  className={cn(
+                    'rounded-full border border-dashed px-2.5 py-1 text-[11px] transition-colors',
+                    custom[i]
+                      ? 'border-site-brand bg-site-brand/10 font-medium text-site-brand'
+                      : 'border-site-line bg-site-surface text-site-ink-soft hover:border-site-brand/50 hover:text-site-ink',
+                  )}
+                >
+                  {CUSTOM_ANSWER_LABEL}
+                </button>
               </div>
-            ) : null}
-          </li>
-        ))}
+              {showInput && (
+                <Input
+                  autoFocus
+                  value={answers[i] ?? ''}
+                  maxLength={200}
+                  placeholder="输入你的回答…"
+                  aria-label={`自定义回答 ${q.text}`}
+                  onChange={(e) => setAnswers((prev) => ({ ...prev, [i]: e.target.value }))}
+                  className="mt-2 h-8 text-xs"
+                />
+              )}
+            </li>
+          );
+        })}
       </ul>
 
-      {!immediate && (
+      {confirmMode && (
         <div className="mt-4 flex items-center justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onDismiss}>稍后再答</Button>
           <Button

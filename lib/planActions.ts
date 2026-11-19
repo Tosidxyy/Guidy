@@ -125,6 +125,7 @@ export async function saveDraftAction(): Promise<{ ok: boolean; planId?: string;
     usePlanSync.getState().setServerVersion(resp.plan.id, resp.version);
     void queryClient.invalidateQueries({ queryKey: ['plans'] });
     void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    void queryClient.invalidateQueries({ queryKey: ['calendar'] });
     return { ok: true, planId: resp.plan.id };
   } catch (err) {
     return { ok: false, reason: err instanceof ApiError ? err.message : '保存失败，请重试' };

@@ -21,4 +21,9 @@ describe('questionCard', () => {
     expect(shouldSendImmediately({ ...card, questions: [card.questions[0]] })).toBe(true);
     expect(shouldSendImmediately(card)).toBe(false);
   });
+
+  it('自定义回答文本去空白参与拼接，空输入不计入', () => {
+    expect(composeAnswers(card, { 0: '  每周4练，周末加一次  ', 1: '   ' })).toBe('每周想练几次？：每周4练，周末加一次');
+    expect(composeAnswers(card, { 0: '' })).toBe('');
+  });
 });

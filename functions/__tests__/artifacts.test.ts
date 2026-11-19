@@ -28,6 +28,19 @@ describe('artifacts', () => {
   it('普通文本 → null', () => { expect(parseModelText('你好，请告诉我你的目标')).toBeNull(); });
   it('非法 JSON → null', () => { expect(parseModelText('{bad')).toBeNull(); });
   it('schema 不合法 → null', () => { expect(parseModelText(JSON.stringify({ type: 'constraint_set', task_defs: [] }))).toBeNull(); });
+  it('截止日硬护栏：horizon 取 ≥ 剩余天数的最小档位', () => {
+    const withDeadline = (horizon_days: number, date: string, horizon_start?: string) => ({
+      ...validSet, horizon_days, horizon_start,
+      constraints: [{ type: 'deadline', date, label: '初试' }],
+    });
+    const span = (r: ReturnType<typeof parseModelText>) => (r?.kind === 'constraint_set' ? r.value.horizon_days : null);
+    expect(span(parseModelText(JSON.stringify(withDeadline(90, '2026-12-15')), '2026-11-19'))).toBe(30);
+    expect(span(parseModelText(JSON.stringify(withDeadline(30, '2026-11-23')), '2026-11-19'))).toBe(7);
+    expect(span(parseModelText(JSON.stringify(withDeadline(7, '2027-01-18')), '2026-11-19'))).toBe(90);
+    expect(span(parseModelText(JSON.stringify(withDeadline(90, '2026-12-15', '2026-12-01')), '2026-11-19'))).toBe(30);
+    expect(span(parseModelText(JSON.stringify(withDeadline(30, '2026-11-01')), '2026-11-19'))).toBe(30);
+    expect(span(parseModelText(JSON.stringify({ ...validSet, horizon_days: 90 }), '2026-11-19'))).toBe(90);
+  });
   it('prompt 含关键约束词', () => {
     const p = buildSystemPrompt();
     expect(p).toContain('constraint_set');
@@ -44,8 +57,9 @@ describe('prompt 对话策略 — 自由对话 agent，意图分流', () => {
   it('与排程无关时不输出产物', () => {
     expect(buildSystemPrompt()).toContain('不输出任何产物');
   });
-  it('信息不足用自然语言追问，每轮最多 2 个', () => {
-    expect(buildSystemPrompt()).toContain('每轮最多 2 个');
+  it('阻塞项合并单轮追问，最多 3 问', () => {
+    expect(buildSystemPrompt()).toContain('最多 3 问');
+    expect(buildSystemPrompt()).toContain('不再追加第二轮');
   });
   it('信息足够才生成 constraint_set', () => {
     expect(buildSystemPrompt()).toContain('才输出 constraint_set');

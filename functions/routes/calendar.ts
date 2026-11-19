@@ -69,9 +69,9 @@ export async function materializeSharedBusy(db: Db, visitor: string): Promise<vo
         start_utc: startUtc,
         end_utc: endUtc,
         priority: 'high',
-        pinned: true,
-        origin: 'fixed',
-        notes: '共享日历：来自固定忙时/固定日程，可直接拖动或删除',
+        pinned: false,
+        origin: 'manual',
+        notes: '共享日历：固定日程，与普通任务一样可拖拽/编辑/删除',
       });
     }
   }

@@ -9,6 +9,7 @@ import { useAutoSaveDraft } from '@/lib/useAutoSaveDraft';
 import { useCommitPlan } from '@/lib/useCommitPlan';
 import { appliedPatches } from '@/lib/appliedPatches';
 import { patchOpText } from '@/lib/describe';
+import { groupSchedules } from '@/lib/confirmDraft';
 import { applyPatch } from '@/shared/engine';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useChatStore } from '@/store/useChatStore';
@@ -45,7 +46,7 @@ export function PlanCardPanel() {
   const viewed = draft ?? proposalDraft;
   const taskCount = viewed ? viewed.task_defs.length : state.task_defs.length;
   const constraintList = viewed ? viewed.constraints : state.constraints.map((c) => c.payload);
-  const scheduleCount = constraintList.filter((c) => c.type === 'busy_window' || c.type === 'fixed_block').length;
+  const scheduleCount = groupSchedules({ task_defs: viewed?.task_defs ?? state.task_defs, horizon_days: viewed?.horizon_days ?? state.plan.horizon_days, constraints: constraintList } as ConstraintSetArtifact).length;
   const ruleCount = constraintList.length - scheduleCount;
   const planTitle = viewed ? viewed.plan_title : state.plan.title;
 
@@ -162,7 +163,7 @@ export function PlanCardPanel() {
           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-site-brand" />
           <span className="shrink-0 font-medium text-site-ink">方案卡</span>
           <span className="min-w-0 truncate text-site-ink">{planTitle}</span>
-          <span className="tabular shrink-0">任务 {taskCount} · 固定 {scheduleCount} · 约束 {ruleCount}</span>
+          <span className="tabular shrink-0">任务 {taskCount + scheduleCount} · 约束 {ruleCount}</span>
           <Badge variant="secondary" className="ml-0.5 shrink-0 px-1.5 py-0 text-[10px]">{statusText}</Badge>
           {open ? <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0" /> : <ChevronUp className="ml-auto h-3.5 w-3.5 shrink-0" />}
         </Button>

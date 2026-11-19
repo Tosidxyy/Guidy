@@ -16,5 +16,9 @@ export const useSharedCalendar = create<SharedCalendarState>((set) => ({
   busyBlocks: [],
   busyIds: new Set<string>(),
   setWindows: (windows) => set({ windows }),
-  setBusyBlocks: (blocks) => set({ busyBlocks: blocks, busyIds: new Set(blocks.map((b) => b.id)) }),
+  // 存量旧数据可能带 pinned/origin:'fixed'；固定日程现在就是普通块，显示与编辑模型统一归一化。
+  setBusyBlocks: (blocks) => {
+    const normalized = blocks.map((b) => ({ ...b, pinned: false, origin: 'manual' as const }));
+    set({ busyBlocks: normalized, busyIds: new Set(normalized.map((b) => b.id)) });
+  },
 }));

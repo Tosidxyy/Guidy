@@ -1,4 +1,5 @@
-import type { Constraint, PlanState } from '@/shared/types';
+import type { Block, Constraint, PlanState } from '@/shared/types';
+import { localDay, localMinutes, minToHHmm } from '@/shared/engine';
 import { canonical } from '@/lib/restoreChat';
 
 const RECURRING = new Set(['busy_window', 'fixed_block']);
@@ -26,4 +27,24 @@ export function collectSharedWindows(plans: PlanState[]): Constraint[] {
 export function mergeSharedWindows(own: Constraint[], shared: Constraint[]): Constraint[] {
   const seen = new Set(own.map((c) => canonical(c.payload)));
   return [...own, ...shared.filter((c) => !seen.has(canonical(c.payload)))];
+}
+
+/**
+ * 共享块（固定日程）在本地求解/预览里按"当日忙时"裁剪空闲：
+ * 服务端把它们作为 pinned 输入，本地用等价的 date 锚定 busy_window 表达占用，
+ * 避免预览输出混入共享块导致 ghost/diff/应用逻辑复杂化。
+ */
+export function sharedBlockCuts(blocks: Block[], timezone: string): Constraint[] {
+  return blocks.map((b) => ({
+    id: `cut-${b.id}`,
+    payload: {
+      type: 'busy_window' as const,
+      date: localDay(b.start_utc, timezone),
+      start: minToHHmm(localMinutes(b.start_utc, timezone)),
+      end: minToHHmm(localMinutes(b.end_utc, timezone)),
+      label: b.title,
+    },
+    source: 'user' as const,
+    enabled: true,
+  }));
 }

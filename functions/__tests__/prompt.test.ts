@@ -101,11 +101,24 @@ describe('buildUserMessage — 跨计划上下文', () => {
     expect(text).toContain('【question_card 契约】');
     expect(text).toContain('输出 question_card 的这一轮不要再输出 constraint_set 或 patch');
   });
-  it('system prompt 要求先问够必要信息再生成方案', () => {
+  it('system prompt 要求先推断、单轮合并追问再生成方案', () => {
     const text = buildSystemPrompt();
     expect(text).toContain('必要信息清单');
-    expect(text).toContain('至少经过 2 轮追问');
+    expect(text).toContain('先穷尽推断');
+    expect(text).toContain('最多 3 问');
+    expect(text).toContain('不再追加第二轮');
     expect(text).toContain('修改已有计划的明确指令');
+  });
+  it('system prompt 约束语气去 AI 腔', () => {
+    const text = buildSystemPrompt();
+    expect(text).toContain('像一位有经验的规划师朋友');
+    expect(text).toContain('不叙述自己的动作');
+  });
+  it('system prompt 的截止日跨度规则可计算', () => {
+    const text = buildSystemPrompt();
+    expect(text).toContain('最小档位');
+    expect(text).toContain('不得越过截止日');
+    expect(text).toContain('默认 horizon_days=90');
   });
   it('注入可安排时段并约束追问选项', () => {
     const text = buildUserMessage({ message: '帮我排训练', plan, history: [], today: '2026-11-18', availability: '周一至周五：无可安排时段；周六、周日：09:00–22:00' });

@@ -120,6 +120,17 @@ export function updateScheduleGroup(draft: ConstraintSetArtifact, indices: numbe
   };
 }
 
+export function updateScheduleLabel(draft: ConstraintSetArtifact, indices: number[], label: string): ConstraintSetArtifact {
+  const set = new Set(indices);
+  return {
+    ...draft,
+    constraints: draft.constraints.map((c, i) => {
+      if (!set.has(i) || !isSchedule(c)) return c;
+      return c.type === 'fixed_block' ? { ...c, title: label.slice(0, 60) } : { ...c, label: label.slice(0, 30) };
+    }),
+  };
+}
+
 export function removeScheduleGroup(draft: ConstraintSetArtifact, indices: number[]): ConstraintSetArtifact {
   const set = new Set(indices);
   return { ...draft, constraints: draft.constraints.filter((_, i) => !set.has(i)) };

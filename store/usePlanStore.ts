@@ -6,7 +6,7 @@ import { buildEmptyPlan } from '@/lib/seed';
 import { solveArtifact } from '@/lib/preview';
 import { moveSelection } from '@/lib/moveSelection';
 import { loadPersisted, persist } from '@/lib/storage';
-import { mergeSharedWindows } from '@/lib/sharedCalendar';
+import { mergeSharedWindows, sharedBlockCuts } from '@/lib/sharedCalendar';
 import { useSharedCalendar } from '@/store/useSharedCalendar';
 
 interface UndoEntry {
@@ -51,7 +51,7 @@ interface PlanStore {
   addTaskDef: (task: TaskDef) => void;
   deleteTaskDef: (key: string) => void;
 
-  requestReschedule: (reason: string) => void;
+  rescheduleNow: (reason: string) => { ok: boolean; reason?: string };
   previewArtifact: (draft: import('@/shared/schemas').ConstraintSetArtifact) => void;
   previewPatch: (patch: import('@/shared/schemas').PatchArtifact) => void;
   replaceStateKeepUndo: (next: PlanState) => void;
@@ -87,7 +87,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
     timezone: s.plan.timezone,
     horizon_start: s.plan.horizon_start,
     horizon_days: s.plan.horizon_days,
-    blocks: s.blocks,
+    blocks: [...s.blocks, ...useSharedCalendar.getState().busyBlocks],
     constraints: withShared(s.constraints),
   });
 
@@ -261,8 +261,9 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       });
     },
 
-    requestReschedule: (reason) => {
+    rescheduleNow: (reason) => {
       const { state } = get();
+      const shared = useSharedCalendar.getState();
       const pinned = state.blocks.filter((b) => b.pinned || b.origin === 'manual');
       const output = solve({
         engine_version: ENGINE_VERSION,
@@ -270,19 +271,25 @@ export const usePlanStore = create<PlanStore>((set, get) => {
         horizon_days: state.plan.horizon_days,
         timezone: state.plan.timezone,
         task_defs: state.task_defs,
-        constraints: state.constraints,
+        constraints: [...withShared(state.constraints), ...sharedBlockCuts(shared.busyBlocks, state.plan.timezone)],
         pinned_blocks: pinned,
       });
-      const diff = diffBlocks(state.blocks, output.blocks);
-      set({ preview: { output, diff, reason, horizon_start: state.plan.horizon_start, horizon_days: state.plan.horizon_days }, lastCompromises: output.compromises });
+      set({ lastCompromises: output.compromises });
+      if (output.violations.length) return { ok: false, reason: output.violations[0].reason };
+      get().commit(reason, (draft) => {
+        draft.blocks = output.blocks;
+      });
+      return { ok: true };
     },
 
     previewArtifact: (draft) => {
       const { state } = get();
+      const shared = useSharedCalendar.getState();
       const { output, diff, horizon_start } = solveArtifact(
         draft,
         { horizon_start: state.plan.horizon_start, timezone: state.plan.timezone },
         state.blocks,
+        [...shared.windows, ...sharedBlockCuts(shared.busyBlocks, state.plan.timezone)],
       );
       set({ preview: { output, diff, reason: 'AI 约束方案预览', horizon_start, horizon_days: draft.horizon_days }, lastCompromises: output.compromises });
     },
@@ -293,7 +300,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       let output: SolveOutput;
       if (patched.requiresReschedule) {
         const pinned = patched.state.blocks.filter((b) => b.pinned || b.origin === 'manual');
-        output = solve({ engine_version: ENGINE_VERSION, horizon_start: state.plan.horizon_start, horizon_days: state.plan.horizon_days, timezone: state.plan.timezone, task_defs: patched.state.task_defs, constraints: withShared(patched.state.constraints), pinned_blocks: pinned });
+        output = solve({ engine_version: ENGINE_VERSION, horizon_start: state.plan.horizon_start, horizon_days: state.plan.horizon_days, timezone: state.plan.timezone, task_defs: patched.state.task_defs, constraints: [...withShared(patched.state.constraints), ...sharedBlockCuts(useSharedCalendar.getState().busyBlocks, state.plan.timezone)], pinned_blocks: pinned });
       } else {
         output = { blocks: patched.state.blocks, violations: [], compromises: [], stats: { placed: patched.state.blocks.length, unplaced: 0, solve_ms: 0 } };
       }

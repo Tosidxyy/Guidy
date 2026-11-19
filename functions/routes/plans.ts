@@ -7,7 +7,7 @@ import { requireVisitor } from '../identity.ts';
 import { solve, resultHash } from '../engine.ts';
 import { ENGINE_VERSION, LIMITS, QUOTAS } from '../../shared/constants.ts';
 import { TaskDefSchema, ConstraintSchema, PlanBlockSchema, HorizonDaysSchema } from '../../shared/schemas.ts';
-import { horizonBounds, sharedBusyBlocks } from './calendar.ts';
+import { horizonBounds, sharedBusyBlocks, materializeSharedBusy } from './calendar.ts';
 import type { Deps, RouteCtx } from '../types.ts';
 
 const CommitSchema = z.object({
@@ -105,6 +105,8 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
   for (const c of input.constraints) {
     await deps.db.from('constraints').insert({ plan_id: plan.id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
   }
+  // 固定日程在 commit 当场实例化为普通共享块，响应里不再带 busy/fixed 约束，避免灰色禁止区阶段。
+  await materializeSharedBusy(deps.db, visitor);
   for (const b of output.blocks.filter((x) => !busyIds.has(x.id))) {
     await deps.db.from('blocks').insert({ plan_id: plan.id, task_key: b.task_key ?? null, title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc, priority: b.priority, pinned: b.pinned, origin: b.origin, notes: b.notes ?? null });
   }
@@ -215,6 +217,7 @@ export async function savePlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
   for (const c of savedConstraints) {
     await deps.db.from('constraints').insert({ ...(UUID_RE.test(c.id) ? { id: c.id } : {}), plan_id: plan.id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
   }
+  await materializeSharedBusy(deps.db, visitor);
   for (const b of input.blocks) {
     await deps.db.from('blocks').insert({
       ...(UUID_RE.test(b.id) ? { id: b.id } : {}),

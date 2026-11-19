@@ -8,6 +8,7 @@ import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { categoryColor, taskSummary } from '@/lib/describe';
 import { addTaskDefAction, deleteTaskDefAction, undoToastAction } from '@/lib/planActions';
+import { planController } from '@/lib/planRuntime';
 import { usePlanLayers } from '@/lib/usePlanLayers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,7 +25,6 @@ export function TasksDrawer() {
   const planId = usePlanStore((s) => s.state.plan.id);
   const { layers } = usePlanLayers(planId);
   const otherTasks = layers.filter((l) => l.state.task_defs.length > 0);
-  const requestReschedule = usePlanStore((s) => s.requestReschedule);
 
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<Category>('study');
@@ -101,8 +101,20 @@ export function TasksDrawer() {
           </ul>
 
           {taskDefs.length > 0 && (
-            <Button variant="outline" className="w-full" onClick={() => { requestReschedule('任务定义变更后重新排程'); closeDrawer(); }}>
-              <RefreshCw className="mr-1.5 h-4 w-4" /> 重新排程并预览
+            <Button variant="outline" className="w-full" onClick={() => {
+              closeDrawer();
+              if (!planId) {
+                const r = usePlanStore.getState().rescheduleNow('任务定义变更后重新排程');
+                if (!r.ok) toast.error(r.reason ?? '重排失败');
+                else toast.success('已重新排程', { action: { label: '撤销', onClick: () => { const l = usePlanStore.getState().undo(); if (l) toast.success(`已撤销：${l}`); } } });
+                return;
+              }
+              void planController.apply({ planId, ops: [{ op: 'reschedule', scope: 'all', keep_pinned: true }], label: '重新排程', optimistic: {} }).then((r) => {
+                if (!r.ok) toast.error(r.reason ?? '重排失败');
+                else toast.success('已重新排程', { action: undoToastAction(planId) });
+              });
+            }}>
+              <RefreshCw className="mr-1.5 h-4 w-4" /> 重新排程
             </Button>
           )}
 

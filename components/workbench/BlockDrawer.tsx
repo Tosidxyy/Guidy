@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Pin, Trash2 } from 'lucide-react';
 import { CATEGORIES } from '@/shared/constants';
-import { dayList, localDay, localMinutes, minToHHmm, utcAt, applyPatch } from '@/shared/engine';
+import { dayList, localDay, localMinutes, minToHHmm, utcAt, applyPatch, validatePlacement } from '@/shared/engine';
 import type { Category, Priority } from '@/shared/types';
 import { usePlanStore } from '@/store/usePlanStore';
+import { useSharedCalendar } from '@/store/useSharedCalendar';
 import { useUiStore } from '@/store/useUiStore';
 import { planController } from '@/lib/planRuntime';
+import { applySharedOps, undoSharedOps } from '@/lib/sharedBlocks';
+import { mergeSharedWindows } from '@/lib/sharedCalendar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,7 +29,8 @@ export function BlockDrawer() {
   const deleteBlock = usePlanStore((s) => s.deleteBlock);
   const togglePin = usePlanStore((s) => s.togglePin);
 
-  const block = state.blocks.find((b) => b.id === editingId) ?? null;
+  const block = state.blocks.find((b) => b.id === editingId) ?? useSharedCalendar.getState().busyBlocks.find((b) => b.id === editingId) ?? null;
+  const isShared = !!block && useSharedCalendar.getState().busyIds.has(block.id);
   const tz = state.plan.timezone;
   const horizonDays = dayList(state.plan.horizon_start, state.plan.horizon_days, tz);
 
@@ -69,6 +73,28 @@ export function BlockDrawer() {
     if (!Number.isFinite(startMin) || duration < 5) { toast.error('请填写有效的时间与时长（≥5 分钟）'); return; }
     const startUtc = utcAt(day, startMin, tz);
     const endUtc = utcAt(day, startMin + duration, tz);
+    if (isShared) {
+      const shared = useSharedCalendar.getState();
+      const check = validatePlacement(
+        { id: block.id, title: name, category, start_utc: startUtc, end_utc: endUtc },
+        {
+          timezone: tz,
+          horizon_start: state.plan.horizon_start,
+          horizon_days: state.plan.horizon_days,
+          blocks: [...state.blocks, ...shared.busyBlocks],
+          constraints: mergeSharedWindows(state.constraints, shared.windows),
+        },
+      );
+      if (!check.ok) { toast.error(check.hard?.reason ?? '无法保存到该时间'); return; }
+      const r = await applySharedOps([{
+        op: 'update_block', id: block.id,
+        patch: { title: name.slice(0, 60), category, priority, notes: notes.trim() ? notes.trim().slice(0, 500) : undefined, start_utc: startUtc, end_utc: endUtc },
+      }]);
+      if (!r.ok) { toast.error(r.reason ?? '保存失败'); return; }
+      toast.success('已保存', { action: { label: '撤销', onClick: () => { void undoSharedOps(); } } });
+      closeDrawer();
+      return;
+    }
     const current = usePlanStore.getState().state;
     const planId = current.plan.id;
     if (planId) {
@@ -108,6 +134,14 @@ export function BlockDrawer() {
   };
 
   const remove = async () => {
+    if (isShared) {
+      const r = await applySharedOps([{ op: 'remove_block', id: block.id }]);
+      if (!r.ok) { toast.error(r.reason ?? '删除失败'); return; }
+      select(null);
+      closeDrawer();
+      toast.success(`已删除「${block.title}」`, { action: { label: '撤销', onClick: () => { void undoSharedOps(); } } });
+      return;
+    }
     const current = usePlanStore.getState().state;
     const planId = current.plan.id;
     if (!planId) {
@@ -134,7 +168,7 @@ export function BlockDrawer() {
         <SheetHeader className="border-b border-site-line px-5 py-4">
           <SheetTitle className="font-display">编辑任务块</SheetTitle>
           <SheetDescription>
-            {block.origin === 'engine' ? '由引擎生成' : block.origin === 'manual' ? '手动创建' : '固定日程'} · {block.pinned ? '已钉住（重排时保留）' : '未钉住'}
+            {isShared ? '共享日历 · 固定日程，与普通任务一样可编辑' : `${block.origin === 'engine' ? '由引擎生成' : block.origin === 'manual' ? '手动创建' : '固定日程'} · ${block.pinned ? '已钉住（重排时保留）' : '未钉住'}`}
           </SheetDescription>
         </SheetHeader>
 
@@ -174,17 +208,19 @@ export function BlockDrawer() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="b-duration">时长（分钟）</Label>
-              <Input id="b-duration" type="number" min={5} max={480} step={5} value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
+              <Input id="b-duration" type="number" min={5} max={isShared ? 960 : 480} step={5} value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
             </div>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="b-notes">备注（可选）</Label>
             <Textarea id="b-notes" value={notes} maxLength={500} rows={3} placeholder="例如：先做 2023 年真题" onChange={(e) => setNotes(e.target.value)} />
           </div>
-          <div className="flex items-center justify-between rounded-lg border border-site-line bg-site-surface px-3 py-2.5">
-            <div className="flex items-center gap-2 text-sm text-site-ink"><Pin className="h-4 w-4 text-site-brand" /> 钉住此任务块</div>
-            <Switch checked={block.pinned} onCheckedChange={() => { void togglePinned(); }} aria-label="钉住此任务块" />
-          </div>
+          {!isShared && (
+            <div className="flex items-center justify-between rounded-lg border border-site-line bg-site-surface px-3 py-2.5">
+              <div className="flex items-center gap-2 text-sm text-site-ink"><Pin className="h-4 w-4 text-site-brand" /> 钉住此任务块</div>
+              <Switch checked={block.pinned} onCheckedChange={() => { void togglePinned(); }} aria-label="钉住此任务块" />
+            </div>
+          )}
         </div>
 
         <div className="flex gap-2 border-t border-site-line px-5 py-4">

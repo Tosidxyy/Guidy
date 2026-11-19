@@ -12,7 +12,7 @@ import { mergeSharedWindows } from '@/lib/sharedCalendar';
 import { useSharedCalendar } from '@/store/useSharedCalendar';
 import { usePlanManager } from '@/lib/usePlanManager';
 import { planController } from '@/lib/planRuntime';
-import { applySharedOps } from '@/lib/sharedBlocks';
+import { applySharedOps, undoSharedOps } from '@/lib/sharedBlocks';
 import { mergeConflictAction, undoMergedPlans } from '@/lib/planActions';
 import { moveSelection } from '@/lib/moveSelection';
 import { todayStr } from '@/lib/seed';
@@ -25,7 +25,6 @@ import { BlockCard, type BlockVisualState } from './BlockCard';
 import { ConflictBar } from './ConflictBar';
 import { GUTTER_PX, HOUR_PX, PX_PER_MIN, SNAP_MIN, layoutDay, snap } from './layout';
 import { QuickAddDialog } from './QuickAddDialog';
-import { SharedBlockDialog } from './SharedBlockDialog';
 
 const WEEKDAY_LABEL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -96,7 +95,6 @@ export function CalendarPanel() {
   const lastForeignDrag = useRef(0);
   const [pendingSwitch, setPendingSwitch] = useState<{ id: string; title: string } | null>(null);
   const [foreignTarget, setForeignTarget] = useState<{ planId: string; planTitle: string; blockTitle: string; drag: boolean } | null>(null);
-  const [editingShared, setEditingShared] = useState<Block | null>(null);
 
   const foreign = useMemo(() => collectForeignBlocks(state.blocks, layers), [state.blocks, layers]);
   const foreignMap = useMemo(() => new Map(foreign.map((f) => [f.block.id, f])), [foreign]);
@@ -210,8 +208,8 @@ export function CalendarPanel() {
 
   useEffect(() => { select(null); }, [state.plan.id, select]);
   useEffect(() => {
-    if (selectedIds.length && !state.blocks.some((b) => selectedIds.includes(b.id))) select(null);
-  }, [state.blocks, selectedIds, select]);
+    if (selectedIds.length && !state.blocks.some((b) => selectedIds.includes(b.id)) && !busyBlocks.some((b) => selectedIds.includes(b.id))) select(null);
+  }, [state.blocks, busyBlocks, selectedIds, select]);
   const flashInvalid = useCallback((ids: string[]) => {
     setInvalidIds(ids);
     setTimeout(() => setInvalidIds([]), 320);
@@ -226,14 +224,30 @@ export function CalendarPanel() {
       timezone: tz,
       horizon_start: source.plan.horizon_start,
       horizon_days: source.plan.horizon_days,
-      blocks: source.blocks,
-      constraints: source.constraints,
+      blocks: [...source.blocks, ...busyBlocks],
+      constraints: mergeSharedWindows(source.constraints, sharedWindows),
     },
-  ), [tz]);
+  ), [tz, busyBlocks, sharedWindows]);
+
+  // 共享块（固定日程）与普通块一起参与落点校验与组移动验证。
+  const combinedSource = useMemo(() => ({
+    ...state,
+    blocks: [...state.blocks, ...busyBlocks],
+    constraints: mergeSharedWindows(state.constraints, sharedWindows),
+  }), [state, busyBlocks, sharedWindows]);
+
+  const undoDrag = useCallback(async (planId: string | null, shared: boolean) => {
+    if (shared) await undoSharedOps();
+    if (planId) {
+      const l = await planController.undo(planId);
+      if (l) toast.success(`已撤销：${l}`);
+    }
+  }, []);
 
   const applyMoveOps = useCallback(async (drag: DragState) => {
     const planId = drag.planId;
     if (drag.shared) {
+      if (!drag.ok) { toast.error(drag.reason ?? '无法放置到该位置'); flashInvalid([drag.block.id]); return; }
       const r = await applySharedOps([{
         op: 'move_block',
         id: drag.block.id,
@@ -245,10 +259,20 @@ export function CalendarPanel() {
       return;
     }
     if (!planId) {
-      const r = drag.mode === 'resize'
-        ? moveBlock(drag.block.id, utcAt(days[drag.origDayIdx], drag.startMin, tz), utcAt(days[drag.origDayIdx], drag.endMin, tz))
-        : moveBlocks(drag.ids, drag.dayIdx - drag.origDayIdx, drag.startMin - drag.origStart);
-      if (!r.ok) { toast.error(r.reason ?? '无法放置到该位置'); flashInvalid(drag.ids); }
+      const sharedIds = drag.ids.filter((id) => busyIds.has(id));
+      const planIds = drag.ids.filter((id) => !busyIds.has(id));
+      if (sharedIds.length) {
+        const result = moveSelection(combinedSource, sharedIds, drag.dayIdx - drag.origDayIdx, drag.startMin - drag.origStart);
+        if (!result.ok) { toast.error(result.reason ?? '无法放置到该位置'); flashInvalid(sharedIds); return; }
+        const r = await applySharedOps(result.moves.map((m) => ({ op: 'move_block' as const, id: m.id, start_utc: m.start_utc, end_utc: m.end_utc })));
+        if (!r.ok) { toast.error(r.reason ?? '公共日历保存失败'); flashInvalid(sharedIds); return; }
+      }
+      if (planIds.length) {
+        const r = drag.mode === 'resize'
+          ? moveBlock(drag.block.id, utcAt(days[drag.origDayIdx], drag.startMin, tz), utcAt(days[drag.origDayIdx], drag.endMin, tz))
+          : moveBlocks(planIds, drag.dayIdx - drag.origDayIdx, drag.startMin - drag.origStart);
+        if (!r.ok) { toast.error(r.reason ?? '无法放置到该位置'); flashInvalid(planIds); }
+      }
       return;
     }
 
@@ -261,16 +285,26 @@ export function CalendarPanel() {
         end_utc: utcAt(days[drag.origDayIdx], drag.endMin, tz),
       }];
     } else {
-      const result = moveSelection(drag.source, drag.ids, drag.dayIdx - drag.origDayIdx, drag.startMin - drag.origStart);
+      const result = moveSelection(drag.foreign ? drag.source : combinedSource, drag.ids, drag.dayIdx - drag.origDayIdx, drag.startMin - drag.origStart);
       if (!result.ok) { toast.error(result.reason ?? '无法放置到该位置'); flashInvalid(drag.ids); return; }
       moves = result.moves;
     }
 
-    const ops = moves.map((m) => ({ op: 'move_block' as const, id: m.id, start_utc: m.start_utc, end_utc: m.end_utc }));
-    const optimisticBlocks = applyPatch(drag.source, ops).state.blocks;
+    const sharedMoves = moves.filter((m) => busyIds.has(m.id));
+    const planMoves = moves.filter((m) => !busyIds.has(m.id));
     const label = drag.ids.length > 1
       ? `移动 ${drag.ids.length} 个任务块`
       : drag.mode === 'resize' ? `调整「${drag.block.title}」` : `移动「${drag.block.title}」`;
+    if (sharedMoves.length) {
+      const r = await applySharedOps(sharedMoves.map((m) => ({ op: 'move_block' as const, id: m.id, start_utc: m.start_utc, end_utc: m.end_utc })));
+      if (!r.ok) { toast.error(r.reason ?? '公共日历保存失败'); flashInvalid(sharedMoves.map((m) => m.id)); return; }
+    }
+    if (!planMoves.length) {
+      toast.success(`已${label}`, { action: { label: '撤销', onClick: () => { void undoSharedOps(); } } });
+      return;
+    }
+    const ops = planMoves.map((m) => ({ op: 'move_block' as const, id: m.id, start_utc: m.start_utc, end_utc: m.end_utc }));
+    const optimisticBlocks = applyPatch(drag.source, ops).state.blocks;
     const res = await planController.apply({ planId, ops, label, optimistic: { blocks: optimisticBlocks } });
     if (!res.ok) { toast.error(res.reason ?? '移动失败'); flashInvalid(drag.ids); return; }
 
@@ -278,32 +312,43 @@ export function CalendarPanel() {
       ? `已移动 ${drag.ids.length} 个任务块`
       : `已${drag.mode === 'resize' ? '调整' : '移动'}「${drag.block.title}」`;
     toast.success(done, {
-      action: { label: '撤销', onClick: () => { void planController.undo(planId).then((l) => { if (l) toast.success(`已撤销：${l}`); }); } },
+      action: { label: '撤销', onClick: () => { void undoDrag(planId, sharedMoves.length > 0); } },
     });
     if (!drag.foreign) selectMany(drag.ids);
-  }, [days, flashInvalid, moveBlock, moveBlocks, selectMany, tz]);
+  }, [days, flashInvalid, moveBlock, moveBlocks, selectMany, tz, busyIds, combinedSource, undoDrag]);
 
   const removeSelected = useCallback(async () => {
     const current = usePlanStore.getState().state;
     const planId = current.plan.id;
+    const sharedTargets = busyBlocks.filter((b) => selectedIds.includes(b.id));
     const targets = current.blocks.filter((b) => selectedIds.includes(b.id));
-    if (!targets.length) return;
-    if (!planId) {
-      deleteBlocks(selectedIds);
+    if (!targets.length && !sharedTargets.length) return;
+    const total = targets.length + sharedTargets.length;
+    if (sharedTargets.length) {
+      const r = await applySharedOps(sharedTargets.map((b) => ({ op: 'remove_block' as const, id: b.id })));
+      if (!r.ok) { toast.error(r.reason ?? '公共日历删除失败'); return; }
+    }
+    if (!targets.length) {
       select(null);
-      toast(`已删除 ${targets.length} 个任务块`, { action: { label: '撤销', onClick: () => usePlanStore.getState().undo() } });
+      toast(`已删除 ${total} 个任务块`, { action: { label: '撤销', onClick: () => { void undoSharedOps(); } } });
+      return;
+    }
+    if (!planId) {
+      deleteBlocks(targets.map((b) => b.id));
+      select(null);
+      toast(`已删除 ${total} 个任务块`, { action: { label: '撤销', onClick: () => { if (sharedTargets.length) void undoSharedOps(); usePlanStore.getState().undo(); } } });
       return;
     }
     const ops = targets.map((b) => ({ op: 'remove_block' as const, id: b.id }));
     const optimisticBlocks = applyPatch(current, ops).state.blocks;
-    const label = targets.length > 1 ? `删除 ${targets.length} 个任务块` : `删除「${targets[0].title}」`;
+    const label = total > 1 ? `删除 ${total} 个任务块` : `删除「${(targets[0] ?? sharedTargets[0]).title}」`;
     const r = await planController.apply({ planId, ops, label, optimistic: { blocks: optimisticBlocks } });
     if (!r.ok) { toast.error(r.reason ?? '删除失败'); return; }
     select(null);
     toast.success(`已${label}`, {
-      action: { label: '撤销', onClick: () => { void planController.undo(planId).then((l) => { if (l) toast.success(`已撤销：${l}`); }); } },
+      action: { label: '撤销', onClick: () => { void undoDrag(planId, sharedTargets.length > 0); } },
     });
-  }, [deleteBlocks, select, selectedIds]);
+  }, [deleteBlocks, select, selectedIds, busyBlocks, undoDrag]);
 
   const togglePinnedBlock = useCallback(async (id: string) => {
     const current = usePlanStore.getState().state;
@@ -342,31 +387,19 @@ export function CalendarPanel() {
       drag.dayIdx = drag.origDayIdx;
       drag.endMin = Math.min(visibleEnd, Math.max(drag.origStart + SNAP_MIN, snap(drag.origEnd + dy / PX_PER_MIN)));
       drag.startMin = drag.origStart;
-      if (drag.shared) {
-        drag.ok = true;
-        drag.soft = false;
-        drag.reason = undefined;
-      } else {
-        const check = validateFor(drag.source, drag.block, days[drag.origDayIdx], drag.startMin, drag.endMin);
-        drag.ok = check.ok;
-        drag.soft = check.ok && check.soft.length > 0;
-        drag.reason = check.hard?.reason ?? check.soft[0]?.reason;
-      }
+      const check = validateFor(drag.source, drag.block, days[drag.origDayIdx], drag.startMin, drag.endMin);
+      drag.ok = check.ok;
+      drag.soft = check.ok && check.soft.length > 0;
+      drag.reason = check.hard?.reason ?? check.soft[0]?.reason;
       for (const item of drag.els) item.el.style.height = `${(drag.endMin - drag.origStart) * PX_PER_MIN}px`;
     } else {
       drag.dayIdx = Math.min(days.length - 1, Math.max(0, drag.origDayIdx + Math.round(dx / drag.colWidth)));
       drag.startMin = Math.min(visibleEnd - dur, Math.max(visibleStart, snap(drag.origStart + dy / PX_PER_MIN)));
       drag.endMin = drag.startMin + dur;
-      if (drag.shared) {
-        drag.ok = true;
-        drag.soft = false;
-        drag.reason = undefined;
-      } else {
-        const result = moveSelection(drag.source, drag.ids, drag.dayIdx - drag.origDayIdx, drag.startMin - drag.origStart);
-        drag.ok = result.ok;
-        drag.soft = result.ok && result.soft.length > 0;
-        drag.reason = result.reason ?? result.soft[0];
-      }
+      const result = moveSelection(drag.foreign ? drag.source : combinedSource, drag.ids, drag.dayIdx - drag.origDayIdx, drag.startMin - drag.origStart);
+      drag.ok = result.ok;
+      drag.soft = result.ok && result.soft.length > 0;
+      drag.reason = result.reason ?? result.soft[0];
       const tx = (drag.dayIdx - drag.origDayIdx) * drag.colWidth;
       const ty = (drag.startMin - drag.origStart) * PX_PER_MIN;
       for (const item of drag.els) item.el.style.transform = `translate(${tx}px, ${ty}px)`;
@@ -384,7 +417,7 @@ export function CalendarPanel() {
         ok: d.ok, soft: d.soft, reason: d.reason, count: d.ids.length,
       });
     });
-  }, [days, validateFor, visibleEnd, visibleStart]);
+  }, [days, validateFor, visibleEnd, visibleStart, combinedSource]);
 
   const finishDrag = useCallback(() => {
     const drag = dragRef.current;
@@ -407,7 +440,6 @@ export function CalendarPanel() {
       return;
     }
     if (!drag.moved) {
-      if (drag.shared) { setEditingShared(drag.block); return; }
       if (drag.additive) toggleSelected(drag.block.id);
       else select(drag.block.id);
       return;
@@ -427,8 +459,8 @@ export function CalendarPanel() {
     const day = localDay(block.start_utc, tz);
     const dayIdx = days.indexOf(day);
     if (dayIdx === -1) return;
-    if (!foreignInfo && !shared && mode === 'resize' && selectedIds.length > 1) select(block.id);
-    const ids = foreignInfo || shared
+    if (!foreignInfo && mode === 'resize' && selectedIds.length > 1) select(block.id);
+    const ids = foreignInfo
       ? [block.id]
       : mode === 'move' && selectedIds.includes(block.id) && selectedIds.length > 1 ? selectedIds : [block.id];
     const els = Array.from(grid.querySelectorAll<HTMLElement>('[data-block-id]'))
@@ -467,7 +499,7 @@ export function CalendarPanel() {
       if (drawer || target.closest('input, textarea, select, [role="dialog"]')) return;
       if (e.key === 'Escape') { select(null); return; }
       if (!selectedIds.length) return;
-      const block = state.blocks.find((b) => b.id === selectedIds[0]);
+      const block = state.blocks.find((b) => b.id === selectedIds[0]) ?? busyBlocks.find((b) => b.id === selectedIds[0]);
       if (!block) return;
       const day = localDay(block.start_utc, tz);
       const dayIdx = days.indexOf(day);
@@ -481,14 +513,21 @@ export function CalendarPanel() {
         const ns = Math.min(visibleEnd - dur, Math.max(visibleStart, s));
         const current = usePlanStore.getState().state;
         const planId = current.plan.id;
+        const result = moveSelection(combinedSource, selectedIds, dIdx - dayIdx, ns - start);
+        if (!result.ok) { toast.error(result.reason ?? '无法移动'); return; }
+        const sharedMoves = result.moves.filter((m) => busyIds.has(m.id));
+        const planMoves = result.moves.filter((m) => !busyIds.has(m.id));
+        if (sharedMoves.length) {
+          void applySharedOps(sharedMoves.map((m) => ({ op: 'move_block' as const, id: m.id, start_utc: m.start_utc, end_utc: m.end_utc })))
+            .then((r) => { if (!r.ok) toast.error(r.reason ?? '公共日历保存失败'); });
+        }
+        if (!planMoves.length) return;
         if (!planId) {
-          const r = moveBlocks(selectedIds, dIdx - dayIdx, ns - start);
+          const r = moveBlocks(planMoves.map((m) => m.id), dIdx - dayIdx, ns - start);
           if (!r.ok) toast.error(r.reason ?? '无法移动');
           return;
         }
-        const result = moveSelection(current, selectedIds, dIdx - dayIdx, ns - start);
-        if (!result.ok) { toast.error(result.reason ?? '无法移动'); return; }
-        const ops = result.moves.map((m) => ({ op: 'move_block' as const, id: m.id, start_utc: m.start_utc, end_utc: m.end_utc }));
+        const ops = planMoves.map((m) => ({ op: 'move_block' as const, id: m.id, start_utc: m.start_utc, end_utc: m.end_utc }));
         void planController.apply({
           planId,
           ops,
@@ -516,7 +555,7 @@ export function CalendarPanel() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedIds, state.blocks, days, drawer, tz, moveBlocks, openDrawer, select, visibleEnd, visibleStart, removeSelected, togglePinnedBlock]);
+  }, [selectedIds, state.blocks, busyBlocks, busyIds, combinedSource, days, drawer, tz, moveBlocks, openDrawer, select, visibleEnd, visibleStart, removeSelected, togglePinnedBlock]);
 
   const onColumnPointerDown = useCallback((e: React.PointerEvent) => {
     if (preview || e.button !== 0 || e.pointerType === 'touch') return;
@@ -553,7 +592,7 @@ export function CalendarPanel() {
       const ids = Array.from(grid.querySelectorAll<HTMLElement>('[data-block-id]'))
         .filter((node) => {
           const id = node.getAttribute('data-block-id') ?? '';
-          return !foreignMap.has(id) && !busyIds.has(id);
+          return !foreignMap.has(id);
         })
         .filter((node) => {
           const r = node.getBoundingClientRect();
@@ -565,7 +604,7 @@ export function CalendarPanel() {
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp, { once: true });
-  }, [preview, select, selectMany, foreignMap, busyIds]);
+  }, [preview, select, selectMany, foreignMap]);
 
   const onColumnDoubleClick = (e: React.MouseEvent, day: string) => {
     if (preview) return;
@@ -578,6 +617,7 @@ export function CalendarPanel() {
 
   const ghostVisual = (id: string): BlockVisualState => {
     if (!preview) return 'normal';
+    if (busyIds.has(id)) return 'normal';
     if (preview.diff.added.includes(id)) return 'ghost-added';
     if (preview.diff.moved.some((m) => m.id === id)) return 'ghost-moved';
     return 'dimmed';
@@ -592,7 +632,7 @@ export function CalendarPanel() {
     const nodes = items.map((p) => {
       const busy = busyIds.has(p.block.id);
       const foreignInfo = foreignMap.get(p.block.id);
-      const visual: BlockVisualState = foreignInfo || busy
+      const visual: BlockVisualState = foreignInfo
         ? 'foreign'
         : preview
           ? ghostVisual(p.block.id)
@@ -608,17 +648,15 @@ export function CalendarPanel() {
           leftPct={(p.lane / p.lanes) * 100}
           widthPct={100 / p.lanes}
           visual={visual}
-          planLabel={busy ? '共享日历' : foreignInfo?.planLabel}
+          planLabel={foreignInfo?.planLabel}
           compact={(p.endMin - p.startMin) * PX_PER_MIN < 40}
           onPointerDown={(e, b) => beginDrag(e, b, 'move', foreignInfo, busy)}
           onResizeDown={(e, b) => beginDrag(e, b, 'resize', foreignInfo, busy)}
-          onOpen={busy || foreignInfo ? undefined : (b) => openDrawer('block', b.id)}
-          onClick={busy
-            ? () => setEditingShared(p.block)
-            : foreignInfo ? () => {
-              if (Date.now() - lastForeignDrag.current < 400) return;
-              setForeignTarget({ planId: foreignInfo.planId, planTitle: foreignInfo.planLabel, blockTitle: p.block.title, drag: false });
-            } : undefined}
+          onOpen={foreignInfo ? undefined : (b) => openDrawer('block', b.id)}
+          onClick={foreignInfo ? () => {
+            if (Date.now() - lastForeignDrag.current < 400) return;
+            setForeignTarget({ planId: foreignInfo.planId, planTitle: foreignInfo.planLabel, blockTitle: p.block.title, drag: false });
+          } : undefined}
         />
       );
     });
@@ -805,7 +843,6 @@ export function CalendarPanel() {
       </footer>
 
       <QuickAddDialog />
-      <SharedBlockDialog block={editingShared} onClose={() => setEditingShared(null)} />
 
       <AlertDialog open={!!foreignTarget} onOpenChange={(v) => { if (!v) setForeignTarget(null); }}>
         <AlertDialogContent>

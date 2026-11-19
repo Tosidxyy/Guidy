@@ -3,7 +3,7 @@ import { useBlockHistory } from '@/store/useBlockHistory';
 import type { PlanState } from '@/shared/types';
 
 export interface PlanUndoDeps {
-  apply(req: { planId: string; ops: any[]; label: string; optimistic: Partial<PlanState>; record: false }): Promise<{ ok: boolean; reason?: string }>;
+  apply(req: { planId: string; ops: any[]; label: string; optimistic: Partial<PlanState>; record: false; undo?: boolean }): Promise<{ ok: boolean; reason?: string }>;
   getPlanState(planId: string): PlanState | undefined;
 }
 
@@ -24,7 +24,7 @@ export function createPlanUndo(deps: PlanUndoDeps) {
     if (!ops.length) return { label: null, reason: '这条记录没有可逆操作' };
     const patched = applyPatch(plan, ops).state;
     const optimistic = { plan: patched.plan, task_defs: patched.task_defs, constraints: patched.constraints, blocks: patched.blocks };
-    const r = await deps.apply({ planId, ops, label: `${from === 'entries' ? '撤销' : '重做'}：${entry.label}`, optimistic, record: false });
+    const r = await deps.apply({ planId, ops, label: `${from === 'entries' ? '撤销' : '重做'}：${entry.label}`, optimistic, record: false, undo: from === 'entries' });
     if (!r.ok) return { label: null, reason: r.reason ?? '服务端拒绝了这次操作' };
     const to = from === 'entries' ? 'redo' : 'entries';
     useBlockHistory.setState((s) => ({

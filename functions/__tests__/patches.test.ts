@@ -32,6 +32,38 @@ describe('applyPatchRoute', () => {
     expect(body.blocks.length).toBeGreaterThan(0);
     expect(Array.isArray(body.inverse_ops)).toBe(true);
   });
+  it('reschedule 返回可逆 ops：应用逆操作还原原块布局与任务定义', async () => {
+    const d = deps();
+    const plan = await seedPlan(d);
+    const before = d.db.tables.blocks.filter((b: any) => b.plan_id === plan.id).map((b: any) => `${b.id}|${b.start_utc}|${b.end_utc}`).sort().join(';');
+    const ops = [{ op: 'update_task_def', key: 'math', patch: { duration_min: 120 } }, { op: 'reschedule', scope: 'all', keep_pinned: true }];
+    const res = await application(d)(ctx('POST', '/api/patches/apply', { preview_id: 'inv-1', plan_id: plan.id, base_version: plan.version, ops, result_hash: null, engine_version: 1 }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.inverse_ops.length).toBeGreaterThan(0);
+    const undone = await application(d)(ctx('POST', '/api/patches/apply', { preview_id: 'inv-2', plan_id: plan.id, base_version: body.version, ops: body.inverse_ops, result_hash: null, engine_version: 1 }));
+    const undoneBody = await undone.json();
+    expect(undone.status).toBe(200);
+    const afterBody = undoneBody;
+    const after = afterBody.blocks.map((b: any) => `${b.id}|${b.start_utc}|${b.end_utc}`).sort().join(';');
+    expect(after).toBe(before);
+    expect(afterBody.task_defs.find((t: any) => t.key === 'math').duration_min).toBe(90);
+  });
+  it('长跨度 reschedule 逆操作超 30 op：undo 标记放行，普通请求仍限 30', async () => {
+    const d = deps();
+    const input = { ...baseInput, horizon_days: 30 };
+    const out = solve({ engine_version: 1, ...input, pinned_blocks: [] });
+    const plan = (await (await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'long-seed', plan_id: null, input, result_hash: await resultHash(out.blocks), engine_version: 1 }))).json()).plan;
+    const ops = [{ op: 'update_task_def', key: 'math', patch: { duration_min: 120 } }, { op: 'reschedule', scope: 'all', keep_pinned: true }];
+    const res = await application(d)(ctx('POST', '/api/patches/apply', { preview_id: 'long-rs', plan_id: plan.id, base_version: plan.version, ops, result_hash: null, engine_version: 1 }));
+    const body = await res.json();
+    expect(body.inverse_ops.length).toBeGreaterThan(30);
+    const denied = await application(d)(ctx('POST', '/api/patches/apply', { preview_id: 'long-undo-no', plan_id: plan.id, base_version: body.version, ops: body.inverse_ops, result_hash: null, engine_version: 1 }));
+    expect(denied.status).toBe(422);
+    const undone = await application(d)(ctx('POST', '/api/patches/apply', { preview_id: 'long-undo', plan_id: plan.id, base_version: body.version, ops: body.inverse_ops, result_hash: null, engine_version: 1, undo: true }));
+    expect(undone.status).toBe(200);
+    expect((await undone.json()).blocks).toHaveLength(30);
+  });
   it('base_version 不符 → 409 version_conflict + 全量', async () => {
     const d = deps();
     const plan = await seedPlan(d);

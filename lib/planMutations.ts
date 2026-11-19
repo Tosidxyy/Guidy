@@ -24,6 +24,7 @@ export interface PlanOpRequest {
   /** 只替换给出的切片；其余保持本地现状，等响应覆盖。 */
   optimistic: Partial<PlanState>;
   record?: boolean;
+  undo?: boolean;
 }
 
 function serverState(resp: any, previous: PlanState): Partial<PlanState> {
@@ -61,6 +62,7 @@ export function createPlanMutations(deps: PlanMutationDeps) {
       const resp = await deps.patch({
         preview_id: crypto.randomUUID(), plan_id: req.planId, base_version: version,
         ops: req.ops, result_hash: null, engine_version: ENGINE_VERSION,
+        ...(req.undo ? { undo: true } : {}),
       });
       applyState(serverState(resp, previous));
       deps.setServerVersion(req.planId, resp.version);

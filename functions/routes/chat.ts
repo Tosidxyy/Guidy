@@ -189,7 +189,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           if (abort.signal.aborted) { terminalState = 'interrupted'; break; }
           if (!projector.isTerminal()) { terminalState = 'failed'; break; }
           const expectsArtifact = /```json|^\s*\{/.test(finalText);
-          const parsed = parseModelText(finalText);
+          const parsed = parseModelText(finalText, day);
           if (parsed) {
             const art: AppEvent = { event: 'artifact', data: { seq: nextSeq(), kind: parsed.kind, payload: parsed.value } };
             emit(art); collected.push(art);

@@ -56,6 +56,34 @@ describe('共享日历：忙时实例化为公共块', () => {
   });
 });
 
+describe('共享日历：固定日程 commit 当场物化为普通块', () => {
+  it('commit 响应不含 busy/fixed 约束，公共块无锁且任务避开上班时段', async () => {
+  const app = application(deps());
+  const input = {
+    title: '在职备考', horizon_start: '2026-11-18', horizon_days: 7, timezone: tz,
+    task_defs: [{ key: 'words', title: '背单词', category: 'study', duration_min: 40, frequency: { type: 'daily' }, priority: 'mid', splittable: false, sort_order: 0 }],
+    constraints: [
+      { id: crypto.randomUUID(), payload: { type: 'active_window', start: '07:00', end: '23:00' }, source: 'user', enabled: true },
+      ...busy,
+    ],
+  };
+  const hash = await resultHash(solve({ engine_version: 1, ...input, pinned_blocks: [] }).blocks);
+  const res = await app(ctx('POST', '/api/plans/commit', { preview_id: 'mat-1', plan_id: null, input, result_hash: hash, engine_version: 1 }));
+  expect(res.status).toBe(200);
+  const committed = await res.json();
+  expect(committed.constraints.some((c: any) => c.payload.type === 'busy_window' || c.payload.type === 'fixed_block')).toBe(false);
+
+  const cal = await (await app(ctx('GET', '/api/calendar'))).json();
+  const work = cal.blocks.filter((b: any) => b.title === '上班');
+  expect(work.length).toBe(5);
+  expect(work.every((b: any) => b.pinned === false && b.origin === 'manual')).toBe(true);
+  for (const b of committed.blocks) {
+    if (!isWorkday(b.start_utc)) continue;
+    expect(hhmm(b.start_utc) < '17:30' && hhmm(b.end_utc) > '09:00').toBe(false);
+  }
+  });
+});
+
 describe('共享日历：公共块可编辑（拖拽/改名/请假）', () => {
   async function seed(app: ReturnType<typeof application>) {
     await app(ctx('POST', '/api/plans/save', {
