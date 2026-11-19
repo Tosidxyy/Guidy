@@ -16,7 +16,7 @@ import { findConflicts, type ConflictPlan, type PlanConflict } from '../shared/e
 import { trimArtifactToFit } from '../shared/engine/fit.ts';
 import { formatAvailability, weeklyAvailability, type AvailabilitySource } from '../shared/engine/availability.ts';
 import { sharedBusyBlocks } from './calendar.ts';
-import { decodeTaskRow, visibleBlocks } from './plans.ts';
+import { decodeTaskRow, visibleBlocks, readPlanConfig } from './plans.ts';
 import { ensureProfileRow, ensureLearned } from './profile.ts';
 import { constraintText } from '../../lib/describe.ts';
 import type { OtherPlanContext } from '../prompt.ts';
@@ -31,8 +31,9 @@ async function loadPlanState(db: Deps['db'], visitor: string, planId: string | n
   if (!planId) return null;
   const plan = rows(await db.from('plans').select('*').eq('id', planId).eq('owner_visitor_id', visitor).limit(1))[0];
   if (!plan) return null;
-  const task_defs = rows(await db.from('task_defs').select('*').eq('plan_id', planId)).map(decodeTaskRow);
-  const constraints = rows(await db.from('constraints').select('*').eq('plan_id', planId));
+  const cfg = readPlanConfig(plan);
+  const task_defs = cfg ? cfg.task_defs : rows(await db.from('task_defs').select('*').eq('plan_id', planId)).map(decodeTaskRow);
+  const constraints = (cfg ? cfg.constraints : rows(await db.from('constraints').select('*').eq('plan_id', planId))).filter((c: any) => c.payload?.type !== 'busy_window' && c.payload?.type !== 'fixed_block');
   const blocks = visibleBlocks(plan, rows(await db.from('blocks').select('*').eq('plan_id', planId)));
   return { plan, task_defs, constraints, blocks };
 }
@@ -58,7 +59,7 @@ async function loadSharedCalendar(db: Deps['db'], visitor: string): Promise<{ co
   const out: OtherPlanContext[] = [];
   const sources: AvailabilitySource[] = [];
   for (const p of plans) {
-    const blocks = rows(await db.from('blocks').select('*').eq('plan_id', p.id));
+    const blocks = visibleBlocks(p, rows(await db.from('blocks').select('*').eq('plan_id', p.id)));
     const constraints = rows(await db.from('constraints').select('*').eq('plan_id', p.id));
     const tasks = rows(await db.from('task_defs').select('*').eq('plan_id', p.id));
     if (!blocks.length && !constraints.length && !tasks.length) continue;
@@ -83,8 +84,9 @@ async function loadRelatedPlans(db: Deps['db'], visitor: string, active: PlanSta
   for (const p of plans) {
     if (p.id === activeId) continue;
     if (others.length >= 3) break;
-    const blocks = rows(await db.from('blocks').select('*').eq('plan_id', p.id));
-    const constraints = rows(await db.from('constraints').select('*').eq('plan_id', p.id));
+    const blocks = visibleBlocks(p, rows(await db.from('blocks').select('*').eq('plan_id', p.id)));
+    const cfgB = readPlanConfig(p);
+    const constraints = cfgB ? cfgB.constraints : rows(await db.from('constraints').select('*').eq('plan_id', p.id));
     const tasks = rows(await db.from('task_defs').select('*').eq('plan_id', p.id));
     const windows = windowSummary(constraints);
     sources.push({ constraints, blocks });

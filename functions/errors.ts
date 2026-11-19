@@ -22,6 +22,8 @@ export const MESSAGES: Record<string, string> = {
   service_unavailable: '后端尚未就绪，请稍后重试',
   commit_conflict: '计划已被其他提交更新，请刷新后重试',
   commit_in_progress: '上一次提交仍在进行，请稍后重试',
+  claim_conflict: '该幂等键属于其他访问者或已被接管',
+  idempotency_key_reused: '同一幂等键对应了不同内容，请使用新的请求键',
   write_verification_failed: '保存校验失败，本次未生效，原有日程保持不变',
   payload_too_large: '消息过长，请精简后重试',
   method_not_allowed: '请求方法不被允许',

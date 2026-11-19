@@ -35,7 +35,8 @@ describe('applyPatchRoute', () => {
   it('reschedule 返回可逆 ops：应用逆操作还原原块布局与任务定义', async () => {
     const d = deps();
     const plan = await seedPlan(d);
-    const before = d.db.tables.blocks.filter((b: any) => b.plan_id === plan.id).map((b: any) => `${b.id}|${b.start_utc}|${b.end_utc}`).sort().join(';');
+    const layout = (rows: any[]) => rows.map((b: any) => `${b.title}|${b.start_utc}|${b.end_utc}`).sort().join(';');
+    const before = layout(d.db.tables.blocks.filter((b: any) => b.plan_id === plan.id));
     const ops = [{ op: 'update_task_def', key: 'math', patch: { duration_min: 120 } }, { op: 'reschedule', scope: 'all', keep_pinned: true }];
     const res = await application(d)(ctx('POST', '/api/patches/apply', { preview_id: 'inv-1', plan_id: plan.id, base_version: plan.version, ops, result_hash: null, engine_version: 1 }));
     expect(res.status).toBe(200);
@@ -45,7 +46,7 @@ describe('applyPatchRoute', () => {
     const undoneBody = await undone.json();
     expect(undone.status).toBe(200);
     const afterBody = undoneBody;
-    const after = afterBody.blocks.map((b: any) => `${b.id}|${b.start_utc}|${b.end_utc}`).sort().join(';');
+    const after = layout(afterBody.blocks);
     expect(after).toBe(before);
     expect(afterBody.task_defs.find((t: any) => t.key === 'math').duration_min).toBe(90);
   });
@@ -100,8 +101,10 @@ describe('applyPatchRoute', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.version).toBe(plan.version + 1);
-    expect(body.blocks.find((b: any) => b.id === block.id).start_utc).toBe(nextStart);
-    expect(body.inverse_ops[0]).toMatchObject({ op: 'move_block', id: block.id, start_utc: block.start_utc, end_utc: block.end_utc });
+    // 版本化语义：非历史块在新版本获得新 id；用内容定位，逆操作指向新 id。
+    const moved = body.blocks.find((b: any) => b.title === block.title && b.start_utc === nextStart);
+    expect(moved).toBeTruthy();
+    expect(body.inverse_ops[0]).toMatchObject({ op: 'move_block', id: moved.id, start_utc: block.start_utc, end_utc: block.end_utc });
   });
   it('add_block.client_id 落库保留 ID，且落点校验生效', async () => {
     const d = deps();
@@ -114,7 +117,10 @@ describe('applyPatchRoute', () => {
     }));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.blocks.find((b: any) => b.id === id)?.title).toBe('休息');
+    const added = body.blocks.find((b: any) => b.title === '休息');
+    expect(added).toBeTruthy();
+    expect(added.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(body.inverse_ops[0]).toMatchObject({ op: 'remove_block', id: added.id });
   });
   it('clear_plan → 200，任务/约束/块清空，version+1', async () => {
     const d = deps();
@@ -242,14 +248,14 @@ describe('applyPatchRoute', () => {
       ops: [{ op: 'update_block', id: block.id, patch: { title, start_utc: start, end_utc: end, pinned: true } }],
       result_hash: null, engine_version: 1,
     }))).json();
-    expect(merged.blocks.find((b: any) => b.id === block.id)).toMatchObject({ title, pinned: true });
+    expect(merged.blocks.find((b: any) => b.title === title)).toMatchObject({ title, pinned: true });
 
     const after = await (await app(ctx('POST', '/api/patches/apply', {
       preview_id: 'merge-pin-2', plan_id: plan.id, base_version: merged.version,
       ops: [{ op: 'add_constraint', value: { type: 'buffer', minutes: 5 } }],
       result_hash: null, engine_version: 1,
     }))).json();
-    expect(after.blocks.find((b: any) => b.id === block.id)).toMatchObject({ title, pinned: true, start_utc: start, end_utc: end });
+    expect(after.blocks.find((b: any) => b.title === title)).toMatchObject({ title, pinned: true, start_utc: start, end_utc: end });
   });
   it('add_block.plan_id 与请求计划一致时正常落库，不一致 → 422 op_plan_mismatch', async () => {
     const d = deps();

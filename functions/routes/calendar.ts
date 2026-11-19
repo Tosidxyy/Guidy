@@ -6,6 +6,7 @@ import { fail } from '../errors.ts';
 import { requireVisitor } from '../identity.ts';
 import { applyPatch } from '../engine.ts';
 import { ApplyOpSchema } from '../shared/schemas.ts';
+import { readPlanConfig } from './plans.ts';
 import { dayList, utcAt, weekdayOfDay } from '../shared/engine/time.ts';
 import { SHARED_BLOCK_PLAN_ID, SHARED_PLAN_OWNER } from '../shared/constants.ts';
 import type { Deps, RouteCtx } from '../types.ts';
@@ -46,7 +47,7 @@ export async function ensureSharedPlan(db: Db): Promise<void> {
  * 日历只有一份：块是唯一事实来源，可直接拖动/删除（例如某天请假）。
  */
 export async function materializeSharedBusy(db: Db, visitor: string): Promise<void> {
-  const plans = rows(await db.from('plans').select('id,horizon_start,horizon_days,timezone').eq('owner_visitor_id', visitor));
+  const plans = rows(await db.from('plans').select('id,horizon_start,horizon_days,timezone,config').eq('owner_visitor_id', visitor));
   const valid = plans.filter((p: any) => p.horizon_start && p.horizon_days > 0);
   if (!valid.length) return;
   const tz = valid[0].timezone ?? 'Asia/Shanghai';
@@ -54,9 +55,11 @@ export async function materializeSharedBusy(db: Db, visitor: string): Promise<vo
   const endMs = Math.max(...valid.map((p: any) => Date.parse(`${p.horizon_start}T00:00:00Z`) + p.horizon_days * DAY_MS));
   const days = Math.min(MAX_DAYS, Math.max(1, Math.round((endMs - Date.parse(`${start}T00:00:00Z`)) / DAY_MS)));
 
+  const tombstones = new Set(rows(await db.from('shared_deletions').select('k').eq('visitor_id', visitor)).map((r: any) => String(r.k)));
   const recurring: any[] = [];
   for (const p of valid) {
-    const constraints = rows(await db.from('constraints').select('*').eq('plan_id', p.id));
+    const cfg = readPlanConfig(p);
+    const constraints = cfg ? cfg.constraints : rows(await db.from('constraints').select('*').eq('plan_id', p.id));
     for (const c of constraints) {
       if (c.enabled !== false && MATERIALIZE.has(c.payload?.type)) recurring.push(c.payload);
     }
@@ -74,6 +77,7 @@ export async function materializeSharedBusy(db: Db, visitor: string): Promise<vo
         const startUtc = utcAt(day, Math.round(hhmmToMs(payload.start) / 60000), tz);
         const endUtc = utcAt(day, Math.round(hhmmToMs(payload.end) / 60000), tz);
         const key = `${title}|${startUtc}`;
+        if (tombstones.has(key)) continue;
         if (seen.has(key)) continue;
         seen.add(key);
         await db.from('blocks').insert({
@@ -92,6 +96,7 @@ export async function materializeSharedBusy(db: Db, visitor: string): Promise<vo
     }
   }
   // 已转换的约束删除，避免重复计算与双重规则；fixed_block 已由 solve 落成计划块，同样移除。
+  // 配置以 plans.config 为准时，镜像表缺失不影响（下次发布重建镜像）。
   for (const p of valid) {
     const constraints = rows(await db.from('constraints').select('*').eq('plan_id', p.id));
     for (const c of constraints) {
@@ -168,7 +173,12 @@ export async function applySharedBlocks(ctx: RouteCtx, deps: Deps): Promise<Resp
   const after = new Map(patched.state.blocks.map((b) => [b.id, b]));
   for (const id of before.keys()) {
     if (after.has(id)) continue;
+    const target = before.get(id);
     await deps.db.from('blocks').delete().eq('id', id).eq('plan_id', SHARED_BLOCK_PLAN_ID).eq('owner_visitor_id', visitor);
+    // 物化实例被用户删除：记录墓碑，后续读取不再重新生成这一天。
+    if (target?.notes === MATERIALIZED_NOTE) {
+      rows(await deps.db.from('shared_deletions').insertIfAbsent({ visitor_id: visitor, k: `${target.title}|${target.start_utc}` }, { onConflict: 'visitor_id,k' }));
+    }
   }
   for (const b of patched.state.blocks) {
     const old = before.get(b.id);

@@ -7,7 +7,7 @@ import { requireVisitor } from '../identity.ts';
 import { applyPatch, diffBlocks, resultHash, solve, validatePlacement } from '../engine.ts';
 import { ENGINE_VERSION } from '../shared/constants.ts';
 import { ApplyOpSchema } from '../shared/schemas.ts';
-import { getOwnedPlan, sharedRecurringFor, decodeTaskRow, encodeTaskRow, blockWriteFields, children as planChildren, visibleBlocks } from './plans.ts';
+import { getOwnedPlan, sharedRecurringFor, decodeTaskRow, encodeTaskRow, blockWriteFields, children as planChildren, visibleBlocks, readPlanConfig, buildPlanConfig } from './plans.ts';
 import { horizonBounds, sharedBusyBlocks, materializeSharedBusy } from './calendar.ts';
 import { localDay, localMinutes, minToHHmm } from '../shared/engine/time.ts';
 import type { Deps, RouteCtx } from '../types.ts';
@@ -32,8 +32,9 @@ const BodySchema = z.object({
 
 async function loadState(db: Db, visitor: string, planId: string): Promise<PlanState> {
   const plan = await getOwnedPlan(db, visitor, planId);
-  const task_defs = rows(await db.from('task_defs').select('*').eq('plan_id', planId)).map(decodeTaskRow);
-  const constraints = rows(await db.from('constraints').select('*').eq('plan_id', planId));
+  const cfg = readPlanConfig(plan);
+  const task_defs = cfg ? cfg.task_defs : rows(await db.from('task_defs').select('*').eq('plan_id', planId)).map(decodeTaskRow);
+  const constraints = (cfg ? cfg.constraints : rows(await db.from('constraints').select('*').eq('plan_id', planId))).filter((c: any) => c.payload?.type !== 'busy_window' && c.payload?.type !== 'fixed_block');
   const blocks = visibleBlocks(plan, rows(await db.from('blocks').select('*').eq('plan_id', planId)));
   return { plan, task_defs, constraints, blocks } as PlanState;
 }
@@ -131,47 +132,94 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
     compromises = out.compromises;
     server_authoritative = (await resultHash(out.blocks)) !== result_hash;
   }
-  await deps.db.from('task_defs').delete().eq('plan_id', plan_id);
-  await deps.db.from('constraints').delete().eq('plan_id', plan_id);
-  await deps.db.from('blocks').delete().eq('plan_id', plan_id);
+  // 原子发布：先暂存新版本块并校验，再用单行更新发布 config + active_version；旧版本在此之前完全可读。
   const writeVersion = plan.version + 1;
-  const updated = rows(await deps.db.from('plans').update({
-    title: patched.state.plan.title,
-    horizon_start: patched.state.plan.horizon_start,
-    horizon_days: patched.state.plan.horizon_days,
-    timezone: patched.state.plan.timezone,
-    version: writeVersion,
-    active_version: writeVersion,
-    updated_at: new Date().toISOString(),
-  }).eq('id', plan_id).eq('owner_visitor_id', visitor).select('*'))[0];
-  for (const t of patched.state.task_defs) {
-    await deps.db.from('task_defs').insert({ plan_id, ...encodeTaskRow(t) });
+  const oldActive = plan.active_version == null ? null : Number(plan.active_version);
+  const claim = rows(await deps.db.from('plans').update({ version: writeVersion }).eq('id', plan_id).eq('owner_visitor_id', visitor).eq('version', plan.version).select('id'));
+  if (!claim.length) fail('commit_conflict', 409, { reason: '计划正在被另一个修改更新，请重试' });
+  const cleanupStaged = async () => {
+    try {
+      const staged = rows(await deps.db.from('blocks').select('id').eq('plan_id', plan_id).eq('plan_version', writeVersion));
+      for (const b of staged as any[]) await deps.db.from('blocks').delete().eq('id', b.id);
+    } catch { /* 清理失败只留不可见行 */ }
+  };
+  let updated: any;
+  const HISTORY = new Set(['completed', 'in_progress', 'partial', 'cancelled', 'skipped']);
+  // 历史/取消/跳过块保留原行（跨版本可见），不参与新版本暂存；其余块以新 id 暂存，
+  // 保证同一版本内主键唯一（云端 id 为主键，跨版本复用同一 id 会冲突）。
+  const stagedBlocks = newBlocks.filter((b) => !HISTORY.has(String(b.status ?? '')));
+  const idMap = new Map<string, string>();
+  try {
+    for (const b of stagedBlocks) {
+      const inserted = rows(await deps.db.from('blocks').insert({ plan_id, plan_version: writeVersion, ...blockWriteFields(b) }))[0];
+      idMap.set(b.id, inserted.id);
+    }
+    const staged = rows(await deps.db.from('blocks').select('id').eq('plan_id', plan_id).eq('plan_version', writeVersion));
+    if (staged.length !== stagedBlocks.length) throw Object.assign(new Error('write_verification_failed'), { code: 'write_verification_failed', status: 500, details: { expected_blocks: stagedBlocks.length, actual_blocks: staged.length, plan_id } });
+    const config = buildPlanConfig(patched.state.task_defs, patched.state.constraints);
+    const payload = {
+      title: patched.state.plan.title,
+      horizon_start: patched.state.plan.horizon_start,
+      horizon_days: patched.state.plan.horizon_days,
+      timezone: patched.state.plan.timezone,
+      version: writeVersion,
+      active_version: writeVersion,
+      config,
+      updated_at: new Date().toISOString(),
+    };
+    const flipTo = async (matcher: 'null' | 'undefined') => {
+      const q = deps.db.from('plans').update(payload).eq('id', plan_id).eq('owner_visitor_id', visitor);
+      return rows(await (matcher === 'null' ? q.is('active_version', null) : q.is('active_version', undefined)).select('*'))[0];
+    };
+    updated = oldActive != null
+      ? rows(await deps.db.from('plans').update(payload).eq('id', plan_id).eq('owner_visitor_id', visitor).eq('active_version', oldActive).select('*'))[0]
+      : ((await flipTo('null')) ?? (await flipTo('undefined')));
+    if (!updated) throw Object.assign(new Error('commit_conflict'), { code: 'commit_conflict', status: 409, details: { reason: '计划状态已被其他修改改变，本次不发布' } });
+  } catch (e) {
+    await cleanupStaged();
+    throw e;
   }
-  for (const c of patched.state.constraints) {
-    await deps.db.from('constraints').insert({ ...(UUID_RE.test(c.id) ? { id: c.id } : {}), plan_id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
-  }
-  await materializeSharedBusy(deps.db, visitor);
-  for (const b of newBlocks) {
-    await deps.db.from('blocks').insert({
-      ...(originalBlockIds.has(b.id) || clientIds.has(b.id) ? { id: b.id } : {}),
-      plan_id, plan_version: writeVersion, ...blockWriteFields(b),
-    });
-  }
+
+  // 发布后的镜像/物化/清理均为非关键路径。
+  try {
+    await deps.db.from('task_defs').delete().eq('plan_id', plan_id);
+    await deps.db.from('constraints').delete().eq('plan_id', plan_id);
+    for (const t of patched.state.task_defs) await deps.db.from('task_defs').insert({ plan_id, ...encodeTaskRow(t) });
+    for (const c of patched.state.constraints) {
+      await deps.db.from('constraints').insert({ ...(UUID_RE.test(c.id) ? { id: c.id } : {}), plan_id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
+    }
+  } catch { /* 表镜像失败：读取以 config 为准 */ }
+  try { await materializeSharedBusy(deps.db, visitor); } catch { /* 下次读取重试 */ }
+  try {
+    const all = rows(await deps.db.from('blocks').select('id,plan_version,status').eq('plan_id', plan_id));
+    for (const b of all as any[]) {
+      if (b.status === 'completed' || b.status === 'in_progress' || b.status === 'partial' || b.status === 'cancelled' || b.status === 'skipped') continue;
+      if (Number(b.plan_version ?? 1) !== writeVersion) await deps.db.from('blocks').delete().eq('id', b.id);
+    }
+  } catch { /* 过期行不可见 */ }
   await deps.db.from('commit_log').insertIfAbsent({ preview_id, visitor_id: visitor, plan_id }, { onConflict: 'preview_id' });
 
   const after = await planChildren(deps.db, updated);
   const blocks = after.blocks;
   const constraints = after.constraints;
   const task_defs = after.task_defs;
-  // diff/逆操作以落库后的真实 id 为准（引擎 eng-N 编号不落库）。
-  const diff = diffBlocks(state.blocks, blocks);
+  // 新旧 id 映射：非历史块在新版本获得新 id，diff 与逆操作都换算到新 id（版本内 id 稳定）。
+  const remapOld = state.blocks.map((b) => (idMap.has(b.id) ? { ...b, id: idMap.get(b.id)! } : b));
+  const diff = diffBlocks(remapOld, blocks);
   // reschedule 的逆操作＝非块 op 的逆 + 还原原块布局（补回被删、移回被挪、删新增），否则撤销栈无条目。
-  let inverseOps = patched.inverse_ops;
+  const mapIds = (ops: any[]) => ops.map((op) => {
+    if (!op || typeof op !== 'object') return op;
+    const next = { ...op };
+    if ('id' in op && idMap.has(op.id)) next.id = idMap.get(op.id);
+    if ('client_id' in op && op.client_id && idMap.has(op.client_id)) next.client_id = idMap.get(op.client_id);
+    return next;
+  });
+  let inverseOps = mapIds(patched.inverse_ops);
   if (shouldReschedule) {
     const original = new Map(state.blocks.map((b) => [b.id, b]));
     const BLOCK_OPS = new Set(['add_block', 'update_block', 'move_block', 'remove_block']);
     inverseOps = [
-      ...patched.inverse_ops.filter((op) => !BLOCK_OPS.has(op.op)),
+      ...mapIds(patched.inverse_ops).filter((op) => !BLOCK_OPS.has(op.op)),
       ...diff.removed.map((id) => {
         const b = original.get(id)!;
         return {

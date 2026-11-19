@@ -41,6 +41,10 @@ export function createMemoryDb(seed: Record<string, any[]> = {}): MemoryDb {
                 }
                 const row = { ...v };
                 if (ID_TABLES.has(table) && row.id === undefined) row.id = randomUUID();
+                // 与云端一致：主键（id）必须唯一；版本化数据不得跨版本复用同一 id。
+                if (ID_TABLES.has(table) && row.id !== undefined && rowsRef.some((r) => r.id === row.id)) {
+                  return { data: null, error: { code: 'database_constraint_violation', status: 409 } };
+                }
                 if (TS_TABLES.has(table)) { row.created_at ??= new Date().toISOString(); if ('updated_at' in row || table === 'plans' || table === 'conversations') row.updated_at ??= new Date().toISOString(); }
                 rowsRef.push(row); result.push(row);
               }

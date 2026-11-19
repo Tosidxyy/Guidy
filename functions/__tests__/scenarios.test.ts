@@ -104,7 +104,8 @@ describe('场景四：动态重规划保留固定与钉住事件', () => {
     }));
     expect(replanRes.status, JSON.stringify(await replanRes.clone().json())).toBe(200);
     const replan = await replanRes.json();
-    const kept = replan.blocks.find((b: any) => b.id === pinnedBlock.id);
+    // 版本化语义：非历史块新版本换新 id；用任务与钉住状态定位。
+    const kept = replan.blocks.find((b: any) => b.task_key === 'a' && b.pinned === true);
     expect(kept).toMatchObject({ start_utc: pinnedBlock.start_utc, end_utc: pinnedBlock.end_utc, pinned: true });
     expect(replan.blocks.filter((b: any) => b.task_key === 'b').length).toBeGreaterThan(0);
   });

@@ -82,12 +82,24 @@ describe('审计：版本化提交故障注入（任何失败都不得破坏 act
     return { db, planId, before: snapshot(db, planId) };
   }
 
-  const cases: { name: string; fail: (t: string, op: string, a: any[]) => boolean }[] = [
+  const cases: { name: string; fail: (t: string, op: string, a: any[], n: number) => boolean }[] = [
     { name: 'blocks insert 失败', fail: (t, op, _a, n) => t === 'blocks' && op === 'insert' && n === 1 },
-    { name: 'task_defs insert 失败', fail: (t, op, _a, n) => t === 'task_defs' && op === 'insert' && n === 1 },
-    { name: 'constraints insert 失败', fail: (t, op, _a, n) => t === 'constraints' && op === 'insert' && n === 1 },
     { name: 'active_version 切换失败', fail: (t, op, a) => t === 'plans' && op === 'update' && a?.[0]?.active_version !== undefined },
   ];
+
+  // 配置以 plans.config 为权威：镜像表写入失败属于发布后非关键路径，不影响发布正确性。
+  for (const mirrorTable of ['task_defs', 'constraints']) {
+    it(`${mirrorTable} 镜像写入失败 → 发布仍成功且 config 为权威`, async () => {
+      const { db, planId } = await seeded();
+      const faulty = faultyDb(db, (t, op, _a, n) => t === mirrorTable && op === 'insert' && n === 1);
+      const appFail = application({ ...deps(faulty), db: faulty });
+      const res = await commit(appFail, { preview_id: `mirror-${mirrorTable}`, plan_id: planId, input: commitInput('镜像失败') });
+      expect(res.status).toBe(200);
+      expect(res.body.plan.title).toBe('镜像失败');
+      expect(res.body.task_defs).toHaveLength(1);
+      expect(res.body.constraints.length).toBeGreaterThan(0);
+    });
+  }
 
   for (const c of cases) {
     it(`${c.name} → 明确失败且旧计划(任务/约束/块)完全不变`, async () => {
@@ -148,13 +160,14 @@ describe('审计：幂等认领（数据库主键）', () => {
     expect(db.tables.plans).toHaveLength(1);
   });
 
-  it('同一 key 对应不同内容 → 回放首次结果（key 需由内容派生，服务端不校验内容差异）', async () => {
+  it('同一 key 对应不同内容 → 409 idempotency_key_reused，不误回放', async () => {
     const db = createMemoryDb();
     const app = application(deps(db));
     const first = await commit(app, { preview_id: 'd-1', idempotency_key: 'audit-key-0003', plan_id: null, input: commitInput('内容A') });
+    expect(first.status).toBe(200);
     const second = await commit(app, { preview_id: 'd-2', idempotency_key: 'audit-key-0003', plan_id: null, input: commitInput('内容B') });
-    expect(second.body.plan.id).toBe(first.body.plan.id);
-    expect(second.body.plan.title).toBe('内容A');
+    expect(second.status).toBe(409);
+    expect(second.body.error.code).toBe('idempotency_key_reused');
   });
 
   it('不同 key 同时改同一计划 → 串行或冲突，最终无重复块', async () => {
@@ -222,6 +235,11 @@ describe('审计：进度语义', () => {
     const plan = await (await app(ctx('GET', `/api/plans/${planId}`))).json();
     const progress = taskProgress(plan.task_defs, plan.blocks, input.horizon_days);
     expect(progress[0].done_minutes).toBe(60);
+    // 计划时长≠实际耗时：未上报实际时 only inferred，actual 保持 0 且 actual_known=false。
+    expect(progress[0].actual_done_minutes).toBe(0);
+    expect(progress[0].inferred_done_minutes).toBe(60);
+    expect(progress[0].actual_known).toBe(false);
+    expect(progress[0].last_completed_at).toBeTruthy();
   });
 
   it('重复上报与部分完成：绝对写入不重复累计，cancelled 不计入', async () => {
@@ -231,6 +249,8 @@ describe('审计：进度语义', () => {
     let plan = await (await app(ctx('GET', `/api/plans/${planId}`))).json();
     let progress = taskProgress(plan.task_defs, plan.blocks, input.horizon_days);
     expect(progress[0].done_minutes).toBe(20);
+    expect(progress[0].actual_done_minutes).toBe(20);
+    expect(progress[0].actual_known).toBe(true);
     await app(ctx('POST', `/api/blocks/${blockId}/progress`, { status: 'cancelled' }));
     plan = await (await app(ctx('GET', `/api/plans/${planId}`))).json();
     progress = taskProgress(plan.task_defs, plan.blocks, input.horizon_days);
@@ -264,5 +284,80 @@ describe('审计：跨午夜与共享隔离', () => {
     const app = application(deps(db));
     expect((await app(ctx('POST', '/api/blocks/shared-b/progress', { status: 'completed' }, 'other'))).status).toBe(403);
     expect((await app(ctx('POST', '/api/blocks/shared-b/progress', { status: 'completed' }, 'owner-v'))).status).toBe(200);
+  });
+});
+
+/** 首次 blocks.insert 等待闸门的 Db：用于模拟 A 长时间挂起、B 接管。 */
+function gatedDb(base: MemoryDb): { db: Db; reached: Promise<void>; release: () => void } {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let reached!: () => void;
+  const reachedP = new Promise<void>((r) => (reached = r));
+  let fired = false;
+  const wrap = (q: any): any => new Proxy(q, {
+    get(target, prop) {
+      const v = Reflect.get(target, prop, target);
+      if (typeof v !== 'function') return v;
+      if (prop === 'then') {
+        return (f: any, rej: any) => {
+          const isInsert = Reflect.get(target, '__op') === 'insert' && target.__table === 'blocks';
+          if (isInsert && !fired) {
+            fired = true;
+            reached();
+            return gate.then(() => v.apply(target, [f, rej]));
+          }
+          return v.apply(target, [f, rej]);
+        };
+      }
+      return (...args: any[]) => {
+        const r = v.apply(target, args);
+        if (r === target) { target.__op = prop; return wrap(target); }
+        return r;
+      };
+    },
+  });
+  return { db: { from: (t: string) => { const q: any = base.from(t); q.__table = t; return wrap(q); } }, reached: reachedP, release };
+}
+
+describe('审计：租约过期与 fencing token', () => {
+  it('A 被 B 接管后恢复执行 → fencing 拒绝，B 的发布不被覆盖', async () => {
+    const db = createMemoryDb();
+    const app = application(deps(db));
+    const created = await commit(app, { preview_id: 'lease-base', plan_id: null, input: commitInput('基线') });
+    const planId = created.body.plan.id;
+
+    const g = gatedDb(db);
+    const appA = application({ db: g.db, requireUser: () => ({ id: 'v' }), qca: createFakeQca(), config: { cloudApiOrigin: 'x', appScope: 's', modelId: 'm', claimTtlMs: 120000 } });
+    const aPending = commit(appA, { preview_id: 'lease-a', idempotency_key: 'lease-key-1', plan_id: planId, input: commitInput('同内容版本') });
+    await g.reached;
+
+    // B：租约视为已过期（TTL=0），CAS 接管并完成发布。
+    const appB = application({ ...deps(db), config: { cloudApiOrigin: 'x', appScope: 's', modelId: 'm', claimTtlMs: 0 } });
+    const b = await commit(appB, { preview_id: 'lease-b', idempotency_key: 'lease-key-1', plan_id: planId, input: commitInput('同内容版本') });
+    expect(b.status).toBe(200);
+
+    g.release();
+    const a = await aPending;
+    expect(a.status).toBe(409);
+    expect(a.body.error.code).toBe('commit_conflict');
+
+    const read = await (await application(deps(db))(ctx('GET', `/api/plans/${planId}`))).json();
+    expect(read.plan.title).toBe('同内容版本');
+    expect(read.plan.version).toBe(b.body.plan.version);
+    const sigs = read.blocks.map((x: any) => `${x.title}|${x.start_utc}`);
+    expect(new Set(sigs).size).toBe(sigs.length);
+  });
+
+  it('不同访问者使用同一幂等键 → 409 claim_conflict，不泄露也不回放', async () => {
+    const db = createMemoryDb();
+    const app = application(deps(db));
+    const first = await commit(app, { preview_id: 'iso-1', idempotency_key: 'iso-key-1', plan_id: null, input: commitInput('本人的') });
+    expect(first.status).toBe(200);
+    const res = await app(ctx('POST', '/api/plans/commit', {
+      preview_id: 'iso-2', idempotency_key: 'iso-key-1', plan_id: null,
+      input: commitInput('他人的'), result_hash: 'x', engine_version: 1,
+    }, 'other'));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe('claim_conflict');
   });
 });

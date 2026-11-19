@@ -33,6 +33,7 @@ export async function deleteVisitorData(db: Db, visitor: string): Promise<Record
   deleted.profiles = await deleteWhere(db, 'profiles', 'visitor_id', visitor);
   deleted.quotas = await deleteWhere(db, 'quotas', 'visitor_id', visitor);
   deleted.recovery_codes = await deleteWhere(db, 'recovery_codes', 'visitor_id', visitor);
+  rows(await db.from('shared_deletions').delete().eq('visitor_id', visitor));
   return deleted;
 }
 
@@ -41,6 +42,7 @@ export async function transferOwnership(db: Db, from: string, to: string): Promi
   const conversations = rows(await db.from('conversations').update({ owner_visitor_id: to }).eq('owner_visitor_id', from).select('id'));
   // 公共日历块不挂在计划下，按 owner 直接跟随；否则认领后共享日历会留在旧身份上。
   rows(await db.from('blocks').update({ owner_visitor_id: to }).eq('owner_visitor_id', from).eq('plan_id', SHARED_BLOCK_PLAN_ID).select('id'));
+  rows(await db.from('shared_deletions').update({ visitor_id: to }).eq('visitor_id', from).select('k'));
   rows(await db.from('dispatch_intents').update({ visitor_id: to }).eq('visitor_id', from).select('request_id'));
   rows(await db.from('commit_log').update({ visitor_id: to }).eq('visitor_id', from).select('preview_id'));
   // quotas 有 (visitor_id, day) 唯一键：续跑时限流可能已给 to 重建今日行，
