@@ -16,6 +16,7 @@ import { findConflicts, type ConflictPlan, type PlanConflict } from '../shared/e
 import { trimArtifactToFit } from '../shared/engine/fit.ts';
 import { formatAvailability, weeklyAvailability, type AvailabilitySource } from '../shared/engine/availability.ts';
 import { sharedBusyBlocks } from './calendar.ts';
+import { decodeTaskRow } from './plans.ts';
 import { ensureProfileRow, ensureLearned } from './profile.ts';
 import { constraintText } from '../../lib/describe.ts';
 import type { OtherPlanContext } from '../prompt.ts';
@@ -30,7 +31,7 @@ async function loadPlanState(db: Deps['db'], visitor: string, planId: string | n
   if (!planId) return null;
   const plan = rows(await db.from('plans').select('*').eq('id', planId).eq('owner_visitor_id', visitor).limit(1))[0];
   if (!plan) return null;
-  const task_defs = rows(await db.from('task_defs').select('*').eq('plan_id', planId));
+  const task_defs = rows(await db.from('task_defs').select('*').eq('plan_id', planId)).map(decodeTaskRow);
   const constraints = rows(await db.from('constraints').select('*').eq('plan_id', planId));
   const blocks = rows(await db.from('blocks').select('*').eq('plan_id', planId));
   return { plan, task_defs, constraints, blocks };
@@ -151,6 +152,23 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
     })
     .slice(0, 24);
 
+  // 预览求解：与 commit 相同的引擎与共享占用，结果作为权威可行性数据随 artifact 下发。
+  const previewSolve = (cs: any) => {
+    const sharedCons = related.sources.flatMap((s) => s.constraints).filter((c: any) => c.payload.type === 'busy_window' || c.payload.type === 'fixed_block');
+    return solve({
+      engine_version: ENGINE_VERSION,
+      horizon_start: cs.horizon_start ?? planState?.plan.horizon_start ?? day,
+      horizon_days: cs.horizon_days,
+      timezone: planState?.plan.timezone ?? timezone ?? 'Asia/Shanghai',
+      task_defs: cs.task_defs,
+      constraints: [
+        ...cs.constraints.map((p: any, i: number) => ({ id: `pre-${i}`, payload: p, source: 'ai' as const, enabled: true })),
+        ...sharedCons,
+      ],
+      pinned_blocks: busyBlocks.map((b) => ({ ...b, pinned: true })),
+    });
+  };
+
   let live = true;
   const stream = new ReadableStream<Uint8Array>({
     cancel() { live = false; },
@@ -209,20 +227,8 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           const expectsArtifact = /```json|^\s*\{/.test(finalText);
           const parsed = parseModelText(finalText, day);
           if (parsed && parsed.kind === 'constraint_set') {
-            // 预求解：不可行就把具体原因喂回修复重试，避免把排不下的方案交给用户。
-            const sharedCons = related.sources.flatMap((s) => s.constraints).filter((c) => c.payload.type === 'busy_window' || c.payload.type === 'fixed_block');
-            const pre = solve({
-              engine_version: ENGINE_VERSION,
-              horizon_start: parsed.value.horizon_start ?? planState?.plan.horizon_start ?? day,
-              horizon_days: parsed.value.horizon_days,
-              timezone: planState?.plan.timezone ?? timezone ?? 'Asia/Shanghai',
-              task_defs: parsed.value.task_defs,
-              constraints: [
-                ...parsed.value.constraints.map((p, i) => ({ id: `pre-${i}`, payload: p, source: 'ai' as const, enabled: true })),
-                ...sharedCons,
-              ],
-              pinned_blocks: busyBlocks.map((b) => ({ ...b, pinned: true })),
-            });
+            // 预求解：不可行就把具体原因喂回修复重试，避免把排不下的方案直接当成成功。
+            const pre = previewSolve(parsed.value);
             if (pre.violations.length && attempt < 2) {
               repairNote = `\n预求解发现不可行：${pre.violations.map((v) => v.reason).join('；')}。请调整次数/时长/每日上限/可安排时段后重新输出 constraint_set。`;
               continue;
@@ -230,24 +236,33 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
             pendingViolations = pre.violations;
           }
           if (parsed) {
-            // 修复重试后仍不可行：按优先级自动降次/暂缓，交付一个可执行方案，并把取舍写进追问区。
-            if (parsed.kind === 'constraint_set' && pendingViolations.length) {
-              const meta = {
-                horizon_start: parsed.value.horizon_start ?? planState?.plan.horizon_start ?? day,
-                timezone: planState?.plan.timezone ?? timezone ?? 'Asia/Shanghai',
-              };
-              const trimmed = trimArtifactToFit(parsed.value, meta, busyBlocks.map((b: any) => ({ ...b, pinned: true })));
-              if (trimmed) {
-                parsed.value = {
-                  ...trimmed.draft,
-                  clarifications_needed: [
-                    ...(trimmed.draft.clarifications_needed ?? []),
-                    `容量不足已自动取舍：${trimmed.changes.join('；')}。想恢复某项就告诉我优先级。`,
-                  ],
+            // 可行性以服务端 pre-solve 为准；不自动降级硬目标，只给出“可接受的取舍建议”供用户确认。
+            let preview: unknown;
+            if (parsed.kind === 'constraint_set') {
+              const out = previewSolve(parsed.value);
+              const base: any = { feasibility: out.feasibility, unplaced: out.unplaced, violations: out.violations, compromises: out.compromises };
+              if (out.violations.length) {
+                const meta = {
+                  horizon_start: parsed.value.horizon_start ?? planState?.plan.horizon_start ?? day,
+                  timezone: planState?.plan.timezone ?? timezone ?? 'Asia/Shanghai',
                 };
+                const trimmed = trimArtifactToFit(parsed.value, meta, busyBlocks.map((b: any) => ({ ...b, pinned: true })));
+                if (trimmed) {
+                  base.proposal = {
+                    changes: trimmed.changes,
+                    suggested: {
+                      ...trimmed.draft,
+                      clarifications_needed: [
+                        ...(trimmed.draft.clarifications_needed ?? []),
+                        `容量不足，可接受的取舍：${trimmed.changes.join('；')}。接受后会按此方案生成；不接受可自行删减任务。`,
+                      ],
+                    },
+                  };
+                }
               }
+              preview = base;
             }
-            const art: AppEvent = { event: 'artifact', data: { seq: nextSeq(), kind: parsed.kind, payload: parsed.value } };
+            const art: AppEvent = { event: 'artifact', data: { seq: nextSeq(), kind: parsed.kind, payload: parsed.value, ...(preview ? { preview } : {}) } };
             emit(art); collected.push(art);
             await insertMessage(deps.db, conv, { seq: art.data.seq, role: 'assistant', kind: parsed.kind, content: bestText || finalText, payload: parsed.value });
             break;

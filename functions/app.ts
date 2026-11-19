@@ -11,6 +11,7 @@ import { calendar, applySharedBlocks } from './routes/calendar.ts';
 import { recoveryGenerate, recoveryClaim } from './routes/recovery.ts';
 import { deleteAll } from './routes/data.ts';
 import { getProfile, updateProfile, learnProfile } from './routes/profile.ts';
+import { markBlockProgress } from './routes/progress.ts';
 export function application(deps: Deps) {
   // 写失败必须可见：所有查询经严格包装，错误直接抛出而不是随 200 响应被吞掉。
   const strict: Deps = { ...deps, db: strictDb(deps.db) };
@@ -29,6 +30,7 @@ export function application(deps: Deps) {
     { method: 'POST', pattern: /^\/api\/calendar\/blocks$/, handler: applySharedBlocks },
     { method: 'GET', pattern: /^\/api\/plans$/, handler: listPlans },
     { method: 'GET', pattern: /^\/api\/plans\/([^/]+)$/, handler: getPlan },
+    { method: 'POST', pattern: /^\/api\/blocks\/([^/]+)\/progress$/, handler: markBlockProgress },
     { method: 'DELETE', pattern: /^\/api\/plans\/([^/]+)$/, handler: deletePlan },
     { method: 'POST', pattern: /^\/api\/recovery\/generate$/, handler: recoveryGenerate },
     { method: 'POST', pattern: /^\/api\/recovery\/claim$/, handler: recoveryClaim },

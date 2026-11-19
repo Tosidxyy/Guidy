@@ -8,3 +8,4 @@ export { findConflicts, isMergedPair, mergeConflictOps, type ConflictPlan, type 
 export { weeklyAvailability, formatAvailability, type AvailabilitySource } from './availability.ts';
 export { artifactFeasible, trimArtifactToFit, type FitPlanMeta } from './fit.ts';
 export * from './time.ts';
+export { taskProgress, type TaskProgress } from './progress.ts';

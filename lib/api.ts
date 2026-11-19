@@ -41,6 +41,8 @@ export const api = {
   saveProfile: (habits: string) => requestJson<Profile>('/profile', { method: 'PUT', body: { habits } }),
   learnProfile: () => requestJson<Profile>('/profile/learn', { method: 'POST' }),
   deleteAll: () => requestJson<{ ok: boolean; deleted: Record<string, number> }>('/data/delete-all', { method: 'POST', body: { confirm_token: 'DELETE' } }),
+  markProgress: (blockId: string, status: string, actualDurationMin?: number | null) =>
+    requestJson<{ block: any }>(`/blocks/${encodeURIComponent(blockId)}/progress`, { method: 'POST', body: { status, ...(actualDurationMin !== undefined ? { actual_duration_min: actualDurationMin } : {}) } }),
 };
 export const SEND_URL = BASE + '/chat/send';
 export const EVENTS_URL = (id: string, cursor: string) => `${BASE}/chat/events?conversation_id=${encodeURIComponent(id)}&cursor=${encodeURIComponent(cursor)}`;

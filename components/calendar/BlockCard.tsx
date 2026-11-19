@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Lock, Pin } from 'lucide-react';
+import { Check, Lock, Pin } from 'lucide-react';
 import type { Block } from '@/shared/types';
 import { categoryColor } from '@/lib/describe';
 import { minToHHmm } from '@/shared/engine';
@@ -53,6 +53,8 @@ export const BlockCard = memo(function BlockCard({
         visual === 'ghost-added' && 'border-dashed border-site-success pointer-events-none',
         visual === 'ghost-removed' && 'border-dashed border-site-danger pointer-events-none opacity-60',
         visual === 'ghost-moved' && 'border-dashed border-site-warning pointer-events-none',
+        block.status === 'completed' && 'opacity-60',
+        block.status === 'partial' && 'border-dashed border-site-warning',
       )}
       style={{
         top, height: Math.max(height, 18), left: `${leftPct}%`, width: `calc(${widthPct}% - 4px)`,
@@ -84,11 +86,12 @@ export const BlockCard = memo(function BlockCard({
               ))}
             </span>
           ) : (
-          <span className="truncate text-xs font-semibold leading-tight" style={{ color: 'var(--site-fg)' }}>
+          <span className={cn('truncate text-xs font-semibold leading-tight', block.status === 'completed' && 'line-through')} style={{ color: 'var(--site-fg)' }}>
             {block.title}
           </span>
           )}
           {block.pinned && <Pin className="h-3 w-3 shrink-0" style={{ color: 'var(--cat)' }} aria-label="已钉住" />}
+          {block.status === 'completed' && <Check className="h-3 w-3 shrink-0" style={{ color: 'var(--cat)' }} aria-label="已完成" />}
           {block.origin === 'fixed' && <Lock className="h-3 w-3 shrink-0 text-site-ink-soft" aria-label="固定" />}
           {planLabel && <span className="ml-auto max-w-[55%] truncate rounded bg-site-surface/85 px-1 text-[9px] leading-tight text-site-ink-soft">{planLabel}</span>}
           {visual === 'ghost-removed' && <span className="ml-auto text-[10px] text-site-danger">移除</span>}

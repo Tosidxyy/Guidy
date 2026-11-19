@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Pin, Trash2 } from 'lucide-react';
+import { api } from '@/lib/api';
 import { CATEGORIES } from '@/shared/constants';
 import { dayList, localDay, localMinutes, minToHHmm, utcAt, applyPatch, validatePlacement } from '@/shared/engine';
 import type { Category, Priority } from '@/shared/types';
@@ -41,6 +42,7 @@ export function BlockDrawer() {
   const [startTime, setStartTime] = useState('09:00');
   const [duration, setDuration] = useState(60);
   const [notes, setNotes] = useState('');
+  const [partialMin, setPartialMin] = useState(30);
 
   useEffect(() => {
     if (open && block) {
@@ -123,6 +125,25 @@ export function BlockDrawer() {
     updateBlock(block.id, { title: name.slice(0, 60), category, priority, notes: notes.trim() ? notes.trim().slice(0, 500) : undefined });
     toast.success('已保存');
     closeDrawer();
+  };
+
+  // 执行进度：完成/部分完成/进行中/取消，写到服务端并以真实块状态为准。
+  const markProgress = async (status: string, actual?: number | null) => {
+    if (isShared) { toast.error('共享日历块暂不支持标记完成'); return; }
+    try {
+      await api.markProgress(block.id, status, actual);
+      usePlanStore.setState((st) => ({
+        state: {
+          ...st.state,
+          blocks: st.state.blocks.map((b) => (b.id === block.id
+            ? { ...b, status: status as any, actual_duration_min: actual ?? (status === 'planned' ? null : actual ?? b.actual_duration_min ?? null), progress_updated_at: new Date().toISOString() }
+            : b)),
+        },
+      }));
+      toast.success(status === 'planned' ? '已重置进度' : status === 'completed' ? '已标记完成' : status === 'partial' ? `已记录完成 ${actual} 分钟` : '已更新进度');
+    } catch {
+      toast.error('进度更新失败，请重试');
+    }
   };
 
   const togglePinned = async () => {
@@ -213,6 +234,25 @@ export function BlockDrawer() {
               <Input id="b-duration" type="number" min={5} max={isShared ? 960 : 480} step={5} value={duration} disabled={block.pinned} onChange={(e) => setDuration(Number(e.target.value))} />
             </div>
           </div>
+          {!isShared && (
+            <div className="space-y-1.5 rounded-lg border border-site-line bg-site-surface px-3 py-2.5">
+              <div className="flex items-center justify-between">
+                <Label>执行进度</Label>
+                <span className="text-[11px] text-site-ink-soft">{({ planned: '未开始', in_progress: '进行中', completed: '已完成', partial: '部分完成', cancelled: '已取消', skipped: '已跳过' } as Record<string, string>)[block.status ?? 'planned']}{block.actual_duration_min != null ? ` · 实际 ${block.actual_duration_min} 分钟` : ''}</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <Button size="sm" variant="outline" onClick={() => { void markProgress('completed'); }}>已完成</Button>
+                <Button size="sm" variant="outline" onClick={() => { void markProgress('in_progress'); }}>进行中</Button>
+                <Button size="sm" variant="outline" onClick={() => { void markProgress('cancelled'); }}>取消</Button>
+                <Button size="sm" variant="outline" onClick={() => { void markProgress('planned'); }}>重置</Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <Input type="number" min={1} max={480} value={partialMin} onChange={(e) => setPartialMin(Number(e.target.value))} aria-label="部分完成分钟" className="h-8 w-24" />
+                <span className="text-[11px] text-site-ink-soft">分钟</span>
+                <Button size="sm" onClick={() => { void markProgress('partial', Number(partialMin) || 0); }}>记录部分完成</Button>
+              </div>
+            </div>
+          )}
           {block.pinned && (
             <p className="text-[11px] leading-relaxed text-site-ink-soft">已钉住：日期与时间已锁定，手动拖动/调整会被禁止；取消钉住或让 AI 助手调整即可移动。</p>
           )}

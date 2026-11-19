@@ -27,7 +27,23 @@ export const TaskDefSchema = z.object({
   sort_order: z.number().int().default(0),
   /** 执行细节/资料要点，会随生成的时间块进入日历与上下文。 */
   notes: z.string().max(500).optional(),
+  /** 任务级截止日（含当天），本任务的所有时间块必须完成于此日之前。 */
+  deadline: z.string().date().optional(),
+  /** 任务级最早开始日（含当天）。 */
+  earliest_start: z.string().date().optional(),
+  /** 前置依赖：这些任务全部落位（或已完成）后才能安排本任务。 */
+  depends_on: z.array(z.string()).max(8).optional(),
 });
+
+export const BlockStatusEnum = z.enum(['planned', 'in_progress', 'completed', 'partial', 'cancelled', 'skipped']);
+export type BlockStatus = z.infer<typeof BlockStatusEnum>;
+
+const progressFields = {
+  status: BlockStatusEnum.optional(),
+  completed_at: z.string().datetime().nullable().optional(),
+  actual_duration_min: z.number().int().min(0).max(1440).nullable().optional(),
+  progress_updated_at: z.string().datetime().nullable().optional(),
+};
 
 // update_task_def 的 patch：可选字段可以传 null 清除（例如 preferred_period）。
 export const TaskDefPatchSchema = TaskDefSchema.partial().extend({
@@ -92,6 +108,7 @@ export const ManualBlockSchema = z.object({
   notes: z.string().max(500).optional(),
   // 仅用于撤销恢复原块语义：engine 块会被重排替换，manual 块作为固定保留。
   origin: z.enum(['engine', 'manual', 'fixed']).optional(),
+  ...progressFields,
 });
 
 export const PlanBlockSchema = z.object({
@@ -105,7 +122,13 @@ export const PlanBlockSchema = z.object({
   pinned: z.boolean(),
   origin: z.enum(['engine', 'manual', 'fixed']),
   notes: z.string().max(500).optional(),
+  ...progressFields,
 }).refine((b) => Date.parse(b.end_utc) > Date.parse(b.start_utc), '结束时间必须晚于开始时间');
+
+export const ProgressUpdateSchema = z.object({
+  status: BlockStatusEnum,
+  actual_duration_min: z.number().int().min(0).max(1440).nullable().optional(),
+});
 
 export const PatchOpSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('add_task_def'), value: TaskDefSchema }),

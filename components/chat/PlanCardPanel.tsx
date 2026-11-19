@@ -8,7 +8,8 @@ import { useApplyPatch } from '@/lib/useApplyPatch';
 import { useAutoSaveDraft } from '@/lib/useAutoSaveDraft';
 import { useCommitPlan } from '@/lib/useCommitPlan';
 import { appliedPatches } from '@/lib/appliedPatches';
-import { patchOpText } from '@/lib/describe';
+import { constraintText, patchOpText } from '@/lib/describe';
+import { solveArtifact } from '@/lib/preview';
 import { groupSchedules, isSchedule } from '@/lib/confirmDraft';
 import { cn } from '@/lib/utils';
 import { usePlanStore } from '@/store/usePlanStore';
@@ -29,6 +30,7 @@ export function PlanCardPanel() {
   const [saving, setSaving] = useState(false);
   const state = usePlanStore((s) => s.state);
   const proposal = useChatStore((s) => s.artifact);
+  const serverPreview = useChatStore((s) => s.artifactPreview);
   const patch = useChatStore((s) => s.patch);
   const conversationId = useChatStore((s) => s.conversationId);
   const autoSave = useAutoSaveDraft();
@@ -53,6 +55,34 @@ export function PlanCardPanel() {
   const scheduleCount = groupSchedules(viewed).length;
   const ruleCount = constraintList.filter((c) => !isSchedule(c)).length;
   const planTitle = viewed.plan_title;
+
+  // 可行性以服务端 pre-solve 为权威；恢复旧对话没有服务端预览时用同一引擎本地预估，并明确标注。
+  const localPreview = useMemo(() => {
+    if (!proposal || serverPreview) return null;
+    const { output } = solveArtifact(draft ?? proposalDraft ?? proposal, { horizon_start: state.plan.horizon_start, timezone: state.plan.timezone }, state.blocks);
+    return { feasibility: output.feasibility, unplaced: output.unplaced, violations: output.violations, compromises: output.compromises, _local: true };
+  }, [proposal, serverPreview, draft, proposalDraft, state]);
+  const preview: any = (proposal ? (serverPreview ?? localPreview) : null) as any;
+  const num = (v: unknown) => Number(v) || 0;
+  const unplacedList: any[] = preview?.unplaced ?? [];
+  const violationsList: any[] = preview?.violations ?? [];
+  const compromisesList: any[] = preview?.compromises ?? [];
+  const targetMin = unplacedList.reduce((m, u) => m + num(u.target_minutes), 0);
+  const placedMin = unplacedList.reduce((m, u) => m + num(u.placed_minutes), 0);
+  const missingMin = unplacedList.reduce((m, u) => m + num(u.missing_minutes), 0);
+  const feasibilityText: Record<string, string> = { FEASIBLE: '全部可排', PARTIAL: '部分可行', INFEASIBLE: '不可行', UNKNOWN: '待确认' };
+  const feasibilityCls: Record<string, string> = {
+    FEASIBLE: 'bg-site-success/15 text-site-success',
+    PARTIAL: 'bg-site-warning/15 text-site-warning',
+    INFEASIBLE: 'bg-site-danger/15 text-site-danger',
+    UNKNOWN: 'bg-site-ink/10 text-site-ink-soft',
+  };
+  const constraintForViolation = (id?: string) => {
+    const m = /^(?:pre|ai)-(\d+)$/.exec(id ?? '');
+    if (!m) return null;
+    const c = viewed.constraints[Number(m[1])];
+    return c ? constraintText(c, (key) => viewed.task_defs.find((t) => t.key === key)?.title ?? key) : null;
+  };
 
   // AI 给出完整方案：计数更新但不自动展开；入口闪烁提示用户手动呼出确认。
   useEffect(() => {
@@ -103,6 +133,8 @@ export function PlanCardPanel() {
 
   const change = (next: ConstraintSetArtifact) => {
     setDraft(next);
+    // 用户改动后服务端预览已过期，清掉避免误导；提交成功与否仍以服务端为准。
+    if (proposal) useChatStore.setState({ artifactPreview: null });
     // 草稿：改动立刻写回本地状态，后台自动保存；已保存计划：留在卡片里，点保存一次性提交。
     if (!proposal && unsaved) {
       const current = usePlanStore.getState().state;
@@ -203,6 +235,61 @@ export function PlanCardPanel() {
           </section>
         )}
 
+          {proposal && preview && (
+            <section className="mx-3.5 mt-3 space-y-2 rounded-lg border border-site-line bg-site-bg p-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', feasibilityCls[preview.feasibility] ?? feasibilityCls.UNKNOWN)}>
+                  {feasibilityText[preview.feasibility] ?? preview.feasibility}
+                </span>
+                {unplacedList.length ? (
+                  <span className="tabular text-[11px] text-site-ink-soft">缺口任务目标 {targetMin} 分钟 · 已排 {placedMin} · 未排 {missingMin}</span>
+                ) : (
+                  <span className="text-[11px] text-site-ink-soft">全部任务均可排入当前可安排时段</span>
+                )}
+                {preview._local && <span className="text-[10px] text-site-ink-soft">本地预估</span>}
+              </div>
+              {unplacedList.length > 0 && (
+                <ul className="space-y-1">
+                  {unplacedList.slice(0, 5).map((u) => (
+                    <li key={u.task_key} className="rounded border border-site-line bg-site-surface px-2 py-1 text-[11px] leading-snug text-site-ink">
+                      <span className="font-medium">{u.title}</span>：目标 {u.target_minutes} 分钟，已排 {u.placed_minutes} 分钟，缺 {u.missing_minutes} 分钟{u.reason ? ` · ${u.reason}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {violationsList.length > 0 && (
+                <ul className="space-y-1">
+                  {violationsList.slice(0, 5).map((v, i) => {
+                    const text = constraintForViolation(v.constraint_id);
+                    return (
+                      <li key={i} className="rounded border border-site-danger/40 bg-site-danger/5 px-2 py-1 text-[11px] leading-snug text-site-danger">
+                        {v.reason}{text ? `（受影响约束：${text}）` : ''}{v.suggestion ? ` · 建议：${v.suggestion}` : ''}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {compromisesList.length > 0 && (
+                <details className="text-[11px] text-site-ink-soft">
+                  <summary className="cursor-pointer select-none">软约束妥协 {compromisesList.length} 项</summary>
+                  <ul className="mt-1 space-y-0.5">
+                    {compromisesList.slice(0, 6).map((c, i) => <li key={i}>· {c.reason}</li>)}
+                  </ul>
+                </details>
+              )}
+              {preview.proposal?.changes?.length > 0 && (
+                <div className="rounded border border-site-warning/50 bg-site-warning/5 px-2 py-1.5">
+                  <p className="text-[11px] leading-snug text-site-ink">可接受的取舍（需你确认，不会自动应用）：{preview.proposal.changes.join('；')}</p>
+                  {preview.proposal.suggested && (
+                    <Button variant="outline" size="sm" className="mt-1.5 h-7 px-2 text-[11px]" onClick={() => { change(preview.proposal.suggested); }}>
+                      接受取舍建议
+                    </Button>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+
           <div className="max-h-[40vh] overflow-y-auto px-3.5 pb-3.5">
             <ConstraintSetBody
               draft={viewed}
@@ -213,7 +300,7 @@ export function PlanCardPanel() {
                   {proposal ? (
                     <>
                       <Button variant="outline" size="sm" onClick={() => { useChatStore.setState({ artifact: null, clarifications: [] }); close(); }}>取消</Button>
-                      <Button size="sm" disabled={isPending || viewed.task_defs.length === 0} onClick={() => commit(viewed)}>
+                      <Button size="sm" disabled={isPending || viewed.task_defs.length === 0 || preview?.feasibility === 'INFEASIBLE'} onClick={() => commit(viewed)}>
                         {isPending ? '生成中…' : '确认并生成'}
                       </Button>
                     </>

@@ -366,7 +366,7 @@ describe('重试不丢解释文字', () => {
 });
 
 describe('超容量最终取舍', () => {
-  it('三次重试仍不可行 → 自动降次后交付可行方案并写入取舍说明', async () => {
+  it('三次重试仍不可行 → 原样交付 PARTIAL + 取舍建议，不自动放宽', async () => {
     const set = {
       type: 'constraint_set', plan_title: '超容量', horizon_days: 7,
       task_defs: [{ key: 'en', title: '学英语', category: 'study', duration_min: 60, frequency: { type: 'per_week', count: 9 }, priority: 'mid', splittable: false, sort_order: 0 }],
@@ -383,7 +383,12 @@ describe('超容量最终取舍', () => {
     const frames = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '排一下', request_id: 'req-trim' })));
     const artifact = frames.find((f) => f.event === 'artifact');
     expect(artifact).toBeTruthy();
-    expect(artifact.data.payload.task_defs[0].frequency).toEqual({ type: 'per_week', count: 7 });
-    expect((artifact.data.payload.clarifications_needed ?? []).join()).toContain('容量不足已自动取舍');
+    // 硬目标不被静默改写：任务次数保持用户/模型给出的 9 次。
+    expect(artifact.data.payload.task_defs[0].frequency).toEqual({ type: 'per_week', count: 9 });
+    const preview: any = (artifact.data as any).preview;
+    expect(preview.feasibility).toBe('PARTIAL');
+    expect(preview.unplaced.length).toBeGreaterThan(0);
+    expect(preview.proposal.changes.length).toBeGreaterThan(0);
+    expect(preview.proposal.suggested.task_defs[0].frequency.count).toBeLessThan(9);
   });
 });

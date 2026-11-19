@@ -18,7 +18,7 @@ export interface Deps {
 export type AppEvent =
   | { event: 'accepted'; data: { request_id: string; conversation_id: string; seq: number } }
   | { event: 'delta'; data: { seq: number; text: string } }
-  | { event: 'artifact'; data: { seq: number; kind: 'constraint_set' | 'patch' | 'question_card'; payload: unknown } }
+  | { event: 'artifact'; data: { seq: number; kind: 'constraint_set' | 'patch' | 'question_card'; payload: unknown; preview?: unknown } }
   | { event: 'status'; data: { seq: number; state: 'running' | 'waiting_confirm' | 'completed' | 'interrupted' | 'failed' } }
   | { event: 'progress'; data: { seq: number; tool: 'WebSearch' | 'WebFetch' } }
   | { event: 'error'; data: { seq: number; code: string; message: string; diagnostic_id: string } }

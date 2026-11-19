@@ -7,7 +7,7 @@ import { requireVisitor } from '../identity.ts';
 import { applyPatch, diffBlocks, resultHash, solve, validatePlacement } from '../engine.ts';
 import { ENGINE_VERSION } from '../shared/constants.ts';
 import { ApplyOpSchema } from '../shared/schemas.ts';
-import { getOwnedPlan, sharedRecurringFor } from './plans.ts';
+import { getOwnedPlan, sharedRecurringFor, decodeTaskRow, encodeTaskRow, blockWriteFields, children as planChildren } from './plans.ts';
 import { horizonBounds, sharedBusyBlocks, materializeSharedBusy } from './calendar.ts';
 import { localDay, localMinutes, minToHHmm } from '../shared/engine/time.ts';
 import type { Deps, RouteCtx } from '../types.ts';
@@ -32,9 +32,11 @@ const BodySchema = z.object({
 
 async function loadState(db: Db, visitor: string, planId: string): Promise<PlanState> {
   const plan = await getOwnedPlan(db, visitor, planId);
-  const task_defs = rows(await db.from('task_defs').select('*').eq('plan_id', planId));
+  const task_defs = rows(await db.from('task_defs').select('*').eq('plan_id', planId)).map(decodeTaskRow);
   const constraints = rows(await db.from('constraints').select('*').eq('plan_id', planId));
-  const blocks = rows(await db.from('blocks').select('*').eq('plan_id', planId).order('start_utc', { ascending: true }));
+  const active = Number(plan.active_version ?? 1);
+  const blocks = rows(await db.from('blocks').select('*').eq('plan_id', planId).order('start_utc', { ascending: true }))
+    .filter((b: any) => Number(b.plan_version ?? 1) === active);
   return { plan, task_defs, constraints, blocks } as PlanState;
 }
 
@@ -120,28 +122,32 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
   const explicitLayout = ops.some((op) => op.op === 'add_block' || op.op === 'remove_block');
   const shouldReschedule = patched.requiresReschedule && (state.blocks.length > 0 || explicitReschedule) && !explicitLayout;
   if (shouldReschedule) {
-    const pinned = [...patched.state.blocks.filter((b) => b.pinned || b.origin === 'manual'), ...busy.map((b: any) => ({ ...b, pinned: true }))];
+    // 已完成/进行中/部分完成的块视为不可移动的已执行事实；取消/跳过的块保留为历史记录但不占位。
+    const pinned = [...patched.state.blocks.filter((b) => b.pinned || b.origin === 'manual' || b.status === 'completed' || b.status === 'in_progress' || b.status === 'partial'), ...busy.map((b: any) => ({ ...b, pinned: true }))];
     // 其他计划的块并入忙时：拒绝并行后的自动重排要真正避开它们。
     const otherCuts = await otherPlanBusyCuts(deps.db, visitor, plan_id, patched.state.plan.timezone);
     const out = solve({ engine_version: ENGINE_VERSION, horizon_start: patched.state.plan.horizon_start, horizon_days: patched.state.plan.horizon_days, timezone: patched.state.plan.timezone, task_defs: patched.state.task_defs, constraints: [...effective, ...otherCuts], pinned_blocks: pinned });
     if (out.violations.length) fail('engine_infeasible', 422, { violations: out.violations, compromises: out.compromises });
-    newBlocks = out.blocks.filter((x) => !busyIds.has(x.id));
+    const inert = patched.state.blocks.filter((b) => b.status === 'cancelled' || b.status === 'skipped');
+    newBlocks = [...out.blocks.filter((x) => !busyIds.has(x.id)), ...inert];
     compromises = out.compromises;
     server_authoritative = (await resultHash(out.blocks)) !== result_hash;
   }
   await deps.db.from('task_defs').delete().eq('plan_id', plan_id);
   await deps.db.from('constraints').delete().eq('plan_id', plan_id);
   await deps.db.from('blocks').delete().eq('plan_id', plan_id);
+  const writeVersion = plan.version + 1;
   const updated = rows(await deps.db.from('plans').update({
     title: patched.state.plan.title,
     horizon_start: patched.state.plan.horizon_start,
     horizon_days: patched.state.plan.horizon_days,
     timezone: patched.state.plan.timezone,
-    version: plan.version + 1,
+    version: writeVersion,
+    active_version: writeVersion,
     updated_at: new Date().toISOString(),
   }).eq('id', plan_id).eq('owner_visitor_id', visitor).select('*'))[0];
   for (const t of patched.state.task_defs) {
-    await deps.db.from('task_defs').insert({ plan_id, key: t.key, title: t.title, category: t.category, duration_min: t.duration_min, frequency: t.frequency, priority: t.priority, splittable: t.splittable, preferred_period: t.preferred_period ?? null, sort_order: t.sort_order, notes: t.notes ?? null });
+    await deps.db.from('task_defs').insert({ plan_id, ...encodeTaskRow(t) });
   }
   for (const c of patched.state.constraints) {
     await deps.db.from('constraints').insert({ ...(UUID_RE.test(c.id) ? { id: c.id } : {}), plan_id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
@@ -150,14 +156,15 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
   for (const b of newBlocks) {
     await deps.db.from('blocks').insert({
       ...(originalBlockIds.has(b.id) || clientIds.has(b.id) ? { id: b.id } : {}),
-      plan_id, task_key: b.task_key ?? null, title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc, priority: b.priority, pinned: b.pinned, origin: b.origin, notes: b.notes ?? null,
+      plan_id, plan_version: writeVersion, ...blockWriteFields(b),
     });
   }
   await deps.db.from('commit_log').insertIfAbsent({ preview_id, visitor_id: visitor, plan_id }, { onConflict: 'preview_id' });
 
-  const blocks = rows(await deps.db.from('blocks').select('*').eq('plan_id', plan_id).order('start_utc', { ascending: true }));
-  const constraints = rows(await deps.db.from('constraints').select('*').eq('plan_id', plan_id));
-  const task_defs = rows(await deps.db.from('task_defs').select('*').eq('plan_id', plan_id));
+  const after = await planChildren(deps.db, updated);
+  const blocks = after.blocks;
+  const constraints = after.constraints;
+  const task_defs = after.task_defs;
   // diff/逆操作以落库后的真实 id 为准（引擎 eng-N 编号不落库）。
   const diff = diffBlocks(state.blocks, blocks);
   // reschedule 的逆操作＝非块 op 的逆 + 还原原块布局（补回被删、移回被挪、删新增），否则撤销栈无条目。

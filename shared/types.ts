@@ -1,8 +1,8 @@
-import type { Category, Constraint, Priority, TaskDef } from './schemas.ts';
+import type { BlockStatus, Category, Constraint, Priority, TaskDef } from './schemas.ts';
 
 export type HorizonDays = number;
 
-export type { ApplyOp, Category, Constraint, ConstraintPayload, Frequency, ManualBlock, PatchOp, Period, Priority, TaskDef } from './schemas.ts';
+export type { ApplyOp, BlockStatus, Category, Constraint, ConstraintPayload, Frequency, ManualBlock, PatchOp, Period, Priority, TaskDef } from './schemas.ts';
 
 export interface Block {
   id: string;
@@ -15,6 +15,12 @@ export interface Block {
   pinned: boolean;
   origin: 'engine' | 'manual' | 'fixed';
   notes?: string;
+  /** planned（默认）| in_progress | completed | partial | cancelled | skipped */
+  status?: BlockStatus;
+  completed_at?: string | null;
+  /** 用户上报的实际完成分钟；未上报时按块时长推断 completed。 */
+  actual_duration_min?: number | null;
+  progress_updated_at?: string | null;
 }
 
 export interface Plan {

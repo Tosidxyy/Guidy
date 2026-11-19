@@ -6,6 +6,7 @@ import type { Block, Constraint } from '@/shared/types';
 export interface CommitBody {
   preview_id: string;
   plan_id: string | null;
+  idempotency_key?: string;
   input: {
     title: string;
     horizon_start: string;
@@ -26,8 +27,9 @@ export async function buildCommitInput(args: {
   previewId: string;
   planId: string | null;
   conversationId?: string | null;
+  idempotencyKey?: string;
 }): Promise<CommitBody> {
-  const { draft, plan, blocks, previewId, planId, conversationId } = args;
+  const { draft, plan, blocks, previewId, planId, conversationId, idempotencyKey } = args;
   const horizon_start = draft.horizon_start ?? plan.horizon_start;
   const constraints: Constraint[] = draft.constraints.map((payload, i) => ({
     id: `ai-${i}`, payload, source: 'ai', enabled: true,
@@ -35,6 +37,7 @@ export async function buildCommitInput(args: {
   return {
     preview_id: previewId,
     plan_id: planId,
+    ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
     input: {
       title: draft.plan_title,
       horizon_start,

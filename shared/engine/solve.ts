@@ -42,6 +42,7 @@ export function solve(input: SolveInput): SolveOutput {
   const compromises: Compromise[] = [];
   const violations: Violation[] = [];
   const targetMinutes = new Map<string, number>();
+  let structural = false;
   let idCounter = 0;
   const usedIds = new Set<string>();
   const nextId = () => {
@@ -77,6 +78,7 @@ export function solve(input: SolveInput): SolveOutput {
     if (!dailyKey) continue;
     const otherKey = dailyKey === rule.a ? rule.b : rule.a;
     structuralBlocked.add(dailyKey);
+    structural = true;
     violations.push({
       task_key: dailyKey,
       constraint_id: rule.id,
@@ -127,12 +129,20 @@ export function solve(input: SolveInput): SolveOutput {
   };
 
   const outputBlocks: Block[] = [];
+  const runningMinutes = new Map<string, number>();
+  const lastDayByKey = new Map<string, string>();
   const registerBlock = (ctx: DayContext, block: Block, interval: Interval) => {
     usedIds.add(block.id);
     ctx.occupied.push(interval);
     ctx.blocks.push(block);
     outputBlocks.push(block);
     consumeCap(ctx.day, block.category, interval.end - interval.start);
+    if (block.task_key) {
+      const m = runningMinutes.get(block.task_key) ?? 0;
+      runningMinutes.set(block.task_key, m + (interval.end - interval.start));
+      const prev = lastDayByKey.get(block.task_key);
+      if (!prev || ctx.day > prev) lastDayByKey.set(block.task_key, ctx.day);
+    }
   };
   // 固定事件（会议/上课）与已钉住的块不得互相重叠：这是硬约束，做不到就明确违例。
   const assertNoOverlap = (ctx: DayContext, block: Block, interval: Interval, constraintId?: string) => {
@@ -140,7 +150,8 @@ export function solve(input: SolveInput): SolveOutput {
       const o = { start: localMinutes(b.start_utc, tz), end: localMinutes(b.end_utc, tz) };
       return interval.start < o.end && o.start < interval.end;
     });
-    if (!clash) return;
+    if (!clash) { return; }
+    structural = true;
     violations.push({
       task_key: block.task_key,
       constraint_id: constraintId,
@@ -262,15 +273,53 @@ export function solve(input: SolveInput): SolveOutput {
     return out;
   };
 
-  const sortedTasks = [...input.task_defs].sort((a, b) => {
+  // 任务级依赖：循环检测 + 拓扑顺序（前置任务先落位）；有环的任务不排并给出结构性违例。
+  const depMap = new Map<string, string[]>();
+  for (const t of input.task_defs) {
+    const deps = (t.depends_on ?? []).filter((k) => k !== t.key && taskByKey.has(k));
+    if (deps.length) depMap.set(t.key, deps);
+  }
+  const cyclic = new Set<string>();
+  {
+    const state = new Map<string, 0 | 1 | 2>();
+    const visit = (k: string) => {
+      const st = state.get(k) ?? 0;
+      if (st === 1) { cyclic.add(k); return; }
+      if (st === 2) return;
+      state.set(k, 1);
+      for (const d of depMap.get(k) ?? []) visit(d);
+      state.set(k, 2);
+    };
+    for (const k of depMap.keys()) visit(k);
+  }
+  for (const k of cyclic) {
+    const t = taskByKey.get(k)!;
+    structural = true;
+    violations.push({ task_key: k, reason: `「${t.title}」存在循环依赖，无法安排`, suggestion: '移除依赖环中的一条依赖后重试' });
+  }
+  const taskRank = (a: TaskDef, b: TaskDef) => {
+    const ad = a.deadline ?? '9999-99-99';
+    const bd = b.deadline ?? '9999-99-99';
+    if (ad !== bd) return ad.localeCompare(bd);
     const pw = PRIORITY_WEIGHT[a.priority] - PRIORITY_WEIGHT[b.priority];
     if (pw !== 0) return pw;
-    const aw = a.preferred_period ? 0 : 1;
-    const bw = b.preferred_period ? 0 : 1;
-    if (aw !== bw) return aw - bw;
     if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
     return a.key.localeCompare(b.key);
-  });
+  };
+  const sortedTasks: TaskDef[] = [];
+  {
+    const seen = new Set<string>();
+    const visitTask = (t: TaskDef) => {
+      if (seen.has(t.key) || cyclic.has(t.key)) return;
+      seen.add(t.key);
+      for (const d of depMap.get(t.key) ?? []) {
+        const dt = taskByKey.get(d);
+        if (dt) visitTask(dt);
+      }
+      sortedTasks.push(t);
+    };
+    for (const t of [...input.task_defs].sort(taskRank)) visitTask(t);
+  }
 
   const makeBlock = (task: TaskDef, ctx: DayContext, interval: Interval): Block => ({
     id: nextId(), task_key: task.key, title: task.title, category: task.category,
@@ -290,6 +339,23 @@ export function solve(input: SolveInput): SolveOutput {
     }
   };
 
+  const scopedDaysOf = (t: TaskDef): string[] | null => {
+    if (!t.earliest_start && !t.deadline) return null;
+    return days.filter((d) => (!t.earliest_start || d >= t.earliest_start) && (!t.deadline || d <= t.deadline));
+  };
+  const targetCountFor = (t: TaskDef): number => {
+    const scoped = scopedDaysOf(t);
+    if (t.frequency.type === 'once') return scoped ? (scoped.length ? 1 : 0) : 1;
+    if (t.frequency.type === 'daily') return scoped ? scoped.length : days.length;
+    const { count } = t.frequency;
+    let target = 0;
+    for (let i = 0; i < days.length; i += 7) {
+      const len = Math.min(7, days.length - i);
+      target += len === 7 ? count : Math.max(1, Math.round((count * len) / 7));
+    }
+    return scoped ? target : target;
+  };
+
   for (const task of sortedTasks) {
     const pre = pinnedByTask.get(task.key);
     let placedCount = pre?.count ?? 0;
@@ -297,11 +363,38 @@ export function solve(input: SolveInput): SolveOutput {
     const period = preferredPeriodFor(task, constraints);
     const candidate = { task_key: task.key, category: task.category };
 
+    const scoped = scopedDaysOf(task);
+    const window = scoped ? new Set(scoped) : null;
+    if (window && window.size === 0) {
+      structural = true;
+      targetMinutes.set(task.key, 0);
+      violations.push({ task_key: task.key, reason: `「${task.title}」的日期范围为空（最早开始晚于截止日）`, suggestion: '检查任务的最早开始与截止日期' });
+      continue;
+    }
+    const deps = depMap.get(task.key) ?? [];
+    const unmet = deps.filter((d) => {
+      const depTask = taskByKey.get(d)!;
+      const depTarget = targetCountFor(depTask) * depTask.duration_min;
+      return (runningMinutes.get(d) ?? 0) < depTarget;
+    });
+    if (unmet.length) {
+      targetMinutes.set(task.key, targetCountFor(task) * task.duration_min);
+      violations.push({ task_key: task.key, reason: `「${task.title}」的前置任务「${unmet.map((k) => taskByKey.get(k)!.title).join('、')}」尚未排完`, suggestion: '先放宽前置任务的容量或调整其截止日' });
+      continue;
+    }
+    let depBoundary: string | null = null;
+    for (const d of deps) {
+      const last = lastDayByKey.get(d);
+      if (last && (!depBoundary || last > depBoundary)) depBoundary = last;
+    }
+    const dayAllowed = (day: string) => (!window || window.has(day)) && (!depBoundary || day > depBoundary);
+
     /** 在允许的日期里落一次；允许集合为空表示整个 horizon。 */
     const placeOne = (allowed?: Set<string>): boolean => {
       const bestRef: { current: { ctx: DayContext; interval: Interval; score: number } | null } = { current: null };
       for (const ctx of ctxByDay.values()) {
         if (allowed && !allowed.has(ctx.day)) continue;
+        if (!dayAllowed(ctx.day)) continue;
         if (usedDays.has(ctx.day)) continue;
         if (capFor(ctx.day, task.category) < (task.splittable ? MIN_FRAGMENT_MIN : task.duration_min)) continue;
         for (const slot of freeSlots(ctx)) {
@@ -334,6 +427,7 @@ export function solve(input: SolveInput): SolveOutput {
           const fragTask = { ...task, duration_min: splitMinutesLeft };
           for (const fctx of ctxByDay.values()) {
             if (allowed && !allowed.has(fctx.day)) continue;
+            if (!dayAllowed(fctx.day)) continue;
             if (capFor(fctx.day, task.category) < MIN_FRAGMENT_MIN) continue;
             for (const slot of freeSlots(fctx)) {
               for (const fi of candidateIntervals(fctx, slot, fragTask, candidate, period)) {
@@ -377,7 +471,7 @@ export function solve(input: SolveInput): SolveOutput {
         while (need > 0 && placeOne(allowed)) { placedCount += 1; need -= 1; }
       }
     } else {
-      target = task.frequency.type === 'daily' ? days.length : 1;
+      target = task.frequency.type === 'daily' ? (window ? window.size : days.length) : 1;
       while (placedCount < target && placeOne()) placedCount += 1;
     }
     targetMinutes.set(task.key, target * task.duration_min);
@@ -418,9 +512,15 @@ export function solve(input: SolveInput): SolveOutput {
       reason: detail?.reason ?? '可用时段不足',
     });
   }
+  // 只有结构性矛盾（循环依赖、固定事件重叠、硬互斥矛盾、日期窗为空）才是 INFEASIBLE 的证明；
+  // 贪心排不下只是 PARTIAL/UNKNOWN，不能谎称不可行。
   const feasibility: Feasibility = violations.length === 0
     ? 'FEASIBLE'
-    : (scheduledMinutes > 0 || outputBlocks.length > 0 ? 'PARTIAL' : 'INFEASIBLE');
+    : structural
+      ? 'INFEASIBLE'
+      : scheduledMinutes > 0 || outputBlocks.length > 0
+        ? 'PARTIAL'
+        : 'UNKNOWN';
   const placed = outputBlocks.filter((b) => b.origin === 'engine').length;
   return {
     blocks: outputBlocks,

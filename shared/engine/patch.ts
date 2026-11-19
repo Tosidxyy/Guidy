@@ -13,7 +13,14 @@ const uuidOrUndefined = (id: string): string | undefined => (UUID_RE.test(id) ? 
 function clone<T>(x: T): T { return x === undefined ? x : JSON.parse(JSON.stringify(x)) as T; }
 
 function blockToManual(b: Block): ManualBlock {
-  return { title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc, priority: b.priority, pinned: b.pinned, origin: b.origin, ...(b.notes ? { notes: b.notes } : {}) };
+  return {
+    title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc,
+    priority: b.priority, pinned: b.pinned, origin: b.origin, ...(b.notes ? { notes: b.notes } : {}),
+    ...(b.status ? { status: b.status } : {}),
+    ...(b.completed_at ? { completed_at: b.completed_at } : {}),
+    ...(b.actual_duration_min != null ? { actual_duration_min: b.actual_duration_min } : {}),
+    ...(b.progress_updated_at ? { progress_updated_at: b.progress_updated_at } : {}),
+  };
 }
 
 // 服务端返回的 task_defs 带数据库字段（id/plan_id）与 NULL 的 preferred_period，
