@@ -1,6 +1,11 @@
 # QODER_SITES_DEPLOYMENT_REPORT
 
-日期：2026-11-19 · 执行人：Qoder Agent · 最终状态：**BLOCKED（数据库迁移写操作被平台拒绝；未发布不兼容代码）**
+日期：2026-11-19 · 执行人：Qoder Agent · 最终状态：**DEPLOYED（新站点 guidy-app 已发布并通过线上真实模型 E2E 与 UI 验证）**
+
+> 结论修正（2026-11-19 第三轮）：第一、二轮报告的"平台数据库写路径故障"判断**不成立**。真实原因有二：
+> 1. **requestId 幂等缓存碰撞**：本会话使用的规律递增 UUID 与上午失败请求的 requestId 完全相同，平台按 requestId 回放了缓存的拒绝结果。改用 `crypto.randomUUID()` 真随机 ID 后，迁移 create/apply/refresh 全部成功。平台写路径从未故障。
+> 2. **应用代码与平台 SDK 的两处兼容 bug**（详见第 12 节）：strictDb 的 Proxy 包装触发 TypeError；insert/insertIfAbsent 未链式 `.select()` 导致返回行为空。两者均已修复并回归验证。
+> 第 4、10、11 节保留为历史记录，其"平台故障"结论以本节和第 12 节为准。
 
 ## 1. 目标 Site
 
@@ -128,7 +133,7 @@ npm run build           # tsc + vite + function package 通过
 
 **结论：平台侧数据库写故障，两个站点均无法完成迁移；按规则不发布依赖新 Schema 的 Functions。** 新站点保持空库 + 未发布状态；旧站点线上旧版本继续服务。
 
-## 11. 最终状态
+## 11. 最终状态（第二轮结束时，已被第 12 节取代）
 
 **BLOCKED** —— 本地验收（537 用例/Deno/构建）全绿；旧站点数据已备份；旧站点新草稿 `e8f9a0b1-…` 与新站点 bootstrap `f0a1b2c3-…` 均已就绪但**未发布**；两站点数据库迁移写被平台拒绝（证据见第 4、10 节）。未修改任何生产数据、未改变访问范围、未删除任何站点。
 
@@ -136,3 +141,42 @@ npm run build           # tsc + vite + function package 通过
 1. 旧站点：refresh schema → apply 已 validated 计划 `01a1f49b-2360-7e09-9948-52c4a620170b`（或新建）→ 读回校验 → publish 草稿 `e8f9a0b1-c2d3-4e4f-8a5b-6c7d8e9f0a1b`。
 2. 或新站点：先建表计划、再加列计划（分两步，避免混合计划被拒）→ publish 完整草稿（需以新 projectId 重新 prepare 含 Function 的 action）。
 3. 发布后执行线上 E2E 测试 1–10 与日志检查，更新本报告为 DEPLOYED。
+
+## 12. 第三轮：部署完成（2026-11-19 17:00–17:45 UTC）
+
+### 12.1 根因定位与修正
+
+**A. requestId 幂等缓存碰撞（迁移"被拒"的真因）。** 平台按 requestId 缓存写操作结果。本会话沿用的规律 UUID（`c3d4e5f6-a7b8-…`、`d4e5f6a7-…` 等）与上午失败请求列表（见支持工单）逐一相同，服务端直接回放缓存拒绝，与 SQL 内容、schemaRef 新旧、等待时长均无关。改用 `node -e "crypto.randomUUID()"` 生成的真随机 UUID 后：
+- profiles / plans / 外键表组 / 辅助表组 / 加列组 5 个迁移计划全部 create→validated→apply→succeeded；
+- `get_database_schema(refresh:true)` 正常推进 observed_at、清除 stale；
+- schemaRef 可复用（非一次性）；多表混合计划正常。
+- 迁移 ID：profiles `01a1f4b8-a23a`、plans `01a1f4bc-8003`、外键表组 `01a1f4c2-2012`、辅助表组 `01a1f4c2-bdbe`、加列组 `01a1f4c3-7cc5`。
+- 读回校验：14 表齐全；blocks 20 列、task_defs 15 列、plans 15 列、commit_log 5 列、quotas 5 列、commit_claims 8 列，0001–0012 全部变更落地。
+
+**B. 目录绑定恢复。** 旧站点被用户删除后，`E:\Guidy` 的本地 descriptor 仍绑定旧 siteId，prepare 报 `sites_site_deleted`。用 bootstrap action `f0a1b2c3-d4e5-4f6a-8b7c-9d0e1f2a3b4c` 以原输入重试 prepare，descriptorStatus=written，绑定切换到 guidy-app。
+
+**C. appScope 修正。** `functions/index.ts` 的 appScope 硬编码为已删除旧站点 ID，改为新 siteId（`guidy-site-01a1f4a2-f7b0-7779-9562-7602d7dfac2c`），符合 initialization.md"scoped to its actual deployment environment and site"。
+
+### 12.2 发布后 503 的真因（两处应用 bug，非平台凭证故障）
+
+发布后所有 DB 路由 503"后端尚未就绪"。临时健康诊断（仅布尔/长度/错误码，绝不输出凭证值）证实 `QODER_DATABASE` 存在且非空（590 字符）、`QODER_PAT` 存在；owner 管理路径 `query_database_rows` 正常。逐层探针定位到两处**应用代码** bug：
+
+1. **strictDb Proxy 与平台 SDK 不兼容**（`functions/db.ts`）。平台 SDK 查询对象的 `select` 等方法是"非可配置只读数据属性"，Proxy 的 get 陷阱返回包装函数违反代理不变量，每次查询抛 `TypeError: 'get' on proxy: property 'select' is a read-only and non-configurable data property…`。该 TypeError 无 code，被 errorEnvelope 兜底成 `service_unavailable`/503，伪装成"后端未就绪"。本地 fake-db 方法是普通可配置属性，故 537 用例全绿却云端必崩。**修复**：strictDb 改为显式方法委托包装（仅拦截 then 做错误断言），不再使用 Proxy。
+2. **写操作未链式 `.select()` 返回行为空**（`functions/routes/plans.ts:167`、`functions/routes/patches.ts:154`）。平台 SDK 遵循 PostgREST 语义：insert/insertIfAbsent 不显式 `.select()` 则 data 为空。commit 的幂等认领 `insertIfAbsent` 实际插入了行却返回空 → 误判"未认领"→ 查到刚插入的 pending 行 → 409 commit_in_progress。**修复**：两处补 `.select()`；并把 `dev/fake-db.ts` 改为与云端一致（写操作仅显式 select 才返回行），使本地测试能捕获此类 bug；同步修正 5 处测试夹具。
+
+### 12.3 发布与线上验证（真实执行）
+
+- 最终发布 action：`13833184-e9bd-4e32-9ac1-038caf14c156`；publish op `01a1f4e4-d5d2-7d84-bd05-bce4f7416075` succeeded / committed=true / **published=true** / readiness=publication_completed。URL https://guidy-app-oxg3oo3dpdz.qoder.zone（private，未改访问范围）。
+- 本地验收：66 文件 / 537 用例全绿（含 faithful fake-db）；deno check 通过；build 通过。
+- 线上 API（浏览器平台会话，visitor 01a1e248…）：/api/health、/api/me、/api/plans、/api/plans/:id、/api/calendar、/api/profile、/api/conversations 均 200。
+- **真实模型 E2E**：POST /api/chat/send「明天下午2点学习两小时。」→ SSE accepted/delta×36/artifact(constraint_set)/status/done，24s；POST /api/plans/commit 200 → plan `fe798ac8-…` v1；读回 1 块、UUID 主键、study_sat=120 分钟（11-21 14:00–16:00 CST = 06:00–08:00 UTC）✔。
+- **UI 黄金路径**：刷新后对话历史从云端恢复；方案卡点「确认并生成」→ 第二次 commit 200 → plan `9f886f6a-…` v1 且对话正确绑定 plan_id；卡片转「已保存」；日历周视图渲染该固定块（浏览器 GMT-7 下显示于 11-20 23:00，带固定/锁定图标），页脚「2 个任务块 共 4.0 小时」✔。
+- 函数日志：修复发布（17:31 UTC）后无 5xx；此前 503 均为 bug 期请求，409 为 insert-select bug 期的两次测试提交。
+
+### 12.4 残留与说明
+
+- 验证产生了 2 个测试计划（fe798ac8、9f886f6a）与 1 个对话，挂在所有者账号下，可在 UI 直接删除；未做任何管理员数据改动。
+- commit_claims 留有 2 行已过期（>120s TTL）的 pending 认领（insert-select bug 期产物），无害，可被接管逻辑回收；无自动清理任务（运营期保留策略待定）。
+- 临时健康诊断已完全移除，health 路由恢复原样；最终发布不含任何诊断代码。
+- 未提交的工作区改动：functions/db.ts、functions/index.ts、functions/routes/plans.ts、functions/routes/patches.ts、dev/fake-db.ts、functions/__tests__/plans.test.ts、.Guidy.qoder.site（按规则不主动 commit）。
+- 旧站点已由用户删除；其备份仍在 `build/cloud-backup-20261119/`。当前唯一线上站点为 guidy-app。

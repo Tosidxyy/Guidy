@@ -1,5 +1,14 @@
 # Qoder Sites 支持工单：数据库迁移写路径拒绝（create/apply/refresh）
 
+> **工单撤回 / 结论修正（2026-11-19 17:45 UTC）：非平台故障，无需平台修复。**
+> 根因已定位并解决，部署已完成（guidy-app 已发布并通过线上真实模型 E2E）：
+> 1. **requestId 幂等缓存碰撞**：下文"失败写请求 requestId"列表中的规律递增 UUID，与上午会话失败请求的 ID 完全相同。平台按 requestId 回放缓存的拒绝结果，造成"写路径持续被拒"的假象。改用 `crypto.randomUUID()` 真随机 ID 后，create/apply/refresh 全部成功，stale 正常清除。**教训：写操作 requestId 必须真随机，绝不手工构造规律 UUID。**
+> 2. 发布后 503 为**应用代码**与平台 SDK 的两处兼容 bug（strictDb Proxy 违反代理不变量；insert 未链式 `.select()` 返回空行），已修复，与平台凭证注入无关（QODER_DATABASE/QODER_PAT 始终正常注入）。
+> 3. 下文"间歇性恢复窗口"实为：恰好用了未碰撞 ID 的请求成功、碰撞 ID 的请求被回放拒绝，并非平台抖动。
+> 以下原始内容保留为历史记录，其"平台写路径故障/间歇锁定"判断**作废**。详见 `QODER_SITES_DEPLOYMENT_REPORT.md` 第 12 节。
+
+---
+
 ## 问题标题
 Sites 数据库迁移写操作（create_database_migration / apply_database_migration / get_database_schema refresh）对两个站点持续返回 `sites_invalid_request` / `sites_migration_rejected`；读操作与非数据库写操作正常；空库单表 CREATE 亦被拒绝。
 
