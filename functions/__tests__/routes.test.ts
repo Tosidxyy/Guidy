@@ -29,10 +29,13 @@ describe('router skeleton', () => {
   });
 });
 describe('identity + quotas + me', () => {
-  it('R3: 无身份 /api/me → 401', async () => {
+  it('R3: 无平台身份 /api/me → 签发匿名身份（Plan B），200 + HttpOnly cookie', async () => {
     const res = await application(deps())(ctx('GET', '/api/me', null));
-    expect(res.status).toBe(401);
-    expect((await res.json()).error.code).toBe('unauthorized');
+    expect(res.status).toBe(200);
+    const cookie = res.headers.get('set-cookie')!;
+    expect(cookie).toContain('guidy_vid=');
+    expect(cookie).toContain('HttpOnly');
+    expect((await res.json()).visitor_id).toMatch(/^[0-9a-f]{64}$/);
   });
   it('GET /api/me 返回 visitor_id 与满额配额', async () => {
     const res = await application(deps())(ctx('GET', '/api/me'));

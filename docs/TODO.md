@@ -37,7 +37,7 @@
 
 | 用例 | 结论 | 证据 |
 | --- | --- | --- |
-| T3 匿名身份 | PASS | `GET /api/me` 返回 `visitor_id` + `quotas`；私有数据按访客隔离 |
+| T3 匿名身份 | **PASS（Plan B 线上已验证）** | 2026-11-19 公开后实测：平台网关只对登录会话注入身份，匿名访客 401，原"平台签发匿名身份"假设不成立（此前 PASS 实为 owner 登录身份）。Plan B：应用自签 HttpOnly cookie `__Host-guidy_vid`（UUIDv4），`visitor_id=SHA-256(token)`，平台身份优先；新增 16 项测试，553 全绿。已发布 public 并线上验证，见下方「T3 修复」节 |
 | C1 send 首事件 | PASS | `POST /chat/send` 202 + 首事件 `accepted`（request_id/conversation_id/seq） |
 | C2 流式增量 | PASS | delta 有序拼接=最终 text；artifact 仅在 Schema 校验通过后出现 |
 | A2 对话采集 | PASS | PRD §2.2 需求 2 轮产出约束确认卡，含每日上限/忙碌窗口/互斥/偏好四类 + 可编辑任务 |
@@ -159,3 +159,23 @@ TDD：新增 `store/__tests__/planStore.test.ts` 先 RED（初始 6 个数学任
 未动（超出确认范围，待用户定夺）：`functions/prompt.ts` 的考研数学 few-shot 范例（第 61 行已明令禁止照抄科目，健身测试证明 agent 跟随用户意图；改动会变 QCA agent 指纹）；`ConstraintDrawer` 占位符"例如：考研初试"。
 
 注：本地 5175 仍见数学/旧 fixture 文本，源于残留 fixture server(8000) 旧对话被恢复 + 旧 fixture 代码，非示例种子；干净证明以 live 部署后为准。
+
+## T3 修复 — Plan B 匿名身份（已发布 public 并线上验证）
+
+状态：**已发布并线上验证通过（2026-11-19）**。站点 `https://guidy-app-oxg3oo3dpdz.qoder.zone`（access_mode public）；发布 actionId `70fe3ef4-cd75-4c07-80db-9ecb06900fa5`，publish op `01a1f637-2a82-79aa-b640-aeee92b6b635`。
+
+实现（用户授权 Plan B → 授权发布并验证）：
+- `functions/anonymous.ts`：`resolveIdentity` — 平台 `requireUser` 成功→平台身份优先、不签发 cookie；失败→解析 `__Host-guidy_vid`（UUIDv4 严格正则，非法/缺失即重签），`visitor_id=SHA-256(token)`（凭证不落库）；cookie `Path=/; Max-Age=34560000; HttpOnly; Secure; SameSite=Lax`，`__Host-` 前缀防兄弟站点 cookie tossing。
+- `functions/app.ts`：每请求经 scoped Deps 注入身份（不改写平台 ctx，可能冻结）；health 探针不签发 cookie。
+- `functions/index.ts`：`createSiteContext(request, { forwardApplicationCredentials: true })` 透传应用 cookie。
+- TDD：`anonymous.test.ts` 16 项（签发/往返稳定/平台优先/非法 cookie 重签/跨访客隔离/恢复码转移/级联删除）；routes/recovery/data 旧契约测试更新。全量 **553 测试 / 67 文件**，deno check、build EXIT 0。
+
+线上验证（真实环境，非 fixture）：
+1. 匿名 curl `/api/health` → 200 且不签发 cookie。
+2. 匿名首次 `/api/me` → 200 + `Set-Cookie: __Host-guidy_vid=<uuid>; HttpOnly; Secure; SameSite=Lax`；`visitor_id` 实测 = SHA-256(token)。
+3. 带 cookie 二次 `/api/me` → 同一 visitor_id、不重签（平台 Worker 确认透传应用 cookie，T3 关键未知项落地）。
+4. **ANON_E2E_PASS**：匿名真实 AI chat/send（11.2s，accepted/delta×32/artifact constraint_set/done）→ commit 200（plan `44425046…` v1，块全 UUID，归属=匿名 visitor）→ 日历 200 → `delete-all` 自清理（plans_after 0）。
+5. 登录态回归：owner 浏览器 `/me` 仍返回平台 visitor `01a1e248…`，2 个既有计划可读，无匿名 cookie 签发。
+6. 函数日志（近 1 小时）：发布后无 5xx；唯一 401 为发布前匿名探针（预期旧行为）。
+
+网关注意：同源写检查要求 POST 携带 Origin/Referer（脚本 E2E 需补 `origin`/`referer`/`sec-fetch-site: same-origin`，浏览器天然满足）。

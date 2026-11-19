@@ -95,9 +95,10 @@ describe('POST /api/data/delete-all', () => {
     expect(body.ok).toBe(true);
     expect(Object.values(body.deleted).every((n) => n === 0)).toBe(true);
   });
-  it('无身份 → 401', async () => {
+  it('无平台身份 → 以匿名身份清空数据 200（Plan B）', async () => {
     const { app } = setup();
     const res = await app(req('POST', '/api/data/delete-all', { confirm_token: 'DELETE' }, null));
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect((await res.json()).ok).toBe(true);
   });
 });

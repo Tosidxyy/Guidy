@@ -1,5 +1,6 @@
 import { createRouter, type Route } from './router.ts';
 import { strictDb } from './db.ts';
+import { resolveIdentity } from './anonymous.ts';
 import type { Deps, RouteCtx } from './types.ts';
 import { health } from './routes/health.ts';
 import { me } from './routes/me.ts';
@@ -40,5 +41,14 @@ export function application(deps: Deps) {
     { method: 'POST', pattern: /^\/api\/data\/delete-all$/, handler: deleteAll },
   ];
   const router = createRouter(routes);
-  return (ctx: RouteCtx) => router(ctx, strict);
+  return async (ctx: RouteCtx) => {
+    // health 是纯匿名探针，不签发身份 cookie。
+    if (/\/api\/health$/.test(new URL(ctx.request.url).pathname)) return router(ctx, strict);
+    const identity = await resolveIdentity(ctx, deps.requireUser);
+    // 不改写平台 ctx（可能冻结）：经依赖注入把本次请求的身份交给 requireVisitor。
+    const scoped: Deps = { ...strict, requireUser: () => identity.user };
+    const res = await router(ctx, scoped);
+    if (identity.setCookie) res.headers.append('set-cookie', identity.setCookie);
+    return res;
+  };
 }

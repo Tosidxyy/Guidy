@@ -97,11 +97,12 @@ describe('POST /api/recovery/generate', () => {
     await generateFor(app, 'visitor-a');
     expect((await (await app(req('GET', '/api/me'))).json()).has_recovery_code).toBe(true);
   });
-  it('无身份 → 401', async () => {
+  it('无平台身份 → 以匿名身份生成恢复码（Plan B）', async () => {
     const { app } = setup();
     const res = await app(req('POST', '/api/recovery/generate', undefined, null));
-    expect(res.status).toBe(401);
-    expect((await res.json()).error.code).toBe('unauthorized');
+    expect(res.status).toBe(200);
+    expect((await res.json()).code).toBeTruthy();
+    expect(res.headers.get('set-cookie')).toContain('guidy_vid=');
   });
 });
 

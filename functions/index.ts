@@ -10,6 +10,6 @@ const config = {
 const handle = application({ db, requireUser, qca: createLiveQca({ db, config }), config });
 Deno.serve(async (request) => {
   let context;
-  try { context = createSiteContext(request); return await handle(context); }
+  try { context = createSiteContext(request, { forwardApplicationCredentials: true }); return await handle(context); }
   catch (error) { return errorResponse(error, context?.requestId); }
 });
