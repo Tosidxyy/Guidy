@@ -130,7 +130,7 @@ export function solve(input: SolveInput): SolveOutput {
 
   const outputBlocks: Block[] = [];
   const runningMinutes = new Map<string, number>();
-  const lastDayByKey = new Map<string, string>();
+  const lastEndByKey = new Map<string, string>();
   const registerBlock = (ctx: DayContext, block: Block, interval: Interval) => {
     usedIds.add(block.id);
     ctx.occupied.push(interval);
@@ -140,8 +140,8 @@ export function solve(input: SolveInput): SolveOutput {
     if (block.task_key) {
       const m = runningMinutes.get(block.task_key) ?? 0;
       runningMinutes.set(block.task_key, m + (interval.end - interval.start));
-      const prev = lastDayByKey.get(block.task_key);
-      if (!prev || ctx.day > prev) lastDayByKey.set(block.task_key, ctx.day);
+      const prev = lastEndByKey.get(block.task_key);
+      if (!prev || block.end_utc > prev) lastEndByKey.set(block.task_key, block.end_utc);
     }
   };
   // 固定事件（会议/上课）与已钉住的块不得互相重叠：这是硬约束，做不到就明确违例。
@@ -275,7 +275,10 @@ export function solve(input: SolveInput): SolveOutput {
 
   // 任务级依赖：循环检测 + 拓扑顺序（前置任务先落位）；有环的任务不排并给出结构性违例。
   const depMap = new Map<string, string[]>();
+  const unknownDeps = new Map<string, string[]>();
   for (const t of input.task_defs) {
+    const unknown = (t.depends_on ?? []).filter((k) => k !== t.key && !taskByKey.has(k));
+    if (unknown.length) unknownDeps.set(t.key, unknown);
     const deps = (t.depends_on ?? []).filter((k) => k !== t.key && taskByKey.has(k));
     if (deps.length) depMap.set(t.key, deps);
   }
@@ -371,6 +374,13 @@ export function solve(input: SolveInput): SolveOutput {
       violations.push({ task_key: task.key, reason: `「${task.title}」的日期范围为空（最早开始晚于截止日）`, suggestion: '检查任务的最早开始与截止日期' });
       continue;
     }
+    const unknownList = unknownDeps.get(task.key);
+    if (unknownList) {
+      structural = true;
+      targetMinutes.set(task.key, targetCountFor(task) * task.duration_min);
+      violations.push({ task_key: task.key, reason: `「${task.title}」依赖了不存在的任务「${unknownList.join('、')}」`, suggestion: '删除或更正 depends_on 中的任务 key' });
+      continue;
+    }
     const deps = depMap.get(task.key) ?? [];
     const unmet = deps.filter((d) => {
       const depTask = taskByKey.get(d)!;
@@ -382,12 +392,17 @@ export function solve(input: SolveInput): SolveOutput {
       violations.push({ task_key: task.key, reason: `「${task.title}」的前置任务「${unmet.map((k) => taskByKey.get(k)!.title).join('、')}」尚未排完`, suggestion: '先放宽前置任务的容量或调整其截止日' });
       continue;
     }
-    let depBoundary: string | null = null;
+    // 依赖条件 = 所有前置块的最晚结束时间 + 最小间隔（buffer 约束，缺省 0）。
+    let depReadyUtc: string | null = null;
     for (const d of deps) {
-      const last = lastDayByKey.get(d);
-      if (last && (!depBoundary || last > depBoundary)) depBoundary = last;
+      const end = lastEndByKey.get(d);
+      if (!end) continue;
+      const withGap = new Date(Date.parse(end) + bufferMin * 60000).toISOString();
+      if (!depReadyUtc || withGap > depReadyUtc) depReadyUtc = withGap;
     }
-    const dayAllowed = (day: string) => (!window || window.has(day)) && (!depBoundary || day > depBoundary);
+    const depReadyDay = depReadyUtc ? localDay(depReadyUtc, tz) : null;
+    const dayAllowed = (day: string) => (!window || window.has(day)) && (!depReadyDay || day >= depReadyDay);
+    const startAllowed = (day: string, startMin: number) => !depReadyUtc || Date.parse(utcAt(day, startMin, tz)) >= Date.parse(depReadyUtc);
 
     /** 在允许的日期里落一次；允许集合为空表示整个 horizon。 */
     const placeOne = (allowed?: Set<string>): boolean => {
@@ -399,6 +414,7 @@ export function solve(input: SolveInput): SolveOutput {
         if (capFor(ctx.day, task.category) < (task.splittable ? MIN_FRAGMENT_MIN : task.duration_min)) continue;
         for (const slot of freeSlots(ctx)) {
           for (const interval of candidateIntervals(ctx, slot, task, candidate, period)) {
+            if (!startAllowed(ctx.day, interval.start)) continue;
             const conflict = mutexConflict(ctx, candidate, interval);
             if (conflict && conflict.strength === 'hard') continue;
             const softPenalty = conflict ? 100000 : 0;
@@ -432,6 +448,7 @@ export function solve(input: SolveInput): SolveOutput {
             for (const slot of freeSlots(fctx)) {
               for (const fi of candidateIntervals(fctx, slot, fragTask, candidate, period)) {
                 if (fi.end - fi.start < MIN_FRAGMENT_MIN) continue;
+                if (!startAllowed(fctx.day, fi.start)) continue;
                 const conflict = mutexConflict(fctx, candidate, fi);
                 if (conflict && conflict.strength === 'hard') continue;
                 if (!conflict) { frag = { ctx: fctx, interval: fi }; break; }

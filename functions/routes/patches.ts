@@ -7,7 +7,7 @@ import { requireVisitor } from '../identity.ts';
 import { applyPatch, diffBlocks, resultHash, solve, validatePlacement } from '../engine.ts';
 import { ENGINE_VERSION } from '../shared/constants.ts';
 import { ApplyOpSchema } from '../shared/schemas.ts';
-import { getOwnedPlan, sharedRecurringFor, decodeTaskRow, encodeTaskRow, blockWriteFields, children as planChildren } from './plans.ts';
+import { getOwnedPlan, sharedRecurringFor, decodeTaskRow, encodeTaskRow, blockWriteFields, children as planChildren, visibleBlocks } from './plans.ts';
 import { horizonBounds, sharedBusyBlocks, materializeSharedBusy } from './calendar.ts';
 import { localDay, localMinutes, minToHHmm } from '../shared/engine/time.ts';
 import type { Deps, RouteCtx } from '../types.ts';
@@ -34,9 +34,7 @@ async function loadState(db: Db, visitor: string, planId: string): Promise<PlanS
   const plan = await getOwnedPlan(db, visitor, planId);
   const task_defs = rows(await db.from('task_defs').select('*').eq('plan_id', planId)).map(decodeTaskRow);
   const constraints = rows(await db.from('constraints').select('*').eq('plan_id', planId));
-  const active = Number(plan.active_version ?? 1);
-  const blocks = rows(await db.from('blocks').select('*').eq('plan_id', planId).order('start_utc', { ascending: true }))
-    .filter((b: any) => Number(b.plan_version ?? 1) === active);
+  const blocks = visibleBlocks(plan, rows(await db.from('blocks').select('*').eq('plan_id', planId)));
   return { plan, task_defs, constraints, blocks } as PlanState;
 }
 

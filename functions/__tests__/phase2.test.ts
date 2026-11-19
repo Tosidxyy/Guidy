@@ -29,16 +29,41 @@ function solveWith(task_defs: any[], constraints: any[] = [active]) {
 const dayOf = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: TZ });
 
 describe('P1 任务依赖与日期窗', () => {
-  it('依赖顺序：阅读→PPT→汇报，后置任务晚于前置任务', () => {
+  it('依赖顺序：后置任务开始不早于前置任务最后一个块结束（允许同日）', () => {
     const out = solveWith([
       task({ key: 'read', title: '阅读', depends_on: ['ppt'] }), // 故意反向声明，引擎按依赖排序
       task({ key: 'ppt', title: 'PPT', depends_on: ['rehearse'] }),
       task({ key: 'rehearse', title: '汇报' }),
     ]);
     expect(out.violations).toHaveLength(0);
-    const last = (k: string) => [...out.blocks.filter((b) => b.task_key === k)].map((b) => dayOf(b.start_utc)).sort().pop();
-    expect(last('rehearse')! < last('ppt')!).toBe(true);
-    expect(last('ppt')! < last('read')!).toBe(true);
+    const blocksOf = (k: string) => out.blocks.filter((b) => b.task_key === k);
+    const lastEnd = (k: string) => Math.max(...blocksOf(k).map((b) => Date.parse(b.end_utc)));
+    const firstStart = (k: string) => Math.min(...blocksOf(k).map((b) => Date.parse(b.start_utc)));
+    expect(firstStart('ppt')).toBeGreaterThanOrEqual(lastEnd('rehearse'));
+    expect(firstStart('read')).toBeGreaterThanOrEqual(lastEnd('ppt'));
+  });
+
+  it('同日依赖：只有一天且两段任务都排得下时，允许前置完成后同日继续', () => {
+    const out = solve({
+      engine_version: 1, horizon_start: '2026-11-20', horizon_days: 1, timezone: TZ,
+      task_defs: [
+        task({ key: 'a', title: 'A', duration_min: 60 }),
+        task({ key: 'b', title: 'B', duration_min: 60, depends_on: ['a'] }),
+      ],
+      constraints: [{ id: cid(), payload: { type: 'active_window', start: '07:00', end: '09:00' }, source: 'user', enabled: true }],
+      pinned_blocks: [],
+    });
+    expect(out.violations).toHaveLength(0);
+    const a = out.blocks.find((b) => b.task_key === 'a')!;
+    const b = out.blocks.find((x) => x.task_key === 'b')!;
+    expect(Date.parse(b.start_utc)).toBeGreaterThanOrEqual(Date.parse(a.end_utc));
+    expect(dayOf(a.start_utc)).toBe(dayOf(b.start_utc));
+  });
+
+  it('依赖不存在的任务 → 结构性违例，不静默丢弃', () => {
+    const out = solveWith([task({ key: 'x', title: 'X', depends_on: ['ghost'] })]);
+    expect(out.feasibility).toBe('INFEASIBLE');
+    expect(out.violations.some((v) => v.reason.includes('不存在'))).toBe(true);
   });
 
   it('循环依赖 → INFEASIBLE 且明确报环', () => {

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Db, DbQuery } from '../functions/db.ts';
 const ID_TABLES = new Set(['plans', 'task_defs', 'constraints', 'blocks', 'conversations', 'messages', 'template_uses', 'recovery_codes']);
-const TS_TABLES = new Set(['plans', 'conversations', 'messages', 'dispatch_intents', 'commit_log', 'cloud_bindings', 'constraints', 'blocks', 'task_defs']);
+const TS_TABLES = new Set(['plans', 'conversations', 'messages', 'dispatch_intents', 'commit_log', 'cloud_bindings', 'constraints', 'blocks', 'task_defs', 'commit_claims']);
 export interface MemoryDb extends Db { tables: Record<string, any[]>; reset(): void }
 export function createMemoryDb(seed: Record<string, any[]> = {}): MemoryDb {
   const tables: Record<string, any[]> = {};

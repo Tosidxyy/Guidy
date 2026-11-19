@@ -33,13 +33,28 @@ export async function getOwnedPlan(db: Db, visitor: string, id: string) {
   if (plan.owner_visitor_id !== visitor) fail('forbidden', 403);
   return plan;
 }
-export async function children(db: Db, plan: any) {
+/** 当前版本可见的块：active_version 版本 + 所有历史执行块（跨版本可见，避免切换崩溃窗口丢失进度）。 */
+export function visibleBlocks(plan: any, allBlocks: any[]): any[] {
   const active = Number(plan?.active_version ?? 1);
-  const allBlocks = rows(await db.from('blocks').select('*').eq('plan_id', plan.id).order('start_utc', { ascending: true }));
+  const seen = new Set<string>();
+  const out: any[] = [];
+  for (const b of allBlocks) {
+    if (seen.has(b.id)) continue;
+    const pv = Number(b.plan_version ?? 1);
+    if (pv === active || HISTORY_STATUSES.has(String(b.status ?? ''))) {
+      seen.add(b.id);
+      out.push(b);
+    }
+  }
+  return out.sort((a, b) => String(a.start_utc).localeCompare(String(b.start_utc)));
+}
+
+export async function children(db: Db, plan: any) {
+  const allBlocks = rows(await db.from('blocks').select('*').eq('plan_id', plan.id));
   return {
     task_defs: rows(await db.from('task_defs').select('*').eq('plan_id', plan.id)).map(decodeTaskRow),
     constraints: rows(await db.from('constraints').select('*').eq('plan_id', plan.id)),
-    blocks: allBlocks.filter((b: any) => Number(b.plan_version ?? 1) === active),
+    blocks: visibleBlocks(plan, allBlocks),
   };
 }
 export async function listPlans(ctx: RouteCtx, deps: Deps): Promise<Response> {
@@ -97,6 +112,33 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
     const plan = await getOwnedPlan(deps.db, visitor, existingLog.plan_id);
     return Response.json({ plan, ...(await children(deps.db, plan)), version: plan.version, server_authoritative: false, violations: [], compromises: [], feasibility: 'FEASIBLE', unplaced: [] });
   }
+
+  // 原子幂等认领：commit_claims.idempotency_key 是主键，由数据库保证同一 key 只有一个请求执行。
+  const claimKey = `idem:${idemKey}`.slice(0, 180);
+  const claimTtlMs = 120000;
+  const claimInserted = rows(await deps.db.from('commit_claims').insertIfAbsent(
+    { idempotency_key: claimKey, visitor_id: visitor, plan_id: null, state: 'pending' },
+    { onConflict: 'idempotency_key' },
+  )).length > 0;
+  if (!claimInserted) {
+    const existing = rows(await deps.db.from('commit_claims').select('*').eq('idempotency_key', claimKey).limit(1))[0];
+    if (existing?.plan_id && existing.state === 'done') {
+      const plan = await getOwnedPlan(deps.db, visitor, existing.plan_id);
+      return Response.json({ plan, ...(await children(deps.db, plan)), version: plan.version, server_authoritative: false, violations: [], compromises: [], feasibility: 'FEASIBLE', unplaced: [] });
+    }
+    const age = Date.now() - Date.parse(existing?.created_at ?? new Date().toISOString());
+    if (existing?.state !== 'failed' && age < claimTtlMs) fail('commit_in_progress', 409, { retry_after_ms: 2000 });
+    // 失败认领或超时租约：CAS 抢占，避免两个请求同时接管。
+    const takeover = rows(await deps.db.from('commit_claims').update({ state: 'pending', created_at: new Date().toISOString(), plan_id: null })
+      .eq('idempotency_key', claimKey).eq('created_at', existing?.created_at ?? '').select('idempotency_key'));
+    if (!takeover.length) fail('commit_in_progress', 409, { retry_after_ms: 2000 });
+  }
+  const releaseClaim = async (state: 'done' | 'failed', planId: string | null) => {
+    try {
+      await deps.db.from('commit_claims').update({ state, plan_id: planId, created_at: new Date().toISOString() }).eq('idempotency_key', claimKey);
+    } catch { /* 认领状态更新失败不影响提交结果 */ }
+  };
+  try {
   const sharedWindows = await sharedRecurring(deps.db, visitor);
   const bounds = horizonBounds({ horizon_start: input.horizon_start, horizon_days: input.horizon_days });
   const busy = await sharedBusyBlocks(deps.db, visitor, bounds.from, bounds.to);
@@ -137,10 +179,43 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
     plan = rows(await deps.db.from('plans').insert({ owner_visitor_id: visitor, title: input.title, horizon_start: input.horizon_start, horizon_days: input.horizon_days, timezone: input.timezone, status: 'active', version: 1, active_version: 1 }).select('*'))[0];
   }
   const cleanupVersion = async () => {
-    const rowsOfVersion = rows(await deps.db.from('blocks').select('id').eq('plan_id', plan.id).eq('plan_version', writeVersion));
-    for (const b of rowsOfVersion as any[]) await deps.db.from('blocks').delete().eq('id', b.id);
+    try {
+      const rowsOfVersion = rows(await deps.db.from('blocks').select('id').eq('plan_id', plan.id).eq('plan_version', writeVersion));
+      for (const b of rowsOfVersion as any[]) await deps.db.from('blocks').delete().eq('id', b.id);
+    } catch { /* 清理失败只留不可见过期行 */ }
+  };
+  // 旧配置快照：任务/约束无法双版本并存（UNIQUE(plan_id,key) + 无事务），
+  // 因此在同进程失败时用快照回滚，保证 active_version 的旧计划完整可读。
+  const oldTasks = plan_id ? rows(await deps.db.from('task_defs').select('*').eq('plan_id', plan.id)) : [];
+  const oldConstraints = plan_id ? rows(await deps.db.from('constraints').select('*').eq('plan_id', plan.id)) : [];
+  let configMutationStarted = false;
+  const restoreConfig = async () => {
+    try {
+      await deps.db.from('task_defs').delete().eq('plan_id', plan.id);
+      await deps.db.from('constraints').delete().eq('plan_id', plan.id);
+      for (const t of oldTasks as any[]) {
+        await deps.db.from('task_defs').insert({ ...t, ...(UUID_RE.test(t.id) ? { id: t.id } : {}) });
+      }
+      for (const c of oldConstraints as any[]) {
+        await deps.db.from('constraints').insert({ ...c, ...(UUID_RE.test(c.id) ? { id: c.id } : {}) });
+      }
+    } catch { /* 回滚失败：保留现场，交由重试收敛 */ }
   };
   try {
+    // ① 暂存新版本块（旧版本行完全不动）
+    for (const b of output.blocks) {
+      await deps.db.from('blocks').insert({ plan_id: plan.id, plan_version: writeVersion, ...blockWriteFields(b) });
+    }
+    // ② 新版本块自检
+    const staged = rows(await deps.db.from('blocks').select('*').eq('plan_id', plan.id).order('start_utc', { ascending: true }))
+      .filter((b: any) => Number(b.plan_version ?? 1) === writeVersion);
+    const expectedMinutes = output.blocks.reduce((m, b) => m + Math.round((Date.parse(b.end_utc) - Date.parse(b.start_utc)) / 60000), 0);
+    const actualMinutes = staged.reduce((m: number, b: any) => m + Math.round((Date.parse(b.end_utc) - Date.parse(b.start_utc)) / 60000), 0);
+    if (staged.length !== output.blocks.length || actualMinutes !== expectedMinutes) {
+      throw Object.assign(new Error('write_verification_failed'), { code: 'write_verification_failed', status: 500, details: { expected_blocks: output.blocks.length, actual_blocks: staged.length, expected_minutes: expectedMinutes, actual_minutes: actualMinutes, plan_id: plan.id } });
+    }
+    // ③ 配置（任务/约束）在块自检之后写入；失败时由快照回滚
+    if (plan_id) configMutationStarted = true;
     if (plan_id) {
       await deps.db.from('task_defs').delete().eq('plan_id', plan.id);
       await deps.db.from('constraints').delete().eq('plan_id', plan.id);
@@ -151,38 +226,35 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
     for (const c of input.constraints) {
       await deps.db.from('constraints').insert({ plan_id: plan.id, type: c.payload.type, payload: c.payload, source: c.source, enabled: c.enabled });
     }
-    // 固定日程在 commit 当场实例化为普通共享块，响应里不再带 busy/fixed 约束，避免灰色禁止区阶段。
     await materializeSharedBusy(deps.db, visitor);
-    for (const b of output.blocks) {
-      await deps.db.from('blocks').insert({ plan_id: plan.id, plan_version: writeVersion, ...blockWriteFields(b) });
-    }
-    // 新版本自检：读回本版本行，数量与总时长必须与求解结果一致。
-    const staged = rows(await deps.db.from('blocks').select('*').eq('plan_id', plan.id).order('start_utc', { ascending: true }))
-      .filter((b: any) => Number(b.plan_version ?? 1) === writeVersion);
-    const expected = output.blocks;
-    const expectedMinutes = expected.reduce((m, b) => m + Math.round((Date.parse(b.end_utc) - Date.parse(b.start_utc)) / 60000), 0);
-    const actualMinutes = staged.reduce((m: number, b: any) => m + Math.round((Date.parse(b.end_utc) - Date.parse(b.start_utc)) / 60000), 0);
-    if (staged.length !== expected.length || actualMinutes !== expectedMinutes) {
-      throw Object.assign(new Error('write_verification_failed'), { code: 'write_verification_failed', status: 500, details: { expected_blocks: expected.length, actual_blocks: staged.length, expected_minutes: expectedMinutes, actual_minutes: actualMinutes, plan_id: plan.id } });
-    }
+    // ④ 单行切换 active_version（CAS 旧值）
     if (plan_id) {
-      // 原子切换：单行更新 active_version（CAS 旧值），失败则本版本作废、旧版本继续有效。
-      const base = deps.db.from('plans').update({ title: input.title, horizon_start: input.horizon_start, horizon_days: input.horizon_days, timezone: input.timezone, status: 'active', active_version: writeVersion, updated_at: new Date().toISOString() }).eq('id', plan.id).eq('owner_visitor_id', visitor);
-      const flipped = rows(await (oldActive == null ? base.is('active_version', null) : base.eq('active_version', oldActive)).select('*'))[0];
+      const payload = { title: input.title, horizon_start: input.horizon_start, horizon_days: input.horizon_days, timezone: input.timezone, status: 'active', active_version: writeVersion, updated_at: new Date().toISOString() };
+      const flipTo = async (matcher: 'null' | 'undefined') => {
+        const q = deps.db.from('plans').update(payload).eq('id', plan.id).eq('owner_visitor_id', visitor);
+        return rows(await (matcher === 'null' ? q.is('active_version', null) : q.is('active_version', undefined)).select('*'))[0];
+      };
+      // 云端历史行是 NULL；本地 fixture/持久化 JSON 可能缺键（undefined），两者都兼容。
+      const flipped = oldActive != null
+        ? rows(await deps.db.from('plans').update(payload).eq('id', plan.id).eq('owner_visitor_id', visitor).eq('active_version', oldActive).select('*'))[0]
+        : ((await flipTo('null')) ?? (await flipTo('undefined')));
       if (!flipped) throw Object.assign(new Error('commit_conflict'), { code: 'commit_conflict', status: 409 });
       plan = flipped;
-      // 历史块原地升版本（同一行、同一 id，进度不丢）；随后清理旧版本行（跳过已升级的历史行）。
-      for (const id of historyIds) {
-        await deps.db.from('blocks').update({ plan_version: writeVersion }).eq('id', id).eq('plan_id', plan.id);
-      }
-      const all = rows(await deps.db.from('blocks').select('id,plan_version').eq('plan_id', plan.id));
-      for (const b of all as any[]) {
-        if (staleVersionFilter && staleVersionFilter(b)) await deps.db.from('blocks').delete().eq('id', b.id);
-      }
     }
   } catch (e) {
-    await cleanupVersion().catch(() => {});
+    await cleanupVersion();
+    if (configMutationStarted) await restoreConfig();
     throw e;
+  }
+  // ⑤ 切换成功后清理旧版本排程行（尽力而为；失败仅留下不可见过期行，绝不影响已切换版本）
+  if (plan_id) {
+    try {
+      const all = rows(await deps.db.from('blocks').select('id,plan_version,status').eq('plan_id', plan.id));
+      for (const b of all as any[]) {
+        if (HISTORY_STATUSES.has(String(b.status ?? ''))) continue;
+        if (staleVersionFilter && staleVersionFilter(b)) await deps.db.from('blocks').delete().eq('id', b.id);
+      }
+    } catch { /* 过期行不可见，无需失败提交 */ }
   }
   await deps.db.from('commit_log').insertIfAbsent({ preview_id, visitor_id: visitor, plan_id: plan.id, idempotency_key: idemKey }, { onConflict: 'preview_id' });
   // best-effort：仅本人且尚未绑定计划的对话才置位；失败不影响 commit，绝不重绑。
@@ -193,7 +265,12 @@ export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {
     }
   }
   const childrenOut = await children(deps.db, plan);
+  await releaseClaim('done', plan.id);
   return Response.json({ plan, task_defs: tasks, constraints: childrenOut.constraints, blocks: childrenOut.blocks, version: plan.version, server_authoritative, violations: [], compromises: output.compromises, feasibility: output.feasibility, unplaced: output.unplaced });
+  } catch (e) {
+    await releaseClaim('failed', null);
+    throw e;
+  }
 }
 const SaveSchema = z.object({
   plan_id: z.string().uuid().nullable().optional(),

@@ -16,7 +16,7 @@ import { findConflicts, type ConflictPlan, type PlanConflict } from '../shared/e
 import { trimArtifactToFit } from '../shared/engine/fit.ts';
 import { formatAvailability, weeklyAvailability, type AvailabilitySource } from '../shared/engine/availability.ts';
 import { sharedBusyBlocks } from './calendar.ts';
-import { decodeTaskRow } from './plans.ts';
+import { decodeTaskRow, visibleBlocks } from './plans.ts';
 import { ensureProfileRow, ensureLearned } from './profile.ts';
 import { constraintText } from '../../lib/describe.ts';
 import type { OtherPlanContext } from '../prompt.ts';
@@ -33,7 +33,7 @@ async function loadPlanState(db: Deps['db'], visitor: string, planId: string | n
   if (!plan) return null;
   const task_defs = rows(await db.from('task_defs').select('*').eq('plan_id', planId)).map(decodeTaskRow);
   const constraints = rows(await db.from('constraints').select('*').eq('plan_id', planId));
-  const blocks = rows(await db.from('blocks').select('*').eq('plan_id', planId));
+  const blocks = visibleBlocks(plan, rows(await db.from('blocks').select('*').eq('plan_id', planId)));
   return { plan, task_defs, constraints, blocks };
 }
 
