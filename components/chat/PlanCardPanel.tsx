@@ -170,7 +170,7 @@ export function PlanCardPanel() {
       </div>
 
       {open && draft && (
-        <div className="mt-1.5 overflow-hidden rounded-xl border border-[var(--site-dawn-line)]/40 bg-site-surface">
+        <div className="mt-1.5 overflow-hidden rounded-(--site-radius) border border-[var(--site-dawn-line)]/40 bg-site-surface">
           <div className="dawn-gradient h-0.5 rounded-full" />
           <div className="flex items-start justify-between gap-3 px-4 pt-3">
             <div>

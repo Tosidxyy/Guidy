@@ -72,7 +72,7 @@ export function TasksDrawer() {
     <Sheet open={open} onOpenChange={(v) => { if (!v) closeDrawer(); }}>
       <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
         <SheetHeader className="border-b border-site-line px-5 py-4">
-          <SheetTitle className="font-display flex items-center gap-2"><ListChecks className="h-4 w-4 text-site-brand" /> 任务定义</SheetTitle>
+          <SheetTitle className="font-display flex items-center gap-2"><ListChecks className="h-4 w-4 text-site-ink" /> 任务定义</SheetTitle>
           <SheetDescription>告诉引擎「要做什么、多久一次、每次多久」，它负责安排到日历。</SheetDescription>
         </SheetHeader>
 

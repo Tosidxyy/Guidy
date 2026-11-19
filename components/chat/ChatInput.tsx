@@ -32,7 +32,7 @@ export function ChatInput({ streaming, disabled, onSend, onInterrupt }: {
 
   return (
     <div className="border-t border-site-line bg-site-bg p-3">
-      <div className="relative rounded-xl border border-site-line bg-site-surface focus-within:border-site-brand">
+      <div className="relative rounded-(--site-radius) border border-site-line bg-site-surface focus-within:border-site-brand">
         <Textarea
           ref={ref}
           value={text}

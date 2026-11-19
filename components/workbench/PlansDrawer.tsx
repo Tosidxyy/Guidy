@@ -52,7 +52,7 @@ export function PlansDrawer() {
     <Sheet open={open} onOpenChange={(v) => { if (!v) closeDrawer(); }}>
       <SheetContent side="left" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
         <SheetHeader className="border-b border-site-line px-5 py-4">
-          <SheetTitle className="font-display flex items-center gap-2"><FolderOpen className="h-4 w-4 text-site-brand" /> 对话与计划</SheetTitle>
+          <SheetTitle className="font-display flex items-center gap-2"><FolderOpen className="h-4 w-4 text-site-ink" /> 对话与计划</SheetTitle>
           <SheetDescription>每个对话对应一个计划；切换会切换日历的活动层。</SheetDescription>
         </SheetHeader>
 
@@ -66,12 +66,12 @@ export function PlansDrawer() {
             </div>
           )}
           {currentId === null && (
-            <div className="rounded-lg border border-site-brand/40 bg-site-brand/5 px-3 py-2 text-xs text-site-ink">未保存草稿 <Badge variant="secondary" className="ml-1">当前</Badge></div>
+            <div className="rounded-lg border border-site-line bg-site-surface-2 px-3 py-2 text-xs text-site-ink">未保存草稿 <Badge variant="secondary" className="ml-1">当前</Badge></div>
           )}
           {plans.map((p) => (
-            <div key={p.id} className={cn('rounded-lg border px-3 py-2', p.id === currentId ? 'border-site-brand/50 bg-site-brand/5' : 'border-site-line')}>
+            <div key={p.id} className={cn('rounded-lg border px-3 py-2', p.id === currentId ? 'border-site-ink/50 bg-site-ink/5' : 'border-site-line')}>
               <div className="flex items-center justify-between gap-2">
-                <button type="button" className="min-w-0 flex-1 truncate text-left text-sm font-medium text-site-ink hover:text-site-brand disabled:opacity-50" onClick={() => requestSwitch(p.id)} disabled={busy || p.id === currentId}>
+                <button type="button" className="min-w-0 flex-1 truncate text-left text-sm font-medium text-site-ink hover:text-site-ink disabled:opacity-50" onClick={() => requestSwitch(p.id)} disabled={busy || p.id === currentId}>
                   {p.title}
                 </button>
                 {p.id === currentId && <Badge variant="secondary">当前</Badge>}

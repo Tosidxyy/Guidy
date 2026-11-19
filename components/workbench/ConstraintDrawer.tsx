@@ -224,7 +224,7 @@ export function ConstraintDrawer() {
     <Sheet open={open} onOpenChange={(v) => { if (!v) closeDrawer(); }}>
       <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
         <SheetHeader className="border-b border-site-line px-5 py-4">
-          <SheetTitle className="font-display flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-site-brand" /> 约束条件</SheetTitle>
+          <SheetTitle className="font-display flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-site-ink" /> 约束条件</SheetTitle>
           <SheetDescription>约束决定引擎如何为你排程。修改后会立即按新约束重排，可撤销。</SheetDescription>
         </SheetHeader>
 
@@ -234,7 +234,7 @@ export function ConstraintDrawer() {
               <li key={c.id} className="flex items-center gap-2 rounded-lg border border-site-line bg-site-surface px-2.5 py-2">
                 <Switch checked={c.enabled} onCheckedChange={(v) => { void updateConstraintAction(c.id, { enabled: v }); }} className="scale-90" aria-label="启用约束" />
                 <span className="min-w-0 flex-1 text-xs leading-snug text-site-ink">{constraintText(c.payload, (k) => state.task_defs.find((t) => t.key === k)?.title ?? k)}</span>
-                <button type="button" aria-label="编辑约束" className="rounded p-1 text-site-ink-soft hover:text-site-brand" onClick={() => loadForEdit(c)}>
+                <button type="button" aria-label="编辑约束" className="rounded p-1 text-site-ink-soft hover:text-site-ink" onClick={() => loadForEdit(c)}>
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
                 <button

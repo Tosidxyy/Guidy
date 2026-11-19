@@ -689,7 +689,7 @@ export function CalendarPanel() {
   };
 
   return (
-    <section className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-site-line bg-site-surface shadow-sm" aria-label="计划日历">
+    <section className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-(--site-radius) border border-site-line bg-site-surface shadow-sm" aria-label="计划日历">
       <ConflictBar
         conflicts={conflicts}
         activePlanId={state.plan.id}

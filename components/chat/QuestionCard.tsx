@@ -41,7 +41,7 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
     <div
       role="dialog"
       aria-label="待确认的问题"
-      className="animate-guidy-fade-up rounded-xl border border-[var(--site-dawn-line)]/40 bg-site-surface p-4 shadow-sm"
+      className="animate-guidy-fade-up rounded-(--site-radius) border border-[var(--site-dawn-line)]/40 bg-site-surface p-4 shadow-sm"
     >
       <div className="dawn-gradient mb-3 h-0.5 rounded-full" />
       <div className="flex items-start justify-between gap-3">

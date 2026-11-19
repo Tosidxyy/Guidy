@@ -126,7 +126,7 @@ export function SettingsDrawer() {
     <Sheet open={open} onOpenChange={(v) => { if (!v) closeDrawer(); }}>
       <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
         <SheetHeader className="border-b border-site-line px-5 py-4">
-          <SheetTitle className="font-display flex items-center gap-2"><Settings2 className="h-4 w-4 text-site-brand" /> 设置</SheetTitle>
+          <SheetTitle className="font-display flex items-center gap-2"><Settings2 className="h-4 w-4 text-site-ink" /> 设置</SheetTitle>
           <SheetDescription>外观调整即时生效，并保存在本机。</SheetDescription>
         </SheetHeader>
 
@@ -140,7 +140,7 @@ export function SettingsDrawer() {
                   onClick={() => setTheme(t)}
                   className={cn(
                     'flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors',
-                    theme === t ? 'border-site-brand bg-site-brand/10 text-site-brand' : 'border-site-line text-site-ink-soft hover:bg-site-surface-2',
+                    theme === t ? 'border-site-ink bg-site-ink/10 text-site-ink' : 'border-site-line text-site-ink-soft hover:bg-site-surface-2',
                   )}
                 >
                   {t === 'light' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -233,7 +233,7 @@ export function SettingsDrawer() {
               <KeyRound className="mr-1.5 h-4 w-4" /> {hasCode ? '重新生成恢复码（旧码立即失效）' : '生成恢复码'}
             </Button>
             {generatedCode && (
-              <div className="space-y-2 rounded-lg border border-site-brand/40 bg-site-brand/5 p-3">
+              <div className="space-y-2 rounded-lg border border-site-line bg-site-surface-2 p-3">
                 <p className="break-all font-mono text-sm tracking-wider text-site-ink">{generatedCode}</p>
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[11px] text-site-danger">仅显示一次，请立即保存；关闭后无法再次查看</p>

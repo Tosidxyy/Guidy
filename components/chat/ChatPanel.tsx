@@ -84,7 +84,7 @@ export function ChatPanel() {
   const quotaExhausted = chatRemaining === 0;
 
   return (
-    <aside className="guidy-noise flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-site-line bg-site-bg shadow-sm" aria-label="AI 对话排程">
+    <aside className="guidy-noise flex h-full min-h-0 w-full flex-col overflow-hidden rounded-(--site-radius) border border-site-line bg-site-bg shadow-sm" aria-label="AI 对话排程">
       <div className="flex items-center justify-between border-b border-site-line px-3 py-2">
         <div className="flex items-center gap-1">
         <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="对话列表" title="对话与计划" onClick={() => openDrawer('plans')}>

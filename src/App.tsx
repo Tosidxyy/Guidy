@@ -73,7 +73,7 @@ export default function App() {
               onClick={() => setMobileTab(t.key)}
               className={cn(
                 'flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium transition-colors',
-                mobileTab === t.key ? 'text-site-brand' : 'text-site-ink-soft',
+                mobileTab === t.key ? 'text-site-ink' : 'text-site-ink-soft',
               )}
               aria-current={mobileTab === t.key ? 'page' : undefined}
             >
@@ -90,7 +90,7 @@ export default function App() {
         <TasksDrawer />
         <SettingsDrawer />
         <PlansDrawer />
-        <Toaster position="top-center" richColors closeButton />
+        <Toaster position="top-center" closeButton />
       </div>
     </TooltipProvider>
   );

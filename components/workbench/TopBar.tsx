@@ -85,7 +85,7 @@ export function TopBar() {
               onClick={() => setView(v)}
               className={cn(
                 'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                view === v ? 'bg-site-brand text-white shadow-sm' : 'text-site-ink-soft hover:text-site-ink',
+                view === v ? 'bg-site-ink text-site-bg shadow-sm' : 'text-site-ink-soft hover:text-site-ink',
               )}
             >
               {v === 'week' ? '周' : '日'}

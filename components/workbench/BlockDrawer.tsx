@@ -217,7 +217,7 @@ export function BlockDrawer() {
           </div>
           {!isShared && (
             <div className="flex items-center justify-between rounded-lg border border-site-line bg-site-surface px-3 py-2.5">
-              <div className="flex items-center gap-2 text-sm text-site-ink"><Pin className="h-4 w-4 text-site-brand" /> 钉住此任务块</div>
+              <div className="flex items-center gap-2 text-sm text-site-ink"><Pin className="h-4 w-4 text-site-ink" /> 钉住此任务块</div>
               <Switch checked={block.pinned} onCheckedChange={() => { void togglePinned(); }} aria-label="钉住此任务块" />
             </div>
           )}
