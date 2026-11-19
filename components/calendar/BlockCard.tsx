@@ -42,7 +42,8 @@ export const BlockCard = memo(function BlockCard({
       className={cn(
         'group absolute select-none overflow-hidden rounded-md border text-left hover:[--cat-fill:18%]',
         'transition-shadow duration-150',
-        interactive && 'cursor-grab active:cursor-grabbing touch-none',
+        interactive && !block.pinned && 'cursor-grab active:cursor-grabbing touch-none',
+        interactive && block.pinned && 'cursor-default',
         visual === 'foreign' && 'border-dashed border-site-line opacity-45 hover:opacity-80',
         visual === 'normal' && 'border-transparent shadow-sm hover:shadow-md',
         visual === 'selected' && 'border-site-ink shadow-md ring-2 ring-site-ink/30',

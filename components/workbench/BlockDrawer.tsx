@@ -71,6 +71,9 @@ export function BlockDrawer() {
     const [h, m] = startTime.split(':').map(Number);
     const startMin = h * 60 + m;
     if (!Number.isFinite(startMin) || duration < 5) { toast.error('请填写有效的时间与时长（≥5 分钟）'); return; }
+    // 钉住 = 时间锁定：用户不能手动改时间，只能取消钉住或让 AI 助手调整。
+    const timeChanged = day !== localDay(block.start_utc, tz) || startMin !== localMinutes(block.start_utc, tz) || duration !== localMinutes(block.end_utc, tz) - localMinutes(block.start_utc, tz);
+    if (block.pinned && timeChanged) { toast.error('已钉住的任务不能手动调整时间；可取消钉住，或让 AI 助手调整'); return; }
     const startUtc = utcAt(day, startMin, tz);
     const endUtc = utcAt(day, startMin + duration, tz);
     if (isShared) {
@@ -113,7 +116,6 @@ export function BlockDrawer() {
       closeDrawer();
       return;
     }
-    const timeChanged = day !== localDay(block.start_utc, tz) || startMin !== localMinutes(block.start_utc, tz) || duration !== localMinutes(block.end_utc, tz) - localMinutes(block.start_utc, tz);
     if (timeChanged) {
       const r = moveBlock(block.id, startUtc, endUtc);
       if (!r.ok) { toast.error(r.reason ?? '无法移动到该时间'); return; }
@@ -168,7 +170,7 @@ export function BlockDrawer() {
         <SheetHeader className="border-b border-site-line px-5 py-4">
           <SheetTitle className="font-display">编辑任务块</SheetTitle>
           <SheetDescription>
-            {isShared ? '共享日历 · 固定日程，与普通任务一样可编辑' : `${block.origin === 'engine' ? '由引擎生成' : block.origin === 'manual' ? '手动创建' : '固定日程'} · ${block.pinned ? '已钉住（重排时保留）' : '未钉住'}`}
+            {isShared ? '共享日历 · 固定日程，与普通任务一样可编辑' : `${block.origin === 'engine' ? '由引擎生成' : block.origin === 'manual' ? '手动创建' : '固定日程'} · ${block.pinned ? '已钉住（时间锁定，仅 AI 可调整）' : '未钉住'}`}
           </SheetDescription>
         </SheetHeader>
 
@@ -195,7 +197,7 @@ export function BlockDrawer() {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="b-day">日期</Label>
-            <NativeSelect id="b-day" value={day} onChange={(e) => setDay(e.target.value)}>
+            <NativeSelect id="b-day" value={day} disabled={block.pinned} onChange={(e) => setDay(e.target.value)}>
               {(horizonDays.includes(day) ? horizonDays : [day, ...horizonDays]).map((d) => (
                 <NativeSelectOption key={d} value={d}>{d}</NativeSelectOption>
               ))}
@@ -204,13 +206,16 @@ export function BlockDrawer() {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="b-start">开始时间</Label>
-              <Input id="b-start" type="time" step={900} value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+              <Input id="b-start" type="time" step={900} value={startTime} disabled={block.pinned} onChange={(e) => setStartTime(e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="b-duration">时长（分钟）</Label>
-              <Input id="b-duration" type="number" min={5} max={isShared ? 960 : 480} step={5} value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
+              <Input id="b-duration" type="number" min={5} max={isShared ? 960 : 480} step={5} value={duration} disabled={block.pinned} onChange={(e) => setDuration(Number(e.target.value))} />
             </div>
           </div>
+          {block.pinned && (
+            <p className="text-[11px] leading-relaxed text-site-ink-soft">已钉住：日期与时间已锁定，手动拖动/调整会被禁止；取消钉住或让 AI 助手调整即可移动。</p>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="b-notes">备注（可选）</Label>
             <Textarea id="b-notes" value={notes} maxLength={500} rows={3} placeholder="例如：先做 2023 年真题" onChange={(e) => setNotes(e.target.value)} />

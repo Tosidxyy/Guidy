@@ -511,6 +511,11 @@ export function CalendarPanel() {
 
   const beginDrag = useCallback((e: React.PointerEvent, block: Block, mode: 'move' | 'resize', foreignInfo?: ForeignBlock, shared = false) => {
     if (e.button !== 0 || preview) return;
+    // 钉住 = 时间锁定：用户不能拖动/缩放/改时间，只有 AI 助手可以调整。
+    if (block.pinned) {
+      toast(`「${block.title}」已钉住，时间只能由 AI 助手调整`);
+      return;
+    }
     const el = (e.currentTarget as HTMLElement).closest('[data-block-id]') as HTMLElement | null;
     const grid = gridRef.current;
     if (!el || !grid) return;
@@ -522,9 +527,14 @@ export function CalendarPanel() {
     const dayIdx = days.indexOf(day);
     if (dayIdx === -1) return;
     if (!foreignInfo && mode === 'resize' && selectedIds.length > 1) select(block.id);
-    const ids = foreignInfo
+    const pinnedIds = new Set(
+      [...source.blocks, ...busyBlocks].filter((b) => b.pinned).map((b) => b.id),
+    );
+    const ids = (foreignInfo
       ? [block.id]
-      : mode === 'move' && selectedIds.includes(block.id) && selectedIds.length > 1 ? selectedIds : [block.id];
+      : mode === 'move' && selectedIds.includes(block.id) && selectedIds.length > 1 ? selectedIds : [block.id])
+      .filter((id) => !pinnedIds.has(id));
+    if (!ids.length) { toast('钉住的任务不随拖动移动'); return; }
     const els = Array.from(grid.querySelectorAll<HTMLElement>('[data-block-id]'))
       .filter((node) => ids.includes(node.getAttribute('data-block-id') ?? ''))
       .map((node) => ({ el: node, height: node.style.height, zIndex: node.style.zIndex, transition: node.style.transition }));
@@ -548,7 +558,7 @@ export function CalendarPanel() {
     }
     window.addEventListener('pointermove', onDragMove);
     window.addEventListener('pointerup', finishDrag, { once: true });
-  }, [days, finishDrag, layers, onDragMove, preview, select, selectedIds, state, tz]);
+  }, [busyBlocks, days, finishDrag, layers, onDragMove, preview, select, selectedIds, state, tz]);
 
   useEffect(() => () => {
     window.removeEventListener('pointermove', onDragMove);
