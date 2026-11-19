@@ -134,6 +134,20 @@ export function solve(input: SolveInput): SolveOutput {
     outputBlocks.push(block);
     consumeCap(ctx.day, block.category, interval.end - interval.start);
   };
+  // 固定事件（会议/上课）与已钉住的块不得互相重叠：这是硬约束，做不到就明确违例。
+  const assertNoOverlap = (ctx: DayContext, block: Block, interval: Interval, constraintId?: string) => {
+    const clash = ctx.blocks.find((b) => {
+      const o = { start: localMinutes(b.start_utc, tz), end: localMinutes(b.end_utc, tz) };
+      return interval.start < o.end && o.start < interval.end;
+    });
+    if (!clash) return;
+    violations.push({
+      task_key: block.task_key,
+      constraint_id: constraintId,
+      reason: `「${block.title}」与「${clash.title}」时间重叠（${ctx.day}）`,
+      suggestion: '调整其中一个事件的时间，固定事件不会被自动移动',
+    });
+  };
 
   const pinnedByTask = new Map<string, { count: number; days: Set<string> }>();
   for (const pinned of input.pinned_blocks) {
@@ -155,12 +169,14 @@ export function solve(input: SolveInput): SolveOutput {
       const hit = p.date !== undefined ? p.date === ctx.day : p.weekday === ctx.weekday;
       if (!hit) continue;
       const interval = { start: hhmmToMin(p.start), end: hhmmToMin(p.end) };
-      registerBlock(ctx, {
+      const fixedBlock: Block = {
         id: nextId(), title: p.title, category: p.category,
         ...(linked ? { task_key: linked.key } : {}),
         start_utc: utcAt(ctx.day, interval.start, tz), end_utc: utcAt(ctx.day, interval.end, tz),
         priority: 'high', pinned: true, origin: 'fixed',
-      }, interval);
+      };
+      assertNoOverlap(ctx, fixedBlock, interval, c.id);
+      registerBlock(ctx, fixedBlock, interval);
       // 同名任务已在固定时段落位：计入完成量，避免再排一次同样的任务。
       if (linked) {
         const entry = pinnedByTask.get(linked.key) ?? { count: 0, days: new Set<string>() };
@@ -176,7 +192,9 @@ export function solve(input: SolveInput): SolveOutput {
     const ctx = ctxByDay.get(day);
     if (!ctx) continue;
     const interval = { start: localMinutes(pinned.start_utc, tz), end: localMinutes(pinned.end_utc, tz) };
-    registerBlock(ctx, { ...pinned }, interval);
+    const pinnedBlock = { ...pinned };
+    assertNoOverlap(ctx, pinnedBlock, interval);
+    registerBlock(ctx, pinnedBlock, interval);
   }
 
   const mutexConflict = (ctx: DayContext, candidate: { task_key?: string; category: string }, interval: Interval): MutexRule | null => {
