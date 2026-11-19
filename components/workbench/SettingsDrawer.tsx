@@ -144,7 +144,7 @@ export function SettingsDrawer() {
                   )}
                 >
                   {t === 'light' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                  {t === 'light' ? '晨光' : '夜幕'}
+                  {t === 'light' ? '浅色' : '深色'}
                 </button>
               ))}
             </div>
