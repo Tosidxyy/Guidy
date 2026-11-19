@@ -1,13 +1,13 @@
-import { z } from 'npm:zod@3.25.76';
+import { z } from '../../vendor/zod.ts';
 import { readJson } from '../router.ts';
 import { fail } from '../errors.ts';
 import { rows } from '../db.ts';
 import type { Db } from '../db.ts';
 import { requireVisitor } from '../identity.ts';
 import { solve, resultHash } from '../engine.ts';
-import { ENGINE_VERSION, LIMITS, QUOTAS } from '../../shared/constants.ts';
-import { TaskDefSchema, ConstraintSchema, PlanBlockSchema, HorizonDaysSchema } from '../../shared/schemas.ts';
-import { horizonBounds, sharedBusyBlocks, materializeSharedBusy } from './calendar.ts';
+import { ENGINE_VERSION, LIMITS, QUOTAS } from '../shared/constants.ts';
+import { TaskDefSchema, ConstraintSchema, PlanBlockSchema, HorizonDaysSchema } from '../shared/schemas.ts';
+import { horizonBounds, sharedBusyBlocks, materializeSharedBusy, MATERIALIZED_NOTE } from './calendar.ts';
 import type { Deps, RouteCtx } from '../types.ts';
 
 const CommitSchema = z.object({
@@ -52,14 +52,27 @@ export async function getPlan(ctx: RouteCtx, deps: Deps, params: string[]): Prom
 export async function deletePlan(ctx: RouteCtx, deps: Deps, params: string[]): Promise<Response> {
   const visitor = requireVisitor(deps, ctx);
   const plan = await getOwnedPlan(deps.db, visitor, params[0]);
-  // FK 均为 NO ACTION：按依赖顺序显式清理，幂等可重跑；对话仅解绑不删除。
+  // FK 均为 NO ACTION：按依赖顺序显式清理，幂等可重跑。
   await deps.db.from('blocks').delete().eq('plan_id', plan.id);
   await deps.db.from('task_defs').delete().eq('plan_id', plan.id);
   await deps.db.from('constraints').delete().eq('plan_id', plan.id);
   await deps.db.from('commit_log').delete().eq('plan_id', plan.id);
-  // 对话随计划归档：保留历史数据，但不再出现在对话列表里，避免删除后左侧对话被自动恢复。
-  await deps.db.from('conversations').update({ plan_id: null, status: 'archived' }).eq('plan_id', plan.id).eq('owner_visitor_id', visitor);
+  // 对话随计划一起删除（含消息与投递意图）：每个对话唯一对应一个方案卡，不留孤儿数据。
+  const convs = rows(await deps.db.from('conversations').select('id').eq('plan_id', plan.id).eq('owner_visitor_id', visitor));
+  for (const c of convs as { id: string }[]) {
+    await deps.db.from('dispatch_intents').delete().eq('conversation_id', c.id);
+    await deps.db.from('messages').delete().eq('conversation_id', c.id);
+  }
+  if (convs.length) await deps.db.from('conversations').delete().eq('plan_id', plan.id).eq('owner_visitor_id', visitor);
   await deps.db.from('plans').delete().eq('id', plan.id).eq('owner_visitor_id', visitor);
+  // 共享日历是计划的投影：删掉最后一个计划后，物化出来的忙时块一并清理，日历回到空态。
+  const remaining = rows(await deps.db.from('plans').select('id').eq('owner_visitor_id', visitor));
+  if (!remaining.length) {
+    const materialized = rows(await deps.db.from('blocks').select('id').is('plan_id', null).eq('owner_visitor_id', visitor).eq('notes', MATERIALIZED_NOTE));
+    for (const b of materialized as { id: string }[]) {
+      await deps.db.from('blocks').delete().eq('id', b.id).eq('owner_visitor_id', visitor);
+    }
+  }
   return Response.json({ ok: true }, { headers: { 'cache-control': 'no-store' } });
 }
 export async function commitPlan(ctx: RouteCtx, deps: Deps): Promise<Response> {

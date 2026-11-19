@@ -82,3 +82,18 @@ describe('chatController.interrupt / newConversation', () => {
     expect(useChatStore.getState().conversationId).toBeNull();
   });
 });
+describe('chatController.detach', () => {
+  it('detach 取消本地流但保留消息与会话（服务端继续，切回可 resume）', () => {
+    const stream = fakeStream();
+    useChatStore.getState().setConversation('c1', [{ seq: 1, role: 'user', kind: 'text', content: 'hi' }]);
+    useChatStore.setState({ streaming: true, connection: 'open', searching: true });
+    const c = createChatController({ store: useChatStore, stream, fetchFn: vi.fn() });
+    c.detach();
+    expect(stream.cancel).toHaveBeenCalled();
+    const s = useChatStore.getState();
+    expect(s.streaming).toBe(false);
+    expect(s.searching).toBe(false);
+    expect(s.conversationId).toBe('c1');
+    expect(s.messages).toHaveLength(1);
+  });
+});

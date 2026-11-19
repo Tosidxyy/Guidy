@@ -144,3 +144,17 @@ describe('共享日历：公共块可编辑（拖拽/改名/请假）', () => {
     expect(invalid.status).toBe(422);
   });
 });
+describe('删除最后一个计划后共享日历清空', () => {
+  it('物化出的公共块随最后一个计划一起清理，日历回到空态', async () => {
+    const app = application(deps());
+    const plan = await (await app(ctx('POST', '/api/plans/save', {
+      plan_id: null,
+      input: { title: '工作日程', horizon_start: '2026-11-18', horizon_days: 7, timezone: tz, task_defs: [], constraints: busy, blocks: [] },
+    }))).json();
+    expect((await (await app(ctx('GET', '/api/calendar'))).json()).blocks.length).toBeGreaterThan(0);
+    const del = await app(ctx('DELETE', `/api/plans/${plan.plan.id}`));
+    expect(del.status).toBe(200);
+    const after = await (await app(ctx('GET', '/api/calendar'))).json();
+    expect(after.blocks).toHaveLength(0);
+  });
+});

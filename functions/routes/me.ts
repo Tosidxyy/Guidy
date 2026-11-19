@@ -1,7 +1,7 @@
 import { rows } from '../db.ts';
 import { requireVisitor } from '../identity.ts';
 import { todayStr } from '../quotas.ts';
-import { QUOTAS } from '../../shared/constants.ts';
+import { QUOTAS } from '../shared/constants.ts';
 import type { Deps, RouteCtx } from '../types.ts';
 export async function me(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const visitor = requireVisitor(deps, ctx);

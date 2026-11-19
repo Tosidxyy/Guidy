@@ -55,7 +55,7 @@ describe('POST /api/data/delete-all', () => {
     expect(body.ok).toBe(true);
     expect(body.deleted).toEqual({
       messages: 1, dispatch_intents: 1, blocks: 2, task_defs: 1, constraints: 1,
-      commit_log: 1, conversations: 1, plans: 1, quotas: 1, recovery_codes: 1,
+      commit_log: 1, conversations: 1, plans: 1, quotas: 1, recovery_codes: 1, profiles: 0,
     });
     expect(db.tables.plans.map((p) => p.id)).toEqual(['p2']);
     expect(db.tables.messages).toHaveLength(0);

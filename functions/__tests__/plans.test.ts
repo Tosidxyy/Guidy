@@ -78,6 +78,22 @@ describe('getPlan', () => {
     expect(res.status).toBe(403);
   });
 });
+describe('deletePlan 级联', () => {
+  it('删除计划同时删除绑定对话的消息与投递意图', async () => {
+    const d = deps();
+    await d.db.from('conversations').insert({ id: 'c1', owner_visitor_id: 'v', title: 't', qca_session_id: null, last_seq: 1, last_event_id: null, status: 'active', plan_id: null }).select('*');
+    await d.db.from('messages').insert({ conversation_id: 'c1', seq: 1, role: 'user', kind: 'text', content: 'x', payload: null }).select('*');
+    await d.db.from('dispatch_intents').insert({ request_id: crypto.randomUUID(), conversation_id: 'c1', visitor_id: 'v', status: 'pending' }).select('*');
+    const result_hash = await hashFor(baseInput);
+    const created = await (await application(d)(ctx('POST', '/api/plans/commit', { preview_id: 'p7', plan_id: null, input: baseInput, result_hash, engine_version: 1, conversation_id: 'c1' }))).json();
+    const res = await application(d)(ctx('DELETE', `/api/plans/${created.plan.id}`));
+    expect(res.status).toBe(200);
+    expect(d.db.tables.conversations ?? []).toHaveLength(0);
+    expect(d.db.tables.messages ?? []).toHaveLength(0);
+    expect(d.db.tables.dispatch_intents ?? []).toHaveLength(0);
+    expect(d.db.tables.plans ?? []).toHaveLength(0);
+  });
+});
 
 async function seedPlan(d: Deps, input: any = baseInput) {
   const out = solve({ engine_version: 1, ...input, pinned_blocks: [] });
@@ -87,7 +103,7 @@ async function seedPlan(d: Deps, input: any = baseInput) {
 const inputWithConstraint = { ...baseInput, constraints: [{ id: 'c1', payload: { type: 'active_window', start: '07:00', end: '23:00' }, source: 'user', enabled: true }] };
 
 describe('deletePlan', () => {
-  it('本人删除 → 200，plan 及子表清空，对话归档且不再出现在对话列表', async () => {
+  it('本人删除 → 200，plan 及子表清空，绑定对话级联删除且不再出现在对话列表', async () => {
     const d = deps();
     const plan = await seedPlan(d, inputWithConstraint);
     await d.db.from('conversations').insert({ owner_visitor_id: 'v', title: 'c', plan_id: plan.id, qca_session_id: null, last_seq: 0, last_event_id: null, status: 'active' });
@@ -99,10 +115,8 @@ describe('deletePlan', () => {
     expect(d.db.tables.constraints).toHaveLength(0);
     expect(d.db.tables.blocks).toHaveLength(0);
     expect(d.db.tables.commit_log).toHaveLength(0);
-    expect(d.db.tables.conversations).toHaveLength(1);
-    expect(d.db.tables.conversations[0].plan_id).toBeNull();
-    expect(d.db.tables.conversations[0].status).toBe('archived');
-    // 归档对话不参与恢复：左侧 AI 面板不会把已删计划的对话拉回来。
+    expect(d.db.tables.conversations ?? []).toHaveLength(0);
+    // 对话随计划删除：左侧 AI 面板不会把已删计划的对话拉回来。
     const list = await application(d)(ctx('GET', '/api/conversations'));
     expect((await list.json()).items).toHaveLength(0);
   });

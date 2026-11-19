@@ -1,8 +1,10 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { CalendarDays, Download, Moon, Settings2, Sun, Upload } from 'lucide-react';
 import { ConstraintSchema, TaskDefSchema } from '@/shared/schemas';
 import type { PlanState } from '@/shared/types';
+import { api } from '@/lib/api';
 import { buildIcs, icsFileName } from '@/lib/ics';
 import { isPersistedPlanState } from '@/lib/storage';
 import { usePlanStore } from '@/store/usePlanStore';
@@ -13,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from '@/components/ui/label';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
 
 const HOURS = Array.from({ length: 25 }, (_, i) => i);
 
@@ -27,6 +30,31 @@ export function SettingsDrawer() {
   const state = usePlanStore((s) => s.state);
   const importState = usePlanStore((s) => s.importState);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const qc = useQueryClient();
+  const profile = useQuery({ queryKey: ['profile'], queryFn: () => api.profile(), retry: false });
+  const [habits, setHabits] = useState('');
+  const [savingHabits, setSavingHabits] = useState(false);
+  const [learning, setLearning] = useState(false);
+  useEffect(() => { if (profile.data) setHabits(profile.data.habits ?? ''); }, [profile.data]);
+  const saveHabits = async () => {
+    setSavingHabits(true);
+    try {
+      const r = await api.saveProfile(habits);
+      qc.setQueryData(['profile'], r);
+      toast.success('生活习惯已保存');
+    } catch { toast.error('保存失败，请重试'); }
+    finally { setSavingHabits(false); }
+  };
+  const relearn = async () => {
+    setLearning(true);
+    try {
+      const r = await api.learnProfile();
+      qc.setQueryData(['profile'], r);
+      toast.success('已更新习惯画像');
+    } catch { toast.error('学习失败，请重试'); }
+    finally { setLearning(false); }
+  };
 
   const exportJson = () => {
     const blob = new Blob([JSON.stringify({ app: 'guidy', version: 1, state }, null, 2)], { type: 'application/json' });
@@ -131,6 +159,43 @@ export function SettingsDrawer() {
                 {HOURS.slice(1).map((h) => <NativeSelectOption key={h} value={String(h)}>{String(h).padStart(2, '0')}:00 止</NativeSelectOption>)}
               </NativeSelect>
             </div>
+          </section>
+
+          <Separator />
+
+          <section className="space-y-2">
+            <Label htmlFor="habits">我的生活习惯</Label>
+            <Textarea
+              id="habits"
+              value={habits}
+              maxLength={500}
+              rows={4}
+              placeholder="例如：工作日 9:00–18:30 上班；早上不出门，晚上 11 点前睡；周末喜欢户外活动。"
+              onChange={(e) => setHabits(e.target.value)}
+              aria-label="生活习惯描述"
+              className="text-xs leading-relaxed"
+            />
+            <div className="flex items-center justify-between gap-2">
+              <span className="tabular text-[11px] text-site-ink-soft">{habits.length}/500 · 每轮对话都会带给 Agent</span>
+              <Button size="sm" disabled={savingHabits || habits === (profile.data?.habits ?? '')} onClick={() => { void saveHabits(); }}>
+                {savingHabits ? '保存中…' : '保存'}
+              </Button>
+            </div>
+          </section>
+
+          <section className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label>Agent 学到的习惯</Label>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px]" disabled={learning} onClick={() => { void relearn(); }}>
+                {learning ? '学习中…' : '重新学习'}
+              </Button>
+            </div>
+            {profile.data?.learned?.summary ? (
+              <p className="rounded-lg border border-site-line bg-site-surface-2 px-3 py-2 text-xs leading-relaxed text-site-ink">{profile.data.learned.summary}</p>
+            ) : (
+              <p className="text-xs text-site-ink-soft">{profile.isLoading ? '正在读取…' : '积累更多日历安排后会自动总结。'}</p>
+            )}
+            <p className="text-[11px] text-site-ink-soft">按近 8 周日历自动统计，仅作参考；与自述冲突时以自述为准。</p>
           </section>
 
           <Separator />

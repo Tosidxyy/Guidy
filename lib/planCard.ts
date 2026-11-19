@@ -1,5 +1,6 @@
 import type { ApplyOp, Constraint, PlanState, TaskDef } from '@/shared/types';
 import type { ConstraintSetArtifact, PatchArtifact } from '@/shared/schemas';
+import { applyPatch } from '@/shared/engine';
 import { canonical } from '@/lib/restoreChat';
 
 /** 从当前计划生成方案卡内容（任务/约束/horizon 都复用同一套卡片编辑）。 */
@@ -97,6 +98,12 @@ export function canGenerateSchedule(state: PlanState): boolean {
 }
 
 const PLAN_CARD_OPS = new Set(['add_task_def', 'update_task_def', 'remove_task_def', 'add_constraint', 'update_constraint', 'remove_constraint', 'update_plan']);
+
+/** fitting patch 暂存到卡片：叠加在用户未保存的编辑草稿上，避免服务端旧状态复活已删任务。 */
+export function stagePatchOnDraft(current: PlanState, draft: ConstraintSetArtifact | null, patch: PatchArtifact): ConstraintSetArtifact {
+  const base = draft ? planFromArtifact(current, draft) : current;
+  return artifactFromPlan(applyPatch(base, patch.ops).state);
+}
 
 /** 只改任务/约束/计划元数据的 patch 交给方案卡；含块操作或重排的仍走聊天里的确认（需要绝对时间）。 */
 export function patchFitsPlanCard(patch: PatchArtifact, activePlanId: string): boolean {

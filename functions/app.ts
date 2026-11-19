@@ -9,6 +9,7 @@ import { applyPatchRoute } from './routes/patches.ts';
 import { calendar, applySharedBlocks } from './routes/calendar.ts';
 import { recoveryGenerate, recoveryClaim } from './routes/recovery.ts';
 import { deleteAll } from './routes/data.ts';
+import { getProfile, updateProfile, learnProfile } from './routes/profile.ts';
 export function application(deps: Deps) {
   const routes: Route[] = [
     { method: 'GET', pattern: /^\/api\/health$/, handler: health },
@@ -28,6 +29,9 @@ export function application(deps: Deps) {
     { method: 'DELETE', pattern: /^\/api\/plans\/([^/]+)$/, handler: deletePlan },
     { method: 'POST', pattern: /^\/api\/recovery\/generate$/, handler: recoveryGenerate },
     { method: 'POST', pattern: /^\/api\/recovery\/claim$/, handler: recoveryClaim },
+    { method: 'GET', pattern: /^\/api\/profile$/, handler: getProfile },
+    { method: 'PUT', pattern: /^\/api\/profile$/, handler: updateProfile },
+    { method: 'POST', pattern: /^\/api\/profile\/learn$/, handler: learnProfile },
     { method: 'POST', pattern: /^\/api\/data\/delete-all$/, handler: deleteAll },
   ];
   const router = createRouter(routes);

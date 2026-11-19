@@ -12,6 +12,7 @@ import { Logo } from '@/components/brand/Logo';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/workbench/DatePicker';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 export function TopBar() {
@@ -64,13 +65,7 @@ export function TopBar() {
         <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={view === 'day' ? '前一天' : '上一周'} onClick={() => setDayAnchor(shiftDate(anchorDate, view === 'day' ? -1 : -7))}>
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <Input
-          type="date"
-          aria-label="选择日期"
-          value={anchorDate}
-          onChange={(e) => { if (e.target.value) setDayAnchor(e.target.value); }}
-          className="tabular h-8 w-[150px] text-xs"
-        />
+        <DatePicker value={anchorDate} onChange={setDayAnchor} />
         <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setDayAnchor(today)} aria-label="回到今天">今天</Button>
         <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={view === 'day' ? '后一天' : '下一周'} onClick={() => setDayAnchor(shiftDate(anchorDate, view === 'day' ? 1 : 7))}>
           <ChevronRight className="h-4 w-4" />

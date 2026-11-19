@@ -156,3 +156,20 @@ describe('buildUserMessage — 跨计划上下文', () => {
     expect(text).not.toContain('【共享日历中的其他计划】');
   });
 });
+describe('buildUserMessage — 生活习惯注入', () => {
+  it('用户自述优先注入；学到画像作为参考注入', () => {
+    const text = buildUserMessage({
+      message: '下周安排点训练', plan: null, history: [], today: '2026-11-19',
+      habits: '早上不出门，晚上 11 点前睡', learned: '工作日平均 60 分钟；常见活动：上班',
+    });
+    expect(text).toContain('用户自述的生活习惯（优先遵守）');
+    expect(text).toContain('早上不出门');
+    expect(text).toContain('从日历统计到的习惯');
+    expect(text).toContain('常见活动：上班');
+  });
+  it('没有习惯时不出现相关段落', () => {
+    const text = buildUserMessage({ message: 'hi', plan: null, history: [], today: '2026-11-19' });
+    expect(text).not.toContain('生活习惯');
+    expect(text).not.toContain('统计到的习惯');
+  });
+});

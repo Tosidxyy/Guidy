@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { application } from '../app';
 import { createMemoryDb } from '../../dev/fake-db';
 import { createFakeQca, upstreamStream, persistentUpstreamStream } from '../../dev/fake-qca';
-import { readSSE } from '../qca/sse.mjs';
+import { readSSE, encodeSSE } from '../qca/sse.mjs';
 import type { Deps, RouteCtx } from '../types';
 function deps(qcaOverrides = {}, db = createMemoryDb()): Deps {
   return { db, requireUser: (ctx) => { if (!ctx.user) throw { code: 'unauthorized', status: 401 }; return ctx.user; }, qca: createFakeQca(qcaOverrides), config: { cloudApiOrigin: 'x', appScope: 'scope', modelId: 'm' } };
@@ -284,5 +284,106 @@ describe('chatHistory / interrupt', () => {
     const c = await ensureConversation(d.db, 'v', null);
     const res = await application(d)(ctx('POST', '/api/chat/interrupt', { conversation_id: c.id }));
     expect((await res.json()).status).toBe('interrupted');
+  });
+});
+describe('断线后规划继续（切换对话）', () => {
+  function liveUpstream() {
+    let ctrl!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({ start(c) { ctrl = c; } });
+    return {
+      body,
+      push: (ev: any) => ctrl.enqueue(encodeSSE(ev.type ?? 'message', ev)),
+      end: () => ctrl.close(),
+    };
+  }
+  it('客户端取消 send 流后，派发仍完成并落库', async () => {
+    const up = liveUpstream();
+    const d = deps({ openStream: async () => ({ body: up.body, close() {} }) });
+    const res = await application(d)(ctx('POST', '/api/chat/send', { text: '排计划', request_id: 'req-detach' }));
+    const reader = res.body!.getReader();
+    await reader.read();
+    await reader.cancel();
+    up.push({ type: 'event_delta', event_id: 'e1', delta: { type: 'content_delta', content: { type: 'text', text: '好的' } } });
+    up.push({ type: 'agent.message', id: 'e1', content: [{ type: 'text', text: '好的' }] });
+    up.push({ type: 'session.status', status: 'idle' });
+    up.end();
+    await new Promise((r) => setTimeout(r, 80));
+    const msgs = (d.db.tables.messages ?? []) as any[];
+    expect(msgs.some((m) => m.role === 'assistant' && m.kind === 'text' && String(m.content).includes('好的'))).toBe(true);
+    const intent = ((d.db.tables.dispatch_intents ?? []) as any[]).find((i) => i.request_id === 'req-detach');
+    expect(intent.status).toBe('done');
+  });
+  it('chatEvents 从 DB 增量尾随 pending 派发，不开第二个上游', async () => {
+    const up = liveUpstream();
+    let opens = 0;
+    const d = deps({ openStream: async () => { opens++; return { body: up.body, close() {} }; } });
+    const app = application(d);
+    const sendRes = await app(ctx('POST', '/api/chat/send', { text: '排计划', request_id: 'req-tail' }));
+    const sr = sendRes.body!.getReader();
+    await sr.read();
+    await sr.cancel();
+    const convId = ((d.db.tables.conversations ?? []) as any[])[0].id;
+    const evRes = await app(ctx('GET', `/api/chat/events?conversation_id=${convId}&cursor=2:0`));
+    const frames: any[] = [];
+    const done = (async () => { for await (const f of readSSE(evRes.body!)) frames.push({ event: f.event, data: JSON.parse(f.data) }); })();
+    await new Promise((r) => setTimeout(r, 30));
+    up.push({ type: 'event_delta', event_id: 'e1', delta: { type: 'content_delta', content: { type: 'text', text: '好的' } } });
+    up.push({ type: 'agent.message', id: 'e1', content: [{ type: 'text', text: '好的' }] });
+    up.push({ type: 'session.status', status: 'idle' });
+    up.end();
+    await done;
+    expect(opens).toBe(1);
+    expect(frames.some((f) => f.event === 'delta' && String(f.data.text).includes('好的'))).toBe(true);
+    expect(frames.at(-1).event).toBe('done');
+  });
+});
+
+describe('重试不丢解释文字', () => {
+  it('后续尝试无输出时补存最长解释，历史不再缺助手内容', async () => {
+    const set = { type: 'constraint_set', plan_title: '重', horizon_days: 1, task_defs: [{ key: 'x', title: '重任务', category: 'study', duration_min: 600, frequency: { type: 'daily' }, priority: 'mid', splittable: false, sort_order: 0 }], constraints: [{ type: 'active_window', start: '07:00', end: '08:00' }], clarifications_needed: [] };
+    const text = '先核算一下容量：这天只有 1 小时可用。\n```json\n' + JSON.stringify(set) + '\n```';
+    let calls = 0;
+    const d = deps({
+      openStream: async () => {
+        calls += 1;
+        if (calls === 1) return { body: upstreamStream([
+          { type: 'event_delta', event_id: 'e1', delta: { type: 'content_delta', content: { type: 'text', text } } },
+          { type: 'agent.message', id: 'e1', content: [{ type: 'text', text }] },
+          { type: 'session.status', status: 'idle' },
+        ]), close() {} };
+        return { body: upstreamStream([
+          { type: 'agent.message', id: 'e2', content: [{ type: 'text', text: '' }] },
+          { type: 'session.status', status: 'idle' },
+        ]), close() {} };
+      },
+    });
+    await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '排一下', request_id: 'req-retry-text' })));
+    const msgs = (d.db.tables.messages ?? []) as any[];
+    const assistant = msgs.find((m) => m.role === 'assistant' && m.kind === 'text');
+    expect(assistant).toBeTruthy();
+    expect(String(assistant.content)).toContain('先核算一下容量');
+  });
+});
+
+describe('超容量最终取舍', () => {
+  it('三次重试仍不可行 → 自动降次后交付可行方案并写入取舍说明', async () => {
+    const set = {
+      type: 'constraint_set', plan_title: '超容量', horizon_days: 7,
+      task_defs: [{ key: 'en', title: '学英语', category: 'study', duration_min: 60, frequency: { type: 'per_week', count: 9 }, priority: 'mid', splittable: false, sort_order: 0 }],
+      constraints: [{ type: 'active_window', start: '07:00', end: '08:00' }], clarifications_needed: [],
+    };
+    const text = '先核算容量。\n```json\n' + JSON.stringify(set) + '\n```';
+    const d = deps({
+      openStream: async () => ({ body: upstreamStream([
+        { type: 'event_delta', event_id: 'e1', delta: { type: 'content_delta', content: { type: 'text', text } } },
+        { type: 'agent.message', id: 'e1', content: [{ type: 'text', text }] },
+        { type: 'session.status', status: 'idle' },
+      ]), close() {} }),
+    });
+    const frames = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '排一下', request_id: 'req-trim' })));
+    const artifact = frames.find((f) => f.event === 'artifact');
+    expect(artifact).toBeTruthy();
+    expect(artifact.data.payload.task_defs[0].frequency).toEqual({ type: 'per_week', count: 7 });
+    expect((artifact.data.payload.clarifications_needed ?? []).join()).toContain('容量不足已自动取舍');
   });
 });

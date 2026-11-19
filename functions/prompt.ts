@@ -1,9 +1,9 @@
-import type { Block, PlanState, TaskDef } from '../shared/types.ts';
-import type { ConstraintSetArtifact } from '../shared/schemas.ts';
-import type { PlanConflict } from '../shared/engine/conflicts.ts';
-import { holidaysInRange, makeupWorkdaysInRange } from '../shared/holidays.ts';
+import type { Block, PlanState, TaskDef } from './shared/types.ts';
+import type { ConstraintSetArtifact } from './shared/schemas.ts';
+import type { PlanConflict } from './shared/engine/conflicts.ts';
+import { holidaysInRange, makeupWorkdaysInRange } from './shared/holidays.ts';
 import { taskSummary, constraintText } from '../lib/describe.ts';
-import { localDay, localMinutes, minToHHmm } from '../shared/engine/time.ts';
+import { localDay, localMinutes, minToHHmm } from './shared/engine/time.ts';
 
 // 范例是 AI 看到的唯一具体模板，必须与引擎/确认卡消费的 schema 逐字段一致；由 prompt 契约测试保证可解析。
 export const CONSTRAINT_SET_EXAMPLE: ConstraintSetArtifact = {
@@ -54,7 +54,10 @@ export function buildSystemPrompt(): string {
     '- 用户明确说「你看着办 / 都行 / 直接排」时，按合理默认生成，并在正文列出采用的假设（次数、时长、时段），邀请用户改。',
     '- 目标明确且信息足够（推断+默认能补齐清单），或用户明确要求生成：输出 constraint_set（一个 JSON 对象，可用 ```json 代码块包裹），下方确认卡会自动出现。不要臆造用户未给出的硬性时间。',
     '- 规划跨度：horizon_days 为 1–365 的任意整数，按用户需求灵活定。有截止日就取「开始日（未指定则今天）→截止日」的实际自然天数（例：今天 11-19、截止 12-15 → 27），不得越过截止日，并输出 deadline 约束；任务在跨度内均匀铺开、临近截止自然加密。无截止日：按用户表述的周期定（如「一个月」→30、「两周」→14）；未表述时默认 30，长期习惯类可用 90。',
-    '- 容量自核（输出 constraint_set 前必做）：按「可安排时段」扣除公共忙时后算每日可用分钟；同一 category 的 daily 任务总时长不得超过该 category 的 daily_cap（若设）且不得超过每日可用分钟；per_week 次数 ≤ horizon_days；单次时长 > 每日可用分钟一半时设 splittable:true；两个 hard 互斥任务不要都设 daily。算不下就减次数/缩时长/扩时段，不要输出排不下的方案。',
+    '- 周期保真：用户明确给出周期（如「下周一至周日」「未来 7 天」「本周」）时，horizon_days 必须正好覆盖该周期（下周一到周日 = 7，horizon_start 取对应周一）；不得为了「凑容量」缩短周期，容量不够用取舍/降次解决并在正文说明。',
+    '- 容量自核（输出 constraint_set 前必做）：按「可安排时段」扣除公共忙时后算每日可用分钟；同一 category 的 daily 任务总时长不得超过该 category 的 daily_cap（若设）且不得超过每日可用分钟；per_week 次数 ≤ horizon_days；单次时长 > 每日可用分钟一半时设 splittable:true；hard 的 no_same_day 互斥不得涉及任何 daily 任务（无论对方频次）——daily 占满每天，与对方「至少一天」必然矛盾。算不下就减次数/缩时长/扩时段，不要输出排不下的方案。',
+    '- 超容量必须给取舍方案（不允许只解释不排）：当总需求明显超过可用容量时，不要以「排不下」结束对话。按优先级输出一个**可执行的初始计划**——硬截止任务 > 用户明确说必须完成的 > 固定日程 > 健康底线（睡眠/三餐/休息）> 灵活任务；灵活任务用降低频次（per_week 减次数）、缩短单次时长或暂缓来腾空间，并在正文用 1–2 句列出被降次/暂缓的项与理由，邀请用户调整优先级。只有缺少决定取舍的关键信息时，才用 question_card（2–3 个取舍选项 + 自定义选项），且仍要在卡片前给出你的推荐取舍。',
+    '- 「某天不安排其他活动」类意图（旅游/考试/出差当天清空）：只把非 daily 任务之间设 hard no_same_day；吃饭等 daily 必需任务豁免（人在旅游也要吃饭），必要时在正文说明该假设。不要为清空某天而禁掉每日任务。',
     '- 时间基准：用户消息开头会给出「今天是 YYYY-MM-DD（周X，时区）」。用户说「下周 / 下个月 / 从某天开始」时，必须换算成具体日期写入 horizon_start；「下周」指下一个自然周的周一。用户未指定开始日时省略 horizon_start。',
     '- 作息与时段：上下文里没有「可安排时段」或公共日历块时，说明用户还没提供作息。此时不要假设用户白天要上班/上课，也不要凭推测设置 preferred_period 或把任务排到晚上；需要时段偏好时用 question_card 问「工作日一般几点后方便」「周末全天可以吗」，或者干脆不写 preferred_period，让任务在 07:00–23:00 里均匀铺开。',
     '- 用户已提供忙时/固定日程（上下文里的公共日历块或计划约束）时，按这些时段避让；不要重复问用户什么时候有空。',
@@ -188,6 +191,10 @@ export function buildUserMessage(input: {
   sharedBlocks?: Block[];
   /** 按共享日历算出的每周可用时段（已扣除忙时与既有块）。 */
   availability?: string;
+  /** 用户自述的生活习惯（设置里手写，规划时优先遵守）。 */
+  habits?: string;
+  /** 从日历统计出的习惯摘要（仅参考，可能过时）。 */
+  learned?: string;
 }): string {
   const lines: string[] = [];
   const timezone = input.plan?.plan.timezone ?? input.timezone ?? 'Asia/Shanghai';
@@ -199,6 +206,13 @@ export function buildUserMessage(input: {
     lines.push('追问的选项必须落在这些可安排时段内；生成计划时如无其他依据，active_window 要与之一致，不要排进忙时或既有块。');
   } else {
     lines.push('【作息未知】用户还没有提供忙时、固定日程或空闲偏好。不要假设用户白天在上班/上课，也不要凭推测设置 preferred_period、把任务默认排到晚上；需要时段偏好时在追问里问（例如工作日几点后方便、周末是否全天可以）。');
+  }
+  if (input.habits) {
+    lines.push(`【用户自述的生活习惯（优先遵守）】${input.habits}`);
+    lines.push('规划、追问与默认假设都要遵循这些习惯；与本轮消息冲突时以本轮为准，并在正文说明你采用的调整。');
+  }
+  if (input.learned) {
+    lines.push(`【从日历统计到的习惯（仅参考，可能过时）】${input.learned}`);
   }
   if (input.sharedBlocks?.length) {
     lines.push('【公共日历块（所有计划共享的忙时/固定日程）】带块 id，按 id 直接改：');

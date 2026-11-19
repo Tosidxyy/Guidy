@@ -29,6 +29,7 @@ export async function deleteVisitorData(db: Db, visitor: string): Promise<Record
   deleted.commit_log = await deleteWhere(db, 'commit_log', 'visitor_id', visitor);
   deleted.conversations = await deleteWhere(db, 'conversations', 'owner_visitor_id', visitor);
   deleted.plans = await deleteWhere(db, 'plans', 'owner_visitor_id', visitor);
+  deleted.profiles = await deleteWhere(db, 'profiles', 'visitor_id', visitor);
   deleted.quotas = await deleteWhere(db, 'quotas', 'visitor_id', visitor);
   deleted.recovery_codes = await deleteWhere(db, 'recovery_codes', 'visitor_id', visitor);
   return deleted;

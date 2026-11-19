@@ -11,3 +11,7 @@ build/
 .qoder-sites.json
 .superpowers/
 dev/*.png
+functions/shared/
+functions/vendor/
+functions/_qoder/
+dev/deploy-ids.txt

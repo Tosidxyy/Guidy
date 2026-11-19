@@ -10,16 +10,18 @@ import { parseModelText } from '../artifacts.ts';
 import { buildUserMessage, ARTIFACT_REPAIR } from '../prompt.ts';
 import { appFrame, insertMessage, appendAssistant, advanceCursor, sha256Hex } from '../sse-app.ts';
 import { readSSE } from '../qca/sse.mjs';
-import { LIMITS, ENGINE_VERSION } from '../../shared/constants.ts';
+import { LIMITS, ENGINE_VERSION } from '../shared/constants.ts';
 import { solve } from '../engine.ts';
-import { findConflicts, type ConflictPlan } from '../../shared/engine/conflicts.ts';
-import { formatAvailability, weeklyAvailability, type AvailabilitySource } from '../../shared/engine/availability.ts';
+import { findConflicts, type ConflictPlan } from '../shared/engine/conflicts.ts';
+import { trimArtifactToFit } from '../shared/engine/fit.ts';
+import { formatAvailability, weeklyAvailability, type AvailabilitySource } from '../shared/engine/availability.ts';
 import { sharedBusyBlocks } from './calendar.ts';
+import { ensureProfileRow, ensureLearned } from './profile.ts';
 import { constraintText } from '../../lib/describe.ts';
 import type { OtherPlanContext } from '../prompt.ts';
 import type { Deps, RouteCtx, AppEvent } from '../types.ts';
-import type { PlanState } from '../../shared/types.ts';
-import type { Block } from '../../shared/types.ts';
+import type { PlanState } from '../shared/types.ts';
+import type { Block } from '../shared/types.ts';
 
 export const interruptRegistry = new Map<string, AbortController>();
 const SSE_HEADERS = { 'content-type': 'text/event-stream', 'cache-control': 'no-store, no-transform' };
@@ -131,6 +133,9 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
     ? await loadRelatedPlans(deps.db, visitor, planState as PlanState)
     : await loadSharedCalendar(deps.db, visitor);
   const busyBlocks = await sharedBusyBlocks(deps.db, visitor);
+  // 习惯画像：用户自述优先，日历统计仅作参考；同日懒更新，不额外调用模型。
+  const profile = await ensureProfileRow(deps.db, visitor);
+  const learned = await ensureLearned(deps.db, visitor, profile);
   const availabilitySources = [...related.sources, ...(busyBlocks.length ? [{ constraints: [], blocks: busyBlocks }] : [])];
   const availability = availabilitySources.length
     ? formatAvailability(weeklyAvailability(availabilitySources, planState?.plan.timezone ?? timezone ?? 'Asia/Shanghai'))
@@ -144,11 +149,17 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
     })
     .slice(0, 24);
 
+  let live = true;
   const stream = new ReadableStream<Uint8Array>({
+    cancel() { live = false; },
     async start(controller) {
       let seq = conv.last_seq;
       const nextSeq = () => ++seq;
-      const emit = (e: AppEvent) => controller.enqueue(appFrame(e.data.seq, e.event, e.data));
+      // 客户端断开（如切换对话）不终止规划：停止推送但继续落库，切回由 chatEvents 尾随回放。
+      const emit = (e: AppEvent) => {
+        if (!live) return;
+        try { controller.enqueue(appFrame(e.data.seq, e.event, e.data)); } catch { live = false; }
+      };
       const abort = new AbortController();
       interruptRegistry.set(conv.id, abort);
       try {
@@ -165,7 +176,9 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         const collected: AppEvent[] = [];
         const assistantSeq = nextSeq();
         let finalText = '';
+        let bestText = '';
         let repairNote = '';
+        let pendingViolations: { task_key: string; reason: string }[] = [];
         let lastEventId: string | null = conv.last_event_id;
         let terminalState: 'completed' | 'failed' | 'interrupted' = 'failed';
         for (let attempt = 0; attempt < 3; attempt++) {
@@ -173,7 +186,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           const projector = createProjector(nextSeq, assistantSeq);
           const upstream = await deps.qca.openStream(sessionId, { lastEventId: conv.last_event_id ?? undefined, signal: abort.signal });
           try {
-            await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others, availability, sharedBlocks: sharedForPrompt }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}${repairNote}` : ''), `${requestId}:${attempt}`);
+            await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others, availability, sharedBlocks: sharedForPrompt, habits: profile.habits || undefined, learned: learned?.summary || undefined }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}${repairNote}` : ''), `${requestId}:${attempt}`);
             for await (const frame of readSSE(upstream.body, { signal: abort.signal })) {
               const ev = JSON.parse(frame.data);
               if (frame.id) lastEventId = frame.id;
@@ -188,6 +201,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
             }
           } finally { upstream.close(); }
           finalText = projector.text();
+          if (finalText.length > bestText.length) bestText = finalText;
           if (abort.signal.aborted) { terminalState = 'interrupted'; break; }
           if (!projector.isTerminal()) { terminalState = 'failed'; break; }
           const expectsArtifact = /```json|^\s*\{/.test(finalText);
@@ -211,11 +225,29 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
               repairNote = `\n预求解发现不可行：${pre.violations.map((v) => v.reason).join('；')}。请调整次数/时长/每日上限/可安排时段后重新输出 constraint_set。`;
               continue;
             }
+            pendingViolations = pre.violations;
           }
           if (parsed) {
+            // 修复重试后仍不可行：按优先级自动降次/暂缓，交付一个可执行方案，并把取舍写进追问区。
+            if (parsed.kind === 'constraint_set' && pendingViolations.length) {
+              const meta = {
+                horizon_start: parsed.value.horizon_start ?? planState?.plan.horizon_start ?? day,
+                timezone: planState?.plan.timezone ?? timezone ?? 'Asia/Shanghai',
+              };
+              const trimmed = trimArtifactToFit(parsed.value, meta, busyBlocks.map((b: any) => ({ ...b, pinned: true })));
+              if (trimmed) {
+                parsed.value = {
+                  ...trimmed.draft,
+                  clarifications_needed: [
+                    ...(trimmed.draft.clarifications_needed ?? []),
+                    `容量不足已自动取舍：${trimmed.changes.join('；')}。想恢复某项就告诉我优先级。`,
+                  ],
+                };
+              }
+            }
             const art: AppEvent = { event: 'artifact', data: { seq: nextSeq(), kind: parsed.kind, payload: parsed.value } };
             emit(art); collected.push(art);
-            await insertMessage(deps.db, conv, { seq: art.data.seq, role: 'assistant', kind: parsed.kind, content: finalText, payload: parsed.value });
+            await insertMessage(deps.db, conv, { seq: art.data.seq, role: 'assistant', kind: parsed.kind, content: bestText || finalText, payload: parsed.value });
             break;
           }
           if (expectsArtifact && attempt < 2) continue;
@@ -227,6 +259,11 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           break;
         }
         await advanceCursor(deps.db, conv, seq, lastEventId);
+        // 重试会删除上一轮的流式文本；若最终没有落任何助手内容，补存最长的那份解释，历史不再丢失。
+        const hasAssistantRow = rows(await deps.db.from('messages').select('id').eq('conversation_id', conv.id).eq('seq', assistantSeq).limit(1)).length > 0;
+        if (!hasAssistantRow && bestText) {
+          await insertMessage(deps.db, conv, { seq: assistantSeq, role: 'assistant', kind: 'text', content: bestText });
+        }
         const status: AppEvent = { event: 'status', data: { seq: nextSeq(), state: terminalState } };
         emit(status); collected.push(status);
         emit({ event: 'done', data: { seq: nextSeq() } });
@@ -234,12 +271,12 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         await deps.db.from('conversations').update({ status: terminalState === 'completed' ? 'active' : terminalState }).eq('id', conv.id);
       } catch {
         const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'upstream_error', message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID() } };
-        controller.enqueue(appFrame(err.data.seq, err.event, err.data));
-        controller.enqueue(appFrame(nextSeq(), 'done', { seq }));
+        emit(err);
+        emit({ event: 'done', data: { seq: nextSeq() } });
         await markDispatch(deps.db, requestId, { status: 'failed' }).catch(() => {});
       } finally {
         interruptRegistry.delete(conv.id);
-        controller.close();
+        try { controller.close(); } catch { /* 客户端已断开 */ }
       }
     },
   });
@@ -262,44 +299,55 @@ export async function chatEvents(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const cursorSeq = Number(cursorSeqStr) || 0;
   const offset = Number(offsetStr) || 0;
   const conv = await getOwnedConversation(deps.db, visitor, id);
-  const messages = rows(await deps.db.from('messages').select('*').eq('conversation_id', id).order('seq', { ascending: true }).limit(500));
   const pending = rows(await deps.db.from('dispatch_intents').select('request_id').eq('conversation_id', id).eq('status', 'pending').limit(1));
+  let live = true;
   const stream = new ReadableStream<Uint8Array>({
+    cancel() { live = false; },
     async start(controller) {
       let seq = conv.last_seq;
       const nextSeq = () => ++seq;
-      try {
-        for (const m of messages) {
+      const send = (s: number, event: string, data: unknown) => {
+        if (!live) return;
+        try { controller.enqueue(appFrame(s, event, data)); } catch { live = false; }
+      };
+      const textLen = new Map<number, number>();
+      const seen = new Set<number>();
+      // 增量回放 DB：规划循环在后台持续写库，这里尾随而不是再开一个上游 reader（避免重复投影）。
+      const pump = async () => {
+        const fresh = rows(await deps.db.from('messages').select('*').eq('conversation_id', id).order('seq', { ascending: true }).limit(500));
+        for (const m of fresh) {
           if (m.seq < cursorSeq) continue;
           if (m.kind === 'text' && m.role === 'assistant') {
-            const t = m.seq === cursorSeq ? String(m.content).slice(offset) : String(m.content);
-            controller.enqueue(appFrame(m.seq, 'delta', { seq: m.seq, text: t }));
+            const full = String(m.content);
+            const from = textLen.get(m.seq) ?? (m.seq === cursorSeq ? offset : 0);
+            if (full.length > from) { send(m.seq, 'delta', { seq: m.seq, text: full.slice(from) }); textLen.set(m.seq, full.length); }
           } else if (m.kind === 'constraint_set' || m.kind === 'patch' || m.kind === 'question_card') {
-            controller.enqueue(appFrame(m.seq, 'artifact', { seq: m.seq, kind: m.kind, payload: m.payload }));
+            if (!seen.has(m.seq)) { seen.add(m.seq); send(m.seq, 'artifact', { seq: m.seq, kind: m.kind, payload: m.payload }); }
           } else if (m.kind === 'status') {
-            controller.enqueue(appFrame(m.seq, 'status', { seq: m.seq, state: m.content }));
+            if (!seen.has(m.seq)) { seen.add(m.seq); send(m.seq, 'status', { seq: m.seq, state: m.content }); }
           } else if (m.kind === 'error') {
-            controller.enqueue(appFrame(m.seq, 'error', { seq: m.seq, code: m.content, message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID() }));
+            if (!seen.has(m.seq)) { seen.add(m.seq); send(m.seq, 'error', { seq: m.seq, code: m.content, message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID() }); }
           }
         }
+      };
+      try {
+        await pump();
         if (pending.length) {
-          const { sessionId } = await ensureQcaSession(deps, conv);
-          const abort = new AbortController();
-          interruptRegistry.set(conv.id, abort);
-          const projector = createProjector(nextSeq, nextSeq());
-          const upstream = await deps.qca.openStream(sessionId, { lastEventId: conv.last_event_id ?? undefined, signal: abort.signal });
-          try {
-            for await (const frame of readSSE(upstream.body, { signal: abort.signal })) {
-              for (const p of projector.push(JSON.parse(frame.data))) controller.enqueue(appFrame(p.data.seq, p.event, p.data));
-              if (projector.isTerminal()) break;
-            }
-          } finally { upstream.close(); interruptRegistry.delete(conv.id); }
+          const deadline = Date.now() + 180000;
+          while (live && Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, 400));
+            await pump();
+            const still = rows(await deps.db.from('dispatch_intents').select('request_id').eq('conversation_id', id).eq('status', 'pending').limit(1));
+            if (!still.length) { await pump(); break; }
+          }
         }
-        controller.enqueue(appFrame(nextSeq(), 'done', { seq }));
+        send(nextSeq(), 'done', { seq });
       } catch {
-        controller.enqueue(appFrame(nextSeq(), 'error', { seq, code: 'upstream_error', message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID() }));
-        controller.enqueue(appFrame(nextSeq(), 'done', { seq }));
-      } finally { controller.close(); }
+        send(nextSeq(), 'error', { seq, code: 'upstream_error', message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID() });
+        send(nextSeq(), 'done', { seq });
+      } finally {
+        try { controller.close(); } catch { /* 客户端已断开 */ }
+      }
     },
   });
   return new Response(stream, { status: 200, headers: SSE_HEADERS });

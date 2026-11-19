@@ -4,6 +4,8 @@ export class ApiError extends Error {
     super(message); this.code = code; this.status = status; this.diagnosticId = diagnosticId; this.details = details;
   }
 }
+import type { Profile } from '@/shared/profile';
+
 const BASE = '/functions/v1/app/api';
 export async function requestJson<T>(path: string, opts: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
   const res = await fetch(BASE + path, {
@@ -35,6 +37,9 @@ export const api = {
   recoveryGenerate: () => requestJson<{ code: string }>('/recovery/generate', { method: 'POST' }),
   recoveryClaim: (code: string) => requestJson<{ ok: boolean; plans_count: number; conversations_count: number }>('/recovery/claim', { method: 'POST', body: { code, strategy: 'overwrite' } }),
   saveDraft: (body: unknown) => requestJson<any>('/plans/save', { method: 'POST', body }),
+  profile: () => requestJson<Profile>('/profile'),
+  saveProfile: (habits: string) => requestJson<Profile>('/profile', { method: 'PUT', body: { habits } }),
+  learnProfile: () => requestJson<Profile>('/profile/learn', { method: 'POST' }),
   deleteAll: () => requestJson<{ ok: boolean; deleted: Record<string, number> }>('/data/delete-all', { method: 'POST', body: { confirm_token: 'DELETE' } }),
 };
 export const SEND_URL = BASE + '/chat/send';

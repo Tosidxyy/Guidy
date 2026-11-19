@@ -1,4 +1,4 @@
-import { z } from 'npm:zod@3.25.76';
+import { z } from '../../vendor/zod.ts';
 import { readJson } from '../router.ts';
 import { fail } from '../errors.ts';
 import { requireVisitor } from '../identity.ts';

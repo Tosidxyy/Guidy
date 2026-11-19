@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
-import { artifactFromPlan, canGenerateSchedule, patchFitsPlanCard, planFromArtifact } from '@/lib/planCard';
+import { artifactFromPlan, canGenerateSchedule, patchFitsPlanCard, planFromArtifact, stagePatchOnDraft } from '@/lib/planCard';
 import { generateScheduleAction, savePlanCardAction } from '@/lib/planActions';
 import { useApplyPatch } from '@/lib/useApplyPatch';
 import { useAutoSaveDraft } from '@/lib/useAutoSaveDraft';
@@ -10,7 +10,6 @@ import { useCommitPlan } from '@/lib/useCommitPlan';
 import { appliedPatches } from '@/lib/appliedPatches';
 import { patchOpText } from '@/lib/describe';
 import { groupSchedules, isSchedule } from '@/lib/confirmDraft';
-import { applyPatch } from '@/shared/engine';
 import { cn } from '@/lib/utils';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useChatStore } from '@/store/useChatStore';
@@ -61,15 +60,22 @@ export function PlanCardPanel() {
     setAttention(true);
   }, [proposal]);
 
-  // 只改任务/约束的 AI patch：落到编辑草稿，计数与内容同步更新，闪烁提示手动核对。
+  // 只改任务/约束的 AI patch：叠加在用户未保存的编辑草稿上，计数与内容同步更新，闪烁提示手动核对。
   useEffect(() => {
     if (!patch) return;
     const current = usePlanStore.getState().state;
     if (!current.plan.id || !patchFitsPlanCard(patch, current.plan.id)) return;
-    setDraft(artifactFromPlan(applyPatch(current, patch.ops).state));
+    setDraft(stagePatchOnDraft(current, draft, patch));
     setAttention(true);
     useChatStore.setState({ patch: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patch]);
+
+  // 对话/计划切换后清空上一对话的编辑草稿：方案卡随对话唯一，不留残留数据。
+  useEffect(() => {
+    setDraft(null);
+    setAttention(false);
+  }, [conversationId, state.plan.id]);
 
   // 含块移动/重排的 patch 也留在同一张卡里应用：卡片下方给出调整清单，不再单独弹确认卡。
   const foreignPatch = patch && state.plan.id && !patchFitsPlanCard(patch, state.plan.id) ? patch : null;
@@ -113,7 +119,22 @@ export function PlanCardPanel() {
     setSaving(false);
     if (!r.ok) { toast.error(r.reason ?? '生成排程失败'); return; }
     toast.success('已保存并生成排程');
+    setAttention(false);
     close();
+  };
+
+  // 应用 AI 排程调整前先落卡片里未保存的编辑（如删除任务），否则调整按服务端旧状态应用会复活它们。
+  const applyForeign = async () => {
+    if (!foreignPatch) return;
+    if (draft) {
+      setSaving(true);
+      const saved = await savePlanCardAction(viewed);
+      setSaving(false);
+      if (!saved.ok) { toast.error(saved.reason ?? '保存卡片修改失败'); return; }
+    }
+    setDraft(null);
+    setAttention(false);
+    void applyPatchOps(foreignPatch);
   };
 
   const statusText = proposal
@@ -129,16 +150,17 @@ export function PlanCardPanel() {
       : '改完点「保存修改」，改动会同步到云端并可撤销。';
 
   return (
-    <div className="relative border-t border-site-line bg-site-bg px-3 py-1.5">
-      <div className="flex items-center gap-1">
+    <div className="px-2 pb-2 pt-1">
+      <div className={cn('overflow-hidden rounded-xl border bg-site-surface shadow-sm transition-colors', attention && !open ? 'border-site-flow/40' : 'border-site-ink/12')}>
+      <div className="flex items-center">
         <Button
           variant="ghost"
           size="sm"
           onClick={toggle}
           aria-expanded={open}
-          className="relative h-7 min-w-0 flex-1 justify-start gap-1.5 px-2 text-[11px] font-normal text-site-ink-soft hover:bg-site-surface-2 hover:text-site-ink"
+          className="relative h-8 min-w-0 flex-1 justify-start gap-1.5 rounded-none px-2.5 text-[11px] font-normal text-site-ink-soft hover:bg-site-surface-2 hover:text-site-ink"
         >
-          {attention && !open && <span aria-hidden="true" className="guidy-card-pulse pointer-events-none absolute inset-0 rounded-md" />}
+          {attention && !open && <span aria-hidden="true" className="guidy-card-pulse pointer-events-none absolute inset-0" />}
           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-site-ink" />
           <span className="shrink-0 font-medium text-site-ink">方案卡</span>
           <span className="min-w-0 truncate text-site-ink">{planTitle}</span>
@@ -152,11 +174,10 @@ export function PlanCardPanel() {
       </div>
 
       {(
-        <div className={cn('grid transition-[grid-template-rows,margin-top] duration-300 ease-out', open ? 'mt-1.5 grid-rows-[1fr]' : 'mt-0 grid-rows-[0fr]')}>
+        <div className={cn('grid transition-[grid-template-rows,margin-top] duration-300 ease-out', open ? 'mt-0 grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
           <div className="overflow-hidden">
-            <div className="rounded-(--site-radius) border border-site-line bg-site-surface">
-          <div className="h-px bg-site-line" />
-          <div className="flex items-start justify-between gap-3 px-4 pt-3">
+            <div className="border-t border-site-line">
+          <div className="flex items-start justify-between gap-3 px-3.5 pt-3">
             <div>
               <h3 className="font-display text-sm font-semibold text-site-ink">{viewed.plan_title || '方案卡'}</h3>
               <p className="mt-0.5 text-xs text-site-ink-soft">{hint}</p>
@@ -164,7 +185,7 @@ export function PlanCardPanel() {
           </div>
 
           {foreignPatch && !patchAlreadyApplied && (
-          <section className="mx-4 mt-3 rounded-lg border border-site-line bg-site-bg p-2.5">
+          <section className="mx-3.5 mt-3 rounded-lg border border-site-line bg-site-bg p-2.5">
             <p className="text-xs font-semibold text-site-ink">排程调整 · {foreignPatch.summary}</p>
             <ul className="mt-1.5 max-h-28 space-y-1 overflow-y-auto">
               {foreignPatch.ops.map((op, i) => (
@@ -175,14 +196,14 @@ export function PlanCardPanel() {
             </ul>
             <div className="mt-2 flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => useChatStore.setState({ patch: null })}>放弃</Button>
-              <Button size="sm" disabled={patchPending} onClick={() => { setDraft(null); void applyPatchOps(foreignPatch); }}>
+              <Button size="sm" disabled={patchPending || saving} onClick={() => { void applyForeign(); }}>
                 {patchPending ? '应用中…' : '应用调整'}
               </Button>
             </div>
           </section>
         )}
 
-          <div className="max-h-[40vh] overflow-y-auto px-4 pb-4">
+          <div className="max-h-[40vh] overflow-y-auto px-3.5 pb-3.5">
             <ConstraintSetBody
               draft={viewed}
               onChange={change}
@@ -218,6 +239,7 @@ export function PlanCardPanel() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

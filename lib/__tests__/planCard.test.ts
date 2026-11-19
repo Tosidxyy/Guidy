@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { artifactFromPlan, canGenerateSchedule, diffPlanCard, patchFitsPlanCard, planFromArtifact } from '@/lib/planCard';
+import { artifactFromPlan, canGenerateSchedule, diffPlanCard, patchFitsPlanCard, planFromArtifact, stagePatchOnDraft } from '@/lib/planCard';
 import type { PlanState } from '@/shared/types';
 
 const plan: PlanState = {
@@ -104,5 +104,17 @@ describe('patchFitsPlanCard', () => {
     expect(patchFitsPlanCard(patch([{ op: 'reschedule', scope: 'all', keep_pinned: true }]), 'p1')).toBe(false);
     expect(patchFitsPlanCard(patch([{ op: 'update_plan', plan_id: 'p2', patch: { title: 'x' } }]), 'p1')).toBe(false);
     expect(patchFitsPlanCard(patch([]), 'p1')).toBe(false);
+  });
+});
+describe('stagePatchOnDraft', () => {
+  const mk = (ops: any[]) => ({ type: 'patch', summary: 's', ops } as any);
+  it('保留卡片未保存编辑：draft 删掉的任务不被 fitting patch 复活', () => {
+    const draft = { ...artifactFromPlan(plan), task_defs: [] };
+    const staged = stagePatchOnDraft(plan, draft, mk([{ op: 'update_task_def', key: 'math', patch: { duration_min: 90 } }]));
+    expect(staged.task_defs).toHaveLength(0);
+  });
+  it('无 draft 时按当前计划应用 patch', () => {
+    const staged = stagePatchOnDraft(plan, null, mk([{ op: 'update_task_def', key: 'math', patch: { duration_min: 90 } }]));
+    expect(staged.task_defs[0].duration_min).toBe(90);
   });
 });

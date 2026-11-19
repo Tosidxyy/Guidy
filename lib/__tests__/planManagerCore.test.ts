@@ -16,16 +16,32 @@ function fakeDeps(over: Record<string, unknown> = {}) {
     newConversation: vi.fn(),
     resume: vi.fn(),
     isStreaming: () => false,
+    detachStream: vi.fn(),
     invalidatePlans: vi.fn(),
     listPlans: vi.fn(async () => [{ id: 'p3' }]),
     ...over,
   };
 }
 describe('createPlanManager', () => {
-  it('switchPlan 流式中 → no-op', async () => {
+  it('switchPlan 流式中 → detach 本地流后继续切换（服务端继续跑，切回可 resume）', async () => {
     const d = fakeDeps({ isStreaming: () => true });
     await createPlanManager(d).switchPlan('p2');
-    expect(d.fetchPlan).not.toHaveBeenCalled();
+    expect(d.detachStream).toHaveBeenCalled();
+    expect(d.fetchPlan).toHaveBeenCalledWith('p2');
+    expect(d.importState).toHaveBeenCalledWith(serverPlan);
+  });
+  it('newPlan 流式中 → detach + 空计划 + 新对话', () => {
+    const d = fakeDeps({ isStreaming: () => true });
+    createPlanManager(d).newPlan();
+    expect(d.detachStream).toHaveBeenCalled();
+    expect(d.importState).toHaveBeenCalled();
+    expect(d.newConversation).toHaveBeenCalled();
+  });
+  it('deletePlan 流式中 → detach 后删除', async () => {
+    const d = fakeDeps({ isStreaming: () => true });
+    await createPlanManager(d).deletePlan('p9');
+    expect(d.detachStream).toHaveBeenCalled();
+    expect(d.deletePlan).toHaveBeenCalledWith('p9');
   });
   it('switchPlan 正常 → fetchPlan + importState + 恢复对话 + resume', async () => {
     const d = fakeDeps();

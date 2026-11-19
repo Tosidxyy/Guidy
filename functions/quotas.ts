@@ -1,7 +1,7 @@
 import { rows } from './db.ts';
 import type { Db } from './db.ts';
 import { fail } from './errors.ts';
-import { QUOTAS } from '../shared/constants.ts';
+import { QUOTAS } from './shared/constants.ts';
 export function todayStr(now: Date): string { return now.toISOString().slice(0, 10); }
 export async function incrementChatTurn(db: Db, visitor: string, day: string, limit = QUOTAS.chatTurnsPerDay): Promise<number> {
   rows(await db.from('quotas').insertIfAbsent({ visitor_id: visitor, day, chat_turns: 0, publishes: 0, recovery_attempts: 0 }, { onConflict: 'visitor_id,day' }));

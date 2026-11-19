@@ -5,6 +5,7 @@ import { buildPatchBody } from '@/lib/patchInput';
 import { applyPatch, solve } from '@/shared/engine';
 import { ENGINE_VERSION } from '@/shared/constants';
 import { mergeSharedWindows } from '@/lib/sharedCalendar';
+import { relaxPatchOps } from '@/lib/relaxPlan';
 import { planController } from '@/lib/planRuntime';
 import { resolvePatchTargets, SHARED_PLAN_ID } from '@/lib/patchTargets';
 import { applySharedOps } from '@/lib/sharedBlocks';
@@ -81,8 +82,19 @@ export function useApplyPatch() {
       }
       return { resp, foreignOps };
     },
-    onError: (err) => {
+    onError: (err, patch) => {
       const e = err instanceof ApiError ? err : new ApiError('service_unavailable', 503, '提交失败，请重试');
+      if (e.code === 'engine_infeasible') {
+        const relaxed = relaxPatchOps(patch, usePlanStore.getState().state);
+        if (relaxed) {
+          toast.error('当前约束下无法排下全部任务', {
+            description: `可自动放宽：${relaxed.changes.join('；')}`,
+            duration: 12000,
+            action: { label: '自动放宽重试', onClick: () => mutation.mutate(relaxed.patch) },
+          });
+          return;
+        }
+      }
       toast.error(e.message, { description: e.diagnosticId ? `诊断 ID：${e.diagnosticId}` : undefined });
     },
     onSuccess: ({ resp, foreignOps }: { resp: any; foreignOps: number }, patch: PatchArtifact) => {

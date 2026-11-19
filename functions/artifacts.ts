@@ -1,5 +1,5 @@
-import { ConstraintSetArtifactSchema, PatchArtifactSchema, QuestionCardArtifactSchema } from '../shared/schemas.ts';
-import type { ConstraintSetArtifact, PatchArtifact, QuestionCardArtifact } from '../shared/schemas.ts';
+import { ConstraintSetArtifactSchema, PatchArtifactSchema, QuestionCardArtifactSchema } from './shared/schemas.ts';
+import type { ConstraintSetArtifact, PatchArtifact, QuestionCardArtifact } from './shared/schemas.ts';
 export type ParsedArtifact =
   | { kind: 'constraint_set'; value: ConstraintSetArtifact }
   | { kind: 'patch'; value: PatchArtifact }

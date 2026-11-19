@@ -15,7 +15,7 @@ export interface PlanManagerDeps {
   setChatState(patch: Partial<ChatState>): void;
   newConversation(): void;
   resume(): void;
-  isStreaming(): boolean;
+  detachStream(): void;
   invalidatePlans(): void;
   listPlans(): Promise<{ id: string }[]>;
 }
@@ -36,7 +36,7 @@ export function createPlanManager(deps: PlanManagerDeps) {
     if (conv.status === 'active') deps.resume();
   }
   async function switchPlan(id: string) {
-    if (deps.isStreaming()) return;
+    deps.detachStream();
     if (deps.getPlanState().plan.id === id) { await restoreConversation(id); return; }
     let serverPlan: PlanState;
     try { serverPlan = await deps.fetchPlan(id); }
@@ -45,12 +45,12 @@ export function createPlanManager(deps: PlanManagerDeps) {
     await restoreConversation(id);
   }
   function newPlan() {
-    if (deps.isStreaming()) return;
+    deps.detachStream();
     deps.importState(buildEmptyPlan());
     deps.newConversation();
   }
   async function deletePlan(id: string) {
-    if (deps.isStreaming()) return;
+    deps.detachStream();
     try { await deps.deletePlan(id); }
     catch (err) {
       // 404 = 已被删（如另一标签页），按「已不在」走同一兜底路径；其余错误上抛由 UI 提示。

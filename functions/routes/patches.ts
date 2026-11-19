@@ -1,17 +1,17 @@
-import { z } from 'npm:zod@3.25.76';
+import { z } from '../../vendor/zod.ts';
 import { readJson } from '../router.ts';
 import { fail } from '../errors.ts';
 import { rows } from '../db.ts';
 import type { Db } from '../db.ts';
 import { requireVisitor } from '../identity.ts';
 import { applyPatch, diffBlocks, resultHash, solve, validatePlacement } from '../engine.ts';
-import { ENGINE_VERSION } from '../../shared/constants.ts';
-import { ApplyOpSchema } from '../../shared/schemas.ts';
+import { ENGINE_VERSION } from '../shared/constants.ts';
+import { ApplyOpSchema } from '../shared/schemas.ts';
 import { getOwnedPlan, sharedRecurringFor } from './plans.ts';
 import { horizonBounds, sharedBusyBlocks, materializeSharedBusy } from './calendar.ts';
-import { localDay, localMinutes, minToHHmm } from '../../shared/engine/time.ts';
+import { localDay, localMinutes, minToHHmm } from '../shared/engine/time.ts';
 import type { Deps, RouteCtx } from '../types.ts';
-import type { PlanState } from '../../shared/types.ts';
+import type { PlanState } from '../shared/types.ts';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

@@ -1,14 +1,14 @@
-import { z } from 'npm:zod@3.25.76';
+import { z } from '../../vendor/zod.ts';
 import { rows } from '../db.ts';
 import type { Db } from '../db.ts';
 import { readJson } from '../router.ts';
 import { fail } from '../errors.ts';
 import { requireVisitor } from '../identity.ts';
 import { applyPatch } from '../engine.ts';
-import { ApplyOpSchema } from '../../shared/schemas.ts';
-import { dayList, utcAt, weekdayOfDay } from '../../shared/engine/time.ts';
+import { ApplyOpSchema } from '../shared/schemas.ts';
+import { dayList, utcAt, weekdayOfDay } from '../shared/engine/time.ts';
 import type { Deps, RouteCtx } from '../types.ts';
-import type { ApplyOp, Block, Plan } from '../../shared/types.ts';
+import type { ApplyOp, Block, Plan } from '../shared/types.ts';
 
 const DAY_MS = 86400000;
 const RECURRING = new Set(['busy_window', 'fixed_block']);
@@ -25,6 +25,8 @@ export function horizonBounds(plan: { horizon_start: string; horizon_days: numbe
   const from = Date.parse(`${plan.horizon_start}T00:00:00Z`);
   return { from, to: from + plan.horizon_days * DAY_MS };
 }
+
+export const MATERIALIZED_NOTE = '共享日历：固定日程，与普通任务一样可拖拽/编辑/删除';
 
 /**
  * 把各计划里的忙时/固定日程实例化成访客级块（plan_id 为空），并删除已转换的约束。
@@ -71,7 +73,7 @@ export async function materializeSharedBusy(db: Db, visitor: string): Promise<vo
         priority: 'high',
         pinned: false,
         origin: 'manual',
-        notes: '共享日历：固定日程，与普通任务一样可拖拽/编辑/删除',
+        notes: MATERIALIZED_NOTE,
       });
     }
   }

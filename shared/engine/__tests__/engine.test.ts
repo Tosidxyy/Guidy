@@ -385,3 +385,32 @@ describe('任务备注', () => {
     expect(out.blocks.every((b) => b.notes === '卧推 3×8；肩推 3×10')).toBe(true);
   });
 });
+
+describe('硬互斥与每日任务的结构矛盾', () => {
+  it('daily 任务与 once 任务硬同日互斥 → 违例指向互斥约束并说明每日冲突', () => {
+    const mutex = cons({ type: 'mutex', subjects: { kind: 'task', values: ['trip', 'meal'] }, mode: 'no_same_day', strength: 'hard' });
+    const out = solve(input({
+      task_defs: [
+        task({ key: 'meal', title: '吃饭', category: 'life', frequency: { type: 'daily' } }),
+        task({ key: 'trip', title: '旅游', category: 'life', duration_min: 480, frequency: { type: 'once' } }),
+      ],
+      constraints: [active(), mutex],
+    }));
+    const v = out.violations.find((x) => x.task_key === 'meal');
+    expect(v).toBeTruthy();
+    expect(v!.constraint_id).toBe(mutex.id);
+    expect(v!.reason).toContain('互斥');
+    expect(v!.reason).toContain('每日');
+    expect(out.violations.filter((x) => x.task_key === 'meal')).toHaveLength(1);
+  });
+  it('软互斥不产生结构违例', () => {
+    const out = solve(input({
+      task_defs: [
+        task({ key: 'meal', title: '吃饭', category: 'life', frequency: { type: 'daily' } }),
+        task({ key: 'trip', title: '旅游', category: 'life', duration_min: 480, frequency: { type: 'once' } }),
+      ],
+      constraints: [active(), cons({ type: 'mutex', subjects: { kind: 'task', values: ['trip', 'meal'] }, mode: 'no_same_day', strength: 'soft' })],
+    }));
+    expect(out.violations).toHaveLength(0);
+  });
+});

@@ -25,7 +25,7 @@ export function PlansDrawer() {
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState('');
-  const busy = streaming || isPending;
+  const busy = isPending;
 
   const requestSwitch = (id: string) => {
     if (busy || id === currentId) return;
@@ -70,7 +70,7 @@ export function PlansDrawer() {
 
         <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
           <Button className="w-full" onClick={requestNew} disabled={busy}><Plus className="mr-1.5 h-4 w-4" /> 新建对话（新计划）</Button>
-          {streaming && <p className="text-[11px] text-site-ink-soft">对话进行中，请先中断再管理计划。</p>}
+          {streaming && <p className="text-[11px] text-site-ink-soft">当前对话仍在后台规划；切换或删除会断开本地流，切回可继续。</p>}
           {isLoading && <p className="text-xs text-site-ink-soft">加载中…</p>}
           {isError && (
             <div className="flex items-center justify-between rounded-lg border border-site-line px-3 py-2 text-xs text-site-ink-soft">

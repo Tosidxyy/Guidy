@@ -6,4 +6,5 @@ export { resultHash } from './hash.ts';
 export { applyPatch, type PatchResult } from './patch.ts';
 export { findConflicts, isMergedPair, mergeConflictOps, type ConflictPlan, type ConflictSide, type PlanConflict } from './conflicts.ts';
 export { weeklyAvailability, formatAvailability, type AvailabilitySource } from './availability.ts';
+export { artifactFeasible, trimArtifactToFit, type FitPlanMeta } from './fit.ts';
 export * from './time.ts';

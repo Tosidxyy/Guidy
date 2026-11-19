@@ -50,6 +50,8 @@ export function createChatController(deps: {
       const st = store.getState();
       const id = st.conversationId;
       if (!id) return;
+      // 尾随后台派发期间也视为进行中：禁用输入并显示思考态，直到 done/status 终态。
+      store.setState({ streaming: true, connection: 'connecting', error: null });
       stream.read((signal) => openChecked(fetchFn, EVENTS_URL(id, st.cursor), {
         signal, credentials: 'same-origin',
       }, store)).catch(() => {});
@@ -68,6 +70,10 @@ export function createChatController(deps: {
     newConversation() {
       stream.cancel();
       store.getState().reset();
+    },
+    detach() {
+      stream.cancel();
+      store.setState({ streaming: false, connection: 'idle', searching: false });
     },
   };
 }

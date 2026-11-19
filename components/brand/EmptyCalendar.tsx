@@ -15,8 +15,8 @@ const MASK: CSSProperties = {
 export function EmptyCalendar({ className }: { className?: string }) {
   return (
     <div className={cn('flex flex-col items-center gap-4', className)} aria-hidden="true">
-      <span className="block h-24 w-24 opacity-40" style={{ backgroundColor: 'var(--site-muted)', ...MASK }} />
-      <span className="h-px w-40 bg-site-line" />
+      <span className="block h-24 w-24 bg-[var(--site-muted)] opacity-40 dark:bg-site-ink dark:opacity-60" style={MASK} />
+      <span className="h-px w-40 bg-site-line dark:bg-site-ink/15" />
     </div>
   );
 }

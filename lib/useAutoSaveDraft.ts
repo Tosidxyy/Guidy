@@ -3,10 +3,14 @@ import { saveDraftAction } from '@/lib/planActions';
 import { usePlanStore } from '@/store/usePlanStore';
 import type { PlanState } from '@/shared/types';
 
-/** 只有「还没有云端 id、且有内容」的草稿才需要自动保存。 */
+/** 只有「还没有云端 id、且有内容」的草稿才需要自动保存。默认的 07:00–23:00 时段不算内容。 */
 export function shouldAutoSave(state: PlanState): boolean {
   if (state.plan.id) return false;
-  return state.task_defs.length + state.constraints.length + state.blocks.length > 0;
+  const hasCustomConstraint = state.constraints.some((c) => {
+    const p = c.payload;
+    return !(p.type === 'active_window' && p.start === '07:00' && p.end === '23:00' && !p.weekdays);
+  });
+  return state.task_defs.length + state.blocks.length > 0 || hasCustomConstraint;
 }
 
 export type AutoSaveStatus = 'idle' | 'saving' | 'saved' | 'failed';

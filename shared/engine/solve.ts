@@ -60,6 +60,24 @@ export function solve(input: SolveInput): SolveOutput {
       return { id: c.id, kind: p.subjects.kind, a: p.subjects.values[0], b: p.subjects.values[1], mode: p.mode, strength: p.strength };
     });
 
+  // 结构矛盾前置检测：硬性同日互斥 × 每日任务必然无解（对方至少占一天）。
+  // 提前给出指向互斥约束的精确违例，避免落成「可用时段不足」这类误导文案。
+  const taskByKey = new Map(input.task_defs.map((t) => [t.key, t]));
+  const structuralBlocked = new Set<string>();
+  for (const rule of mutexRules) {
+    if (rule.strength !== 'hard' || rule.mode !== 'no_same_day' || rule.kind !== 'task') continue;
+    const dailyKey = [rule.a, rule.b].find((k) => taskByKey.get(k)?.frequency.type === 'daily');
+    if (!dailyKey) continue;
+    const otherKey = dailyKey === rule.a ? rule.b : rule.a;
+    structuralBlocked.add(dailyKey);
+    violations.push({
+      task_key: dailyKey,
+      constraint_id: rule.id,
+      reason: `「${taskByKey.get(dailyKey)!.title}」是每日任务，但与「${taskByKey.get(otherKey)?.title ?? otherKey}」设置了硬性同日互斥：对方至少占用一天，当天放不下每日任务`,
+      suggestion: '将该互斥改为软性，或让每日必需任务（如吃饭）豁免于「清空某天」类约束',
+    });
+  }
+
   const ctxByDay = new Map<string, DayContext>();
   for (const day of days) {
     const weekday = weekdayOfDay(day, tz);
@@ -324,7 +342,7 @@ export function solve(input: SolveInput): SolveOutput {
       while (placedCount < target && placeOne()) placedCount += 1;
     }
 
-    if (placedCount < target) {
+    if (placedCount < target && !structuralBlocked.has(task.key)) {
       const missing = target - placedCount;
       const capCons2 = capCons.find((c) => (c.payload as Extract<Constraint['payload'], { type: 'daily_cap' }>).category === task.category);
       violations.push({

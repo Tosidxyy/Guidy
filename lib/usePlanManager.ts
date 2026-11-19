@@ -31,7 +31,7 @@ export function usePlanManager() {
     setChatState: (patch) => useChatStore.setState(patch),
     newConversation: () => chatController.newConversation(),
     resume: () => chatController.resume(),
-    isStreaming: () => useChatStore.getState().streaming,
+    detachStream: () => chatController.detach(),
     invalidatePlans: () => { qc.invalidateQueries({ queryKey: ['plans'] }); },
     listPlans: async () => (await api.plans()).items,
   });
@@ -56,9 +56,12 @@ export function usePlanManager() {
     }),
     newPlan: () => run(() => manager.newPlan()),
     deletePlan: (id: string) => run(async () => {
+      // 删除正在规划的当前对话：先通知服务端中断，避免流继续写已删除的对话。
+      if (useChatStore.getState().streaming && usePlanStore.getState().state.plan.id === id) chatController.interrupt();
       await manager.deletePlan(id);
-      // 删除后服务端已解绑该计划的对话，列表缓存须同步失效。
+      // 删除后服务端已解绑该计划的对话、并可能清理共享日历块，列表缓存须同步失效。
       qc.invalidateQueries({ queryKey: ['conversations'] });
+      qc.invalidateQueries({ queryKey: ['calendar'] });
     }),
     isPending: pending,
   };
