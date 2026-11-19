@@ -104,6 +104,35 @@ npm run build           # tsc + vite + function package 通过
 4. 云端 E2E（含真实 LLM、SSE、进度/依赖/幂等/隔离）待发布后执行；本地已全绿。
 5. `commit_claims`/`shared_deletions` 无自动清理任务（运营期保留策略待定）。
 
-## 10. 最终状态
+## 10. 第二轮尝试：按用户指示改发新站点（2026-11-19 16:28 起）
 
-**BLOCKED** —— 本地验收与备份完成、草稿就绪、线上旧版本健康；因平台拒绝数据库迁移写操作，按“迁移不成功不得发布不兼容 Functions”的规则停止发布。未修改任何生产数据，未改变访问范围，未创建替代站点。
+用户指示“直接发布到新站点”。已执行：
+
+| 项 | 值 |
+|---|---|
+| 新 project_id | `01a1f4a2-f7ad-7276-a570-e37fd12c25a9` |
+| 新 site_id | `01a1f4a2-f7b0-7779-9562-7602d7dfac2c` |
+| 新 URL | https://guidy-app-oxg3oo3dpdz.qoder.zone （private） |
+| bootstrap 草稿 action | `f0a1b2c3-d4e5-4f6a-8b7c-9d0e1f2a3b4c`（仅静态，未发布） |
+| ensure_backend | op `01a1f4a3-b6b7-7d43-b1a0-4f6110bfb84f` succeeded：database / functions / qoder / storage，function_backend；`issue_qoder_pat` + `sync_secret` succeeded（QODER_PAT 平台托管） |
+| 新库 Schema | 空（0 表），schemaRef 新鲜读取多次 |
+| qoder 能力确认 | 用户已明确批准（AskUserQuestion） |
+
+迁移尝试（新站点）：
+1. 全量 0001–0012 单计划 → `sites_migration_rejected`。
+2. 拆分“仅建表+索引”计划 → `sites_migration_rejected`。
+3. 单表 `CREATE TABLE app.plans` → `sites_invalid_request`。
+4. `get_database_schema(refresh:true)` → `sites_invalid_request`；等待 90s 后重试单表 create → `sites_invalid_request`。
+
+对照：新站点 `prepare_site`、`ensure_backend` 均成功；`get_site`/`get_database_schema`/`query_database_rows` 读正常。与旧站点表现一致：**数据库迁移写路径（create/refresh/apply）在本会话被平台拒绝**，非 SQL 语法问题（单表 CREATE 亦被拒）、非授权问题（同会话其它写成功）。
+
+**结论：平台侧数据库写故障，两个站点均无法完成迁移；按规则不发布依赖新 Schema 的 Functions。** 新站点保持空库 + 未发布状态；旧站点线上旧版本继续服务。
+
+## 11. 最终状态
+
+**BLOCKED** —— 本地验收（537 用例/Deno/构建）全绿；旧站点数据已备份；旧站点新草稿 `e8f9a0b1-…` 与新站点 bootstrap `f0a1b2c3-…` 均已就绪但**未发布**；两站点数据库迁移写被平台拒绝（证据见第 4、10 节）。未修改任何生产数据、未改变访问范围、未删除任何站点。
+
+恢复发布步骤（平台写路径恢复后）：
+1. 旧站点：refresh schema → apply 已 validated 计划 `01a1f49b-2360-7e09-9948-52c4a620170b`（或新建）→ 读回校验 → publish 草稿 `e8f9a0b1-c2d3-4e4f-8a5b-6c7d8e9f0a1b`。
+2. 或新站点：先建表计划、再加列计划（分两步，避免混合计划被拒）→ publish 完整草稿（需以新 projectId 重新 prepare 含 Function 的 action）。
+3. 发布后执行线上 E2E 测试 1–10 与日志检查，更新本报告为 DEPLOYED。
