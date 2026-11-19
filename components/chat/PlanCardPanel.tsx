@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
@@ -9,7 +9,7 @@ import { useAutoSaveDraft } from '@/lib/useAutoSaveDraft';
 import { useCommitPlan } from '@/lib/useCommitPlan';
 import { appliedPatches } from '@/lib/appliedPatches';
 import { patchOpText } from '@/lib/describe';
-import { groupSchedules } from '@/lib/confirmDraft';
+import { groupSchedules, isSchedule } from '@/lib/confirmDraft';
 import { applyPatch } from '@/shared/engine';
 import { cn } from '@/lib/utils';
 import { usePlanStore } from '@/store/usePlanStore';
@@ -43,23 +43,25 @@ export function PlanCardPanel() {
   const unsaved = state.plan.id === null;
   const needsSchedule = canGenerateSchedule(state);
 
-  // 入口行与展开内容显示同一份数据：有提案/草稿时用草稿，否则用当前计划。
+  // 入口计数与展开内容共用同一数据源：编辑草稿 > AI 提案 > 当前计划，杜绝两者不一致。
   const proposalDraft = proposal ? { ...proposal, horizon_start: proposal.horizon_start ?? state.plan.horizon_start } : null;
-  const viewed = draft ?? proposalDraft;
-  const taskCount = viewed ? viewed.task_defs.length : state.task_defs.length;
-  const constraintList = viewed ? viewed.constraints : state.constraints.map((c) => c.payload);
-  const scheduleCount = groupSchedules({ task_defs: viewed?.task_defs ?? state.task_defs, horizon_days: viewed?.horizon_days ?? state.plan.horizon_days, constraints: constraintList } as ConstraintSetArtifact).length;
-  const ruleCount = constraintList.length - scheduleCount;
-  const planTitle = viewed ? viewed.plan_title : state.plan.title;
+  const viewed = useMemo(
+    () => draft ?? proposalDraft ?? artifactFromPlan(state),
+    [draft, proposalDraft, state],
+  );
+  const taskCount = viewed.task_defs.length;
+  const constraintList = viewed.constraints;
+  const scheduleCount = groupSchedules(viewed).length;
+  const ruleCount = constraintList.filter((c) => !isSchedule(c)).length;
+  const planTitle = viewed.plan_title;
 
-  // AI 给出完整方案：更新草稿与计数，但不自动展开；入口闪烁提示用户手动呼出确认。
+  // AI 给出完整方案：计数更新但不自动展开；入口闪烁提示用户手动呼出确认。
   useEffect(() => {
     if (!proposal) return;
-    setDraft({ ...proposal, horizon_start: proposal.horizon_start ?? usePlanStore.getState().state.plan.horizon_start });
     setAttention(true);
   }, [proposal]);
 
-  // 只改任务/约束的 AI patch 也交给方案卡：更新草稿与计数，闪烁提示手动核对。
+  // 只改任务/约束的 AI patch：落到编辑草稿，计数与内容同步更新，闪烁提示手动核对。
   useEffect(() => {
     if (!patch) return;
     const current = usePlanStore.getState().state;
@@ -76,15 +78,11 @@ export function PlanCardPanel() {
     if (!foreignPatch) return;
     if (patchAlreadyApplied) { useChatStore.setState({ patch: null }); return; }
     setAttention(true);
-    if (!usePlanStore.getState().state.plan.id) return;
-    setDraft((prev) => prev ?? artifactFromPlan(usePlanStore.getState().state));
   }, [foreignPatch, patchAlreadyApplied]);
 
-  // 有待确认的 AI 方案时，重新打开也回到那张提案，而不是当前计划。
+  // 打开时回到 AI 提案（若有），否则当前计划；清除编辑草稿以保证看到最新提案。
   const openPlan = () => {
-    const current = usePlanStore.getState().state;
-    const p = useChatStore.getState().artifact;
-    setDraft(p ? { ...p, horizon_start: p.horizon_start ?? current.plan.horizon_start } : artifactFromPlan(current));
+    setDraft(null);
     setAttention(false);
     setOpen(true);
   };
@@ -100,7 +98,7 @@ export function PlanCardPanel() {
     if (syncedVersion.current === state.plan.version) return;
     syncedVersion.current = state.plan.version;
     if (unsaved) return;
-    setDraft(artifactFromPlan(usePlanStore.getState().state));
+    setDraft(null);
   }, [state.plan.version, open, proposal, unsaved]);
 
   const toggle = () => {
@@ -119,21 +117,8 @@ export function PlanCardPanel() {
 
   // 方案卡保存后再重排：先落任务/约束（草稿首次保存或已保存计划的差异），再生成时间块。
   const saveAndGenerate = async () => {
-    if (!draft) return;
     setSaving(true);
-    const saved = await savePlanCardAction(draft);
-    if (!saved.ok) { setSaving(false); toast.error(saved.reason ?? '保存失败'); return; }
-    const r = await generateScheduleAction();
-    setSaving(false);
-    if (!r.ok) { toast.error(r.reason ?? '生成排程失败'); return; }
-    toast.success('已生成排程');
-    close();
-  };
-
-  const saveSaved = async () => {
-    if (!draft) return;
-    setSaving(true);
-    const saved = await savePlanCardAction(draft);
+    const saved = await savePlanCardAction(viewed);
     if (!saved.ok) { setSaving(false); toast.error(saved.reason ?? '保存失败'); return; }
     const r = await generateScheduleAction();
     setSaving(false);
@@ -177,14 +162,14 @@ export function PlanCardPanel() {
         </Button>
       </div>
 
-      {draft && (
+      {(
         <div className={cn('grid transition-[grid-template-rows,margin-top] duration-300 ease-out', open ? 'mt-1.5 grid-rows-[1fr]' : 'mt-0 grid-rows-[0fr]')}>
           <div className="overflow-hidden">
             <div className="rounded-(--site-radius) border border-site-line bg-site-surface">
           <div className="h-px bg-site-line" />
           <div className="flex items-start justify-between gap-3 px-4 pt-3">
             <div>
-              <h3 className="font-display text-sm font-semibold text-site-ink">{draft.plan_title || '方案卡'}</h3>
+              <h3 className="font-display text-sm font-semibold text-site-ink">{viewed.plan_title || '方案卡'}</h3>
               <p className="mt-0.5 text-xs text-site-ink-soft">{hint}</p>
             </div>
           </div>
@@ -210,7 +195,7 @@ export function PlanCardPanel() {
 
           <div className="max-h-[40vh] overflow-y-auto px-4 pb-4">
             <ConstraintSetBody
-              draft={draft}
+              draft={viewed}
               onChange={change}
               planStart={state.plan.horizon_start}
               footer={(
@@ -218,7 +203,7 @@ export function PlanCardPanel() {
                   {proposal ? (
                     <>
                       <Button variant="outline" size="sm" onClick={() => { useChatStore.setState({ artifact: null, clarifications: [] }); close(); }}>取消</Button>
-                      <Button size="sm" disabled={isPending || draft.task_defs.length === 0} onClick={() => commit(draft)}>
+                      <Button size="sm" disabled={isPending || viewed.task_defs.length === 0} onClick={() => commit(viewed)}>
                         {isPending ? '生成中…' : '确认并生成'}
                       </Button>
                     </>
@@ -230,7 +215,7 @@ export function PlanCardPanel() {
                           {saving ? '生成中…' : '保存并生成排程'}
                         </Button>
                       ) : !unsaved ? (
-                        <Button size="sm" disabled={saving} onClick={() => { void saveSaved(); }}>
+                        <Button size="sm" disabled={saving} onClick={() => { void saveAndGenerate(); }}>
                           {saving ? '生成中…' : '保存并生成'}
                         </Button>
                       ) : null}
