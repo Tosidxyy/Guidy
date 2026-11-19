@@ -9,7 +9,6 @@ import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { TopBar } from '@/components/workbench/TopBar';
 import { ChatPanel } from '@/components/chat/ChatPanel';
-import { ConstraintDrawer } from '@/components/workbench/ConstraintDrawer';
 import { BlockDrawer } from '@/components/workbench/BlockDrawer';
 import { TasksDrawer } from '@/components/workbench/TasksDrawer';
 import { SettingsDrawer } from '@/components/workbench/SettingsDrawer';
@@ -87,7 +86,6 @@ export default function App() {
 
         <PrivacyFooter />
 
-        <ConstraintDrawer />
         <BlockDrawer />
         <TasksDrawer />
         <SettingsDrawer />

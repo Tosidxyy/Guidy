@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { ChevronDown, ChevronUp, Save, ShieldCheck, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 import { artifactFromPlan, canGenerateSchedule, patchFitsPlanCard, planFromArtifact } from '@/lib/planCard';
 import { generateScheduleAction, savePlanCardAction } from '@/lib/planActions';
@@ -11,6 +11,7 @@ import { appliedPatches } from '@/lib/appliedPatches';
 import { patchOpText } from '@/lib/describe';
 import { groupSchedules } from '@/lib/confirmDraft';
 import { applyPatch } from '@/shared/engine';
+import { cn } from '@/lib/utils';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useChatStore } from '@/store/useChatStore';
 import { Badge } from '@/components/ui/badge';
@@ -90,7 +91,6 @@ export function PlanCardPanel() {
 
   const close = () => {
     setOpen(false);
-    setDraft(null);
   };
 
   // 外部改动（AI patch / 其他入口保存）后，已保存计划的卡片要跟着变，避免用旧快照覆盖云端。
@@ -133,10 +133,12 @@ export function PlanCardPanel() {
   const saveSaved = async () => {
     if (!draft) return;
     setSaving(true);
-    const r = await savePlanCardAction(draft);
+    const saved = await savePlanCardAction(draft);
+    if (!saved.ok) { setSaving(false); toast.error(saved.reason ?? '保存失败'); return; }
+    const r = await generateScheduleAction();
     setSaving(false);
-    if (!r.ok) { toast.error(r.reason ?? '保存失败'); return; }
-    toast.success('修改已保存');
+    if (!r.ok) { toast.error(r.reason ?? '生成排程失败'); return; }
+    toast.success('已保存并生成排程');
     close();
   };
 
@@ -168,21 +170,23 @@ export function PlanCardPanel() {
           <span className="min-w-0 truncate text-site-ink">{planTitle}</span>
           <span className="tabular shrink-0">任务 {taskCount + scheduleCount} · 约束 {ruleCount}</span>
           <Badge variant="secondary" className="ml-0.5 shrink-0 px-1.5 py-0 text-[10px]">{statusText}</Badge>
-          {open ? <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0" /> : <ChevronUp className="ml-auto h-3.5 w-3.5 shrink-0" />}
+          <span className="ml-auto flex shrink-0 items-center gap-1.5">
+            {attention && !open && <span className="text-[10px] font-medium text-site-flow">请点击确认</span>}
+            {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+          </span>
         </Button>
       </div>
 
-      {open && draft && (
-        <div className="mt-1.5 overflow-hidden rounded-(--site-radius) border border-site-line bg-site-surface">
+      {draft && (
+        <div className={cn('grid transition-[grid-template-rows,margin-top] duration-300 ease-out', open ? 'mt-1.5 grid-rows-[1fr]' : 'mt-0 grid-rows-[0fr]')}>
+          <div className="overflow-hidden">
+            <div className="rounded-(--site-radius) border border-site-line bg-site-surface">
           <div className="h-px bg-site-line" />
           <div className="flex items-start justify-between gap-3 px-4 pt-3">
             <div>
               <h3 className="font-display text-sm font-semibold text-site-ink">{draft.plan_title || '方案卡'}</h3>
               <p className="mt-0.5 text-xs text-site-ink-soft">{hint}</p>
             </div>
-            <button type="button" onClick={close} aria-label="收起方案卡" className="rounded p-1 text-site-ink-soft hover:bg-site-surface-2">
-              <X className="h-4 w-4" />
-            </button>
           </div>
 
           {foreignPatch && !patchAlreadyApplied && (
@@ -227,7 +231,7 @@ export function PlanCardPanel() {
                         </Button>
                       ) : !unsaved ? (
                         <Button size="sm" disabled={saving} onClick={() => { void saveSaved(); }}>
-                          <Save className="mr-1 h-4 w-4" /> {saving ? '保存中…' : '保存修改'}
+                          {saving ? '生成中…' : '保存并生成'}
                         </Button>
                       ) : null}
                     </>
@@ -235,6 +239,8 @@ export function PlanCardPanel() {
                 </ConstraintSetFooter>
               )}
             />
+          </div>
+          </div>
           </div>
         </div>
       )}

@@ -7,6 +7,7 @@ import { useChatStore, cursorAfterMessages, shouldAutoRestore } from '@/store/us
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { conversationForPlan } from '@/lib/planConversation';
+import { splitArtifactText } from '@/lib/artifactText';
 import { restoreChat } from '@/lib/restoreChat';
 import { Button } from '@/components/ui/button';
 import { MessageBubble } from './MessageBubble';
@@ -178,6 +179,9 @@ export function ChatPanel() {
         {connection === 'connecting' && <p className="px-1 text-[11px] text-site-ink-soft">正在连接…</p>}
         {streaming && lastMessage?.role === 'user' && (
           <p className="animate-pulse px-1 text-[11px] text-site-ink-soft">Guidy 正在思考…</p>
+        )}
+        {streaming && lastMessage?.role !== 'user' && splitArtifactText(lastMessage?.content ?? '').artifactJson !== null && (
+          <p className="animate-pulse px-1 text-[11px] text-site-ink-soft">正在生成方案…</p>
         )}
         {searching && streaming && <p className="px-1 text-[11px] text-site-ink-soft">正在联网检索…</p>}
       </div>

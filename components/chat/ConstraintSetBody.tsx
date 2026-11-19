@@ -2,7 +2,7 @@ import { Check, Plus, Trash2 } from 'lucide-react';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 import { constraintText } from '@/lib/describe';
 import {
-  removeConstraint, addDefaultConstraint, toggleMutexStrength,
+  removeConstraint, toggleMutexStrength,
   addTask, removeTask, updateTaskDuration, updateTaskNotes, updateTaskTitle, updateWindow,
   groupSchedules, isSchedule, removeScheduleGroup, scheduleDayText, updateScheduleGroup, updateScheduleLabel,
 } from '@/lib/confirmDraft';
@@ -108,9 +108,6 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
       <section className="mt-3">
         <div className="mb-1.5 flex items-center justify-between">
           <h4 className="text-xs font-semibold text-site-ink">约束（{rules.length}）</h4>
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => set(addDefaultConstraint(draft))}>
-            <Plus className="mr-0.5 h-3 w-3" /> 补充
-          </Button>
         </div>
         <ul className="guidy-stagger space-y-1.5">
           {rules.map(({ payload: c, i }) => (
@@ -141,7 +138,7 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
             </li>
           ))}
           {rules.length === 0 && (
-            <li className="rounded-lg border border-dashed border-site-line p-2.5 text-center text-xs text-site-ink-soft">无约束规则，点「补充」添加</li>
+            <li className="rounded-lg border border-dashed border-site-line p-2.5 text-center text-xs text-site-ink-soft">约束由 Agent 根据对话自动设置</li>
           )}
         </ul>
       </section>

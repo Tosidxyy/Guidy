@@ -1,13 +1,12 @@
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
-import { Braces } from 'lucide-react';
+import { ClipboardCheck } from 'lucide-react';
 import type { ChatMessage } from '@/store/useChatStore';
 import { sanitizeSchema } from '@/lib/markdown';
 import { splitArtifactText } from '@/lib/artifactText';
 import { cn } from '@/lib/utils';
 import { StreamingCursor } from './StreamingCursor';
-import { ArtifactGenerating } from './ArtifactGenerating';
 
 export function MessageBubble({ message, streaming, clarificationPending }: { message: ChatMessage; streaming?: boolean; clarificationPending?: boolean }) {
   if (message.kind === 'constraint_set' || message.kind === 'patch' || message.kind === 'question_card') {
@@ -20,7 +19,7 @@ export function MessageBubble({ message, streaming, clarificationPending }: { me
           : '已生成约束方案，请在上方方案卡核对';
     return (
       <div className="flex items-center gap-1.5 rounded-lg border border-site-line bg-site-surface-2 px-3 py-2 text-xs text-site-ink">
-        <Braces className="h-3.5 w-3.5 text-site-ink-soft" />
+        <ClipboardCheck className="h-3.5 w-3.5 text-site-ink-soft" />
         {artifactLabel}
       </div>
     );
@@ -45,7 +44,7 @@ export function MessageBubble({ message, streaming, clarificationPending }: { me
             )}
             {streaming && (
               <div className={cn(prose && 'mt-2')}>
-                <ArtifactGenerating />
+                <StreamingCursor />
               </div>
             )}
           </div>

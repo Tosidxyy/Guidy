@@ -20,6 +20,7 @@
 
 /* ── Guidy 设计令牌：X 单色 ─────────────────────────────── */
 :root {
+  color-scheme: light;
   --site-bg: #ffffff;
   --site-fg: #0f1419;
   --site-accent: #0f1419;
@@ -63,6 +64,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --site-bg: #000000;
   --site-fg: #e7e9ea;
   --site-accent: #e7e9ea;

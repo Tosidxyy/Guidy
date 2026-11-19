@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  removeConstraint, addDefaultConstraint, toggleMutexStrength,
+  removeConstraint, toggleMutexStrength,
   addTask, removeTask, groupSchedules, scheduleDayText, updateScheduleGroup, removeScheduleGroup,
   updateTaskDuration, updateTaskTitle, updateWindow,
 } from '@/lib/confirmDraft';
@@ -22,11 +22,6 @@ describe('confirmDraft', () => {
     expect(next.constraints.length).toBe(1);
     expect(next.constraints[0].type).toBe('mutex');
     expect(base.constraints.length).toBe(2);
-  });
-  it('addDefaultConstraint 追加 active_window', () => {
-    const next = addDefaultConstraint(base);
-    expect(next.constraints.length).toBe(3);
-    expect(next.constraints[2]).toEqual({ type: 'active_window', start: '08:00', end: '22:00' });
   });
   it('toggleMutexStrength soft→hard→soft', () => {
     const hard = toggleMutexStrength(base, 1);

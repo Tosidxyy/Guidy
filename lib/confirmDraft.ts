@@ -6,11 +6,6 @@ export function removeConstraint(draft: ConstraintSetArtifact, index: number): C
   return { ...draft, constraints: draft.constraints.filter((_, i) => i !== index) };
 }
 
-export function addDefaultConstraint(draft: ConstraintSetArtifact): ConstraintSetArtifact {
-  const next: ConstraintPayload = { type: 'active_window', start: '08:00', end: '22:00' };
-  return { ...draft, constraints: [...draft.constraints, next] };
-}
-
 export function toggleMutexStrength(draft: ConstraintSetArtifact, index: number): ConstraintSetArtifact {
   const c = draft.constraints[index];
   if (!c || c.type !== 'mutex') return draft;
