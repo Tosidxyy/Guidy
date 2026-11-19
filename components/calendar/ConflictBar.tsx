@@ -54,7 +54,7 @@ export function ConflictBar({ conflicts, activePlanId, timezone, onMerge, onIgno
                   {c.merged_title}
                   <span className="ml-1 text-site-ink-soft">（{other}）</span>
                 </span>
-                <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[11px] text-site-brand" onClick={() => onMerge(c)}>合并</Button>
+                <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[11px] text-site-ink" onClick={() => onMerge(c)}>合并</Button>
                 <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[11px]" onClick={() => onIgnore(c)}>忽略</Button>
               </li>
             );

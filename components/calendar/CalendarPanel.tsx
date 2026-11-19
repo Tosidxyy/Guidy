@@ -405,7 +405,7 @@ export function CalendarPanel() {
       for (const item of drag.els) item.el.style.transform = `translate(${tx}px, ${ty}px)`;
     }
 
-    const outline = drag.ok ? (drag.soft ? '2px solid var(--site-warning)' : '2px solid var(--site-brand)') : '2px solid var(--site-danger)';
+    const outline = drag.ok ? (drag.soft ? '2px solid var(--site-warning)' : '2px solid var(--site-accent)') : '2px solid var(--site-danger)';
     for (const item of drag.els) item.el.style.outline = outline;
 
     cancelAnimationFrame(rafRef.current);
@@ -710,14 +710,14 @@ export function CalendarPanel() {
                 onClick={() => { setDayAnchor(d); useUiStore.getState().setView('day'); }}
                 className={cn(
                   'flex flex-col items-center gap-0.5 border-l border-site-line-soft py-2 transition-colors hover:bg-site-surface-2',
-                  isToday && 'bg-[var(--site-dawn-soft)]',
+                  isToday && 'bg-site-surface-2/60',
                 )}
                 title="切换到日视图"
               >
-                <span className={cn('text-[11px]', isToday ? 'font-semibold text-[var(--site-dawn-line)]' : 'text-site-ink-soft')}>
+                <span className={cn('text-[11px]', isToday ? 'font-semibold text-site-ink' : 'text-site-ink-soft')}>
                   {WEEKDAY_LABEL[weekdayOfDay(d, tz)]}
                 </span>
-                <span className={cn('font-display tabular text-sm font-semibold', isToday ? 'dawn-text' : 'text-site-ink')}>
+                <span className={cn('font-display tabular text-sm font-semibold', isToday ? 'text-site-ink' : 'text-site-ink')}>
                   {format(parseISO(d), 'M/d')}
                 </span>
                 {holidayOn(d) && <span className="rounded-full bg-site-danger/10 px-1.5 py-px text-[9px] font-medium text-site-danger">{holidayOn(d)}</span>}
@@ -747,7 +747,7 @@ export function CalendarPanel() {
             return (
               <div
                 key={day}
-                className={cn('relative border-l border-site-line-soft', isToday && 'bg-[var(--site-dawn-soft)]')}
+                className={cn('relative border-l border-site-line-soft', isToday && 'bg-site-surface-2/60')}
                 style={{
                   backgroundImage: `repeating-linear-gradient(to bottom, var(--site-line-soft) 0, var(--site-line-soft) 1px, transparent 1px, transparent ${HOUR_PX}px)`,
                 }}
@@ -782,9 +782,9 @@ export function CalendarPanel() {
 
                 {isToday && nowMin >= visibleStart && nowMin <= visibleEnd && (
                   <div className="pointer-events-none absolute inset-x-0 z-20" style={{ top: (nowMin - visibleStart) * PX_PER_MIN }}>
-                    <div className="relative h-px bg-[var(--site-dawn-line)]">
-                      <div className="absolute -left-1 -top-[3px] h-[7px] w-[7px] rounded-full bg-[var(--site-dawn-line)]" />
-                      <span className="tabular absolute right-1 -top-4 rounded bg-[var(--site-dawn-line)] px-1 text-[9px] font-semibold text-white">{minToHHmm(nowMin)}</span>
+                    <div className="relative h-px bg-site-ink">
+                      <div className="absolute -left-1 -top-[3px] h-[7px] w-[7px] rounded-full bg-site-ink" />
+                      <span className="tabular absolute right-1 -top-4 rounded bg-site-ink px-1 text-[9px] font-semibold text-site-bg">{minToHHmm(nowMin)}</span>
                     </div>
                   </div>
                 )}
@@ -793,7 +793,7 @@ export function CalendarPanel() {
                   <div
                     className={cn(
                       'pointer-events-none absolute z-50 rounded-md px-2 py-1 text-[11px] font-semibold text-white shadow-lg',
-                      chip.ok ? (chip.soft ? 'bg-site-warning' : 'bg-site-brand') : 'bg-site-danger',
+                      chip.ok ? (chip.soft ? 'bg-site-warning text-site-bg' : 'bg-site-ink text-site-bg') : 'bg-site-danger text-white',
                     )}
                     style={{ top: (chip.startMin - visibleStart) * PX_PER_MIN - 30, left: 4 }}
                   >
@@ -809,7 +809,7 @@ export function CalendarPanel() {
           {marquee && (
             <div
               data-testid="marquee"
-              className="pointer-events-none absolute z-50 rounded border border-site-brand/70 bg-site-brand/10"
+              className="pointer-events-none absolute z-50 rounded border border-site-ink/70 bg-site-ink/10"
               style={{ left: marquee.left, top: marquee.top, width: marquee.width, height: marquee.height }}
             />
           )}
@@ -835,7 +835,7 @@ export function CalendarPanel() {
         <span className="tabular">{combinedBlocks.length} 个任务块{foreign.length > 0 ? `（含其他计划 ${foreign.length}）` : ''}</span>
         <span className="tabular">共 {(totalMin / 60).toFixed(1)} 小时</span>
         {selectedIds.length > 1 ? (
-          <span className="hidden text-site-brand sm:inline">已选 {selectedIds.length} 个 · 拖动整体移动 · Ctrl/⌘+点击增减 · Esc 取消</span>
+          <span className="hidden text-site-ink sm:inline">已选 {selectedIds.length} 个 · 拖动整体移动 · Ctrl/⌘+点击增减 · Esc 取消</span>
         ) : (
           <span className="hidden sm:inline">双击空白添加 · 拖拽框选 · Ctrl/⌘+点击多选 · 底边缩放 · Del 删除</span>
         )}

@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { Lock, Pin } from 'lucide-react';
 import type { Block } from '@/shared/types';
 import { CATEGORY_MAP } from '@/shared/constants';
+import { categoryColor } from '@/lib/describe';
 import { minToHHmm } from '@/shared/engine';
 import { cn } from '@/lib/utils';
 
@@ -39,12 +40,12 @@ export const BlockCard = memo(function BlockCard({
       tabIndex={interactive ? 0 : undefined}
       aria-label={`${block.title} ${minToHHmm(startMin)} 到 ${minToHHmm(endMin)}${planLabel ? `，${planLabel}` : ''}`}
       className={cn(
-        'group absolute select-none overflow-hidden rounded-md border text-left',
+        'group absolute select-none overflow-hidden rounded-md border text-left hover:[--cat-fill:18%]',
         'transition-shadow duration-150',
         interactive && 'cursor-grab active:cursor-grabbing touch-none',
         visual === 'foreign' && 'border-dashed border-site-line opacity-45 hover:opacity-80',
         visual === 'normal' && 'border-transparent shadow-sm hover:shadow-md',
-        visual === 'selected' && 'border-site-brand shadow-md ring-2 ring-site-brand/30',
+        visual === 'selected' && 'border-site-ink shadow-md ring-2 ring-site-ink/30',
         visual === 'invalid' && 'border-site-danger ring-2 ring-site-danger/40 animate-guidy-shake',
         visual === 'soft' && 'border-site-warning ring-2 ring-site-warning/30',
         visual === 'dimmed' && 'opacity-25 pointer-events-none',
@@ -54,12 +55,12 @@ export const BlockCard = memo(function BlockCard({
       )}
       style={{
         top, height: Math.max(height, 18), left: `${leftPct}%`, width: `calc(${widthPct}% - 4px)`,
-        ['--cat' as string]: cat.color,
+        ['--cat' as string]: categoryColor(block.category),
         background: ghost
-          ? `color-mix(in srgb, ${cat.color} ${visual === 'ghost-added' ? 16 : 8}%, var(--site-surface))`
-          : `color-mix(in srgb, ${cat.color} 13%, var(--site-surface))`,
+          ? `color-mix(in srgb, var(--cat) ${visual === 'ghost-added' ? 16 : 8}%, var(--site-surface))`
+          : `color-mix(in srgb, var(--cat) var(--cat-fill, 14%), var(--site-surface))`,
         borderLeftWidth: 3,
-        borderLeftColor: cat.color,
+        borderLeftColor: 'var(--cat)',
         zIndex: visual === 'selected' ? 20 : visual === 'foreign' ? 5 : 10,
       }}
       onPointerDown={interactive ? (e) => onPointerDown?.(e, block) : undefined}
