@@ -334,48 +334,57 @@
 .intro-hide-logo [data-intro-target] {
   opacity: 0;
 }
-.guidy-intro-reveal {
-  animation: guidy-intro-reveal 1100ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-@keyframes guidy-intro-reveal {
-  from { mask-position: 100% 100%; -webkit-mask-position: 100% 100%; }
-  to { mask-position: 0% 0%; -webkit-mask-position: 0% 0%; }
-}
 
-/* ── Agent 对话边框蓝色流光（streaming 加速） ─────────────────── */
+/* ── Agent 对话边框蓝色流光（仅 transform 合成器动画，streaming 加速） ── */
 :root {
   --site-flow: #1d9bf0;
 }
 .dark {
   --site-flow: #4da3ff;
 }
+.guidy-flow-border {
+  border-color: color-mix(in srgb, var(--site-flow) 28%, var(--site-line));
+}
 .guidy-flow-ring {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
   pointer-events: none;
   z-index: 40;
+  overflow: hidden;
+  border-radius: inherit;
 }
-.guidy-flow-ring .guidy-flow-base {
-  fill: none;
-  stroke: color-mix(in srgb, var(--site-flow) 22%, transparent);
-  stroke-width: 2;
+.guidy-flow-ring span {
+  position: absolute;
+  opacity: 0.9;
 }
-.guidy-flow-ring .guidy-flow-arc {
-  fill: none;
-  stroke: url(#guidy-flow-grad);
-  stroke-width: 2.5;
-  stroke-linecap: round;
-  stroke-dasharray: 16 84;
-  animation: guidy-flow-dash var(--flow-duration, 3.2s) linear infinite;
+.guidy-flow-ring .flow-top {
+  top: 0;
+  left: 0;
+  height: 2px;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, var(--site-flow) 45%, color-mix(in srgb, var(--site-flow) 55%, #ffffff) 60%, transparent);
 }
-.guidy-flow-border[data-streaming='true'] {
-  --flow-duration: 0.9s;
+.guidy-flow-ring .flow-right {
+  top: 0;
+  right: 0;
+  width: 2px;
+  height: 45%;
+  background: linear-gradient(180deg, transparent, var(--site-flow) 45%, color-mix(in srgb, var(--site-flow) 55%, #ffffff) 60%, transparent);
 }
-.guidy-flow-border[data-streaming='true'] .guidy-flow-arc {
+.guidy-flow-ring .flow-bottom {
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--site-flow) 55%, #ffffff) 40%, var(--site-flow) 55%, transparent);
+}
+.guidy-flow-ring .flow-left {
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 45%;
+  background: linear-gradient(0deg, transparent, color-mix(in srgb, var(--site-flow) 55%, #ffffff) 40%, var(--site-flow) 55%, transparent);
+}
+.guidy-flow-border[data-streaming='true'] .guidy-flow-ring span {
   filter: drop-shadow(0 0 6px color-mix(in srgb, var(--site-flow) 55%, transparent));
-}
-@keyframes guidy-flow-dash {
-  to { stroke-dashoffset: -100; }
 }

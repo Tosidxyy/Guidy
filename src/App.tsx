@@ -54,7 +54,7 @@ export default function App() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className={cn('flex h-dvh flex-col bg-site-bg text-site-ink transition-[filter] duration-500', intro && introBlur && 'intro-blur', intro && 'intro-hide-logo')}>
+      <div className={cn('flex h-dvh flex-col bg-site-bg text-site-ink transition-[filter] duration-300', intro && introBlur && 'intro-blur', intro && 'intro-hide-logo')}>
         <TopBar />
         <main className="flex min-h-0 flex-1 gap-3 p-3">
           <div className={cn('min-h-0 w-full lg:block lg:w-[38%] lg:shrink-0', mobileTab === 'chat' ? 'block' : 'hidden')}>

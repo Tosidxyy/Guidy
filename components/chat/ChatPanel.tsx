@@ -16,8 +16,34 @@ import { PlanCardPanel } from './PlanCardPanel';
 
 export function ChatPanel() {
   const chat = useChat();
+  const ringRef = useRef<HTMLDivElement>(null);
+  const flowAnimsRef = useRef<Animation[]>([]);
+  useEffect(() => {
+    const ring = ringRef.current;
+    if (!ring || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const T = 3200;
+    const specs: [string, Keyframe[]][] = [
+      ['.flow-top', [{ transform: 'translateX(-100%)', offset: 0 }, { transform: 'translateX(222%)', offset: 0.25 }, { transform: 'translateX(222%)', offset: 1 }]],
+      ['.flow-right', [{ transform: 'translateY(-100%)', offset: 0 }, { transform: 'translateY(-100%)', offset: 0.25 }, { transform: 'translateY(222%)', offset: 0.5 }, { transform: 'translateY(222%)', offset: 1 }]],
+      ['.flow-bottom', [{ transform: 'translateX(222%)', offset: 0 }, { transform: 'translateX(222%)', offset: 0.5 }, { transform: 'translateX(-100%)', offset: 0.75 }, { transform: 'translateX(-100%)', offset: 1 }]],
+      ['.flow-left', [{ transform: 'translateY(222%)', offset: 0 }, { transform: 'translateY(222%)', offset: 0.75 }, { transform: 'translateY(-100%)', offset: 1 }]],
+    ];
+    const anims = specs.map(([sel, frames]) =>
+      (ring.querySelector(sel) as HTMLElement).animate(frames, { duration: T, iterations: Infinity, easing: 'linear' }),
+    );
+    flowAnimsRef.current = anims;
+    return () => {
+      anims.forEach((a) => a.cancel());
+      flowAnimsRef.current = [];
+    };
+  }, []);
   const messages = useChatStore((s) => s.messages);
   const streaming = useChatStore((s) => s.streaming);
+  useEffect(() => {
+    flowAnimsRef.current.forEach((a) => {
+      a.playbackRate = streaming ? 3200 / 900 : 1;
+    });
+  }, [streaming]);
   const searching = useChatStore((s) => s.searching);
   const connection = useChatStore((s) => s.connection);
   const artifact = useChatStore((s) => s.artifact);
@@ -85,17 +111,12 @@ export function ChatPanel() {
 
   return (
     <aside data-streaming={streaming ? 'true' : 'false'} className="guidy-flow-border guidy-noise flex h-full min-h-0 w-full flex-col overflow-hidden rounded-(--site-radius) border border-site-ink/15 bg-site-bg shadow-sm" aria-label="AI 对话排程">
-      <svg className="guidy-flow-ring" aria-hidden="true">
-        <defs>
-          <linearGradient id="guidy-flow-grad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" style={{ stopColor: 'var(--site-flow)' }} />
-            <stop offset="0.5" style={{ stopColor: 'color-mix(in srgb, var(--site-flow) 55%, #ffffff)' }} />
-            <stop offset="1" style={{ stopColor: 'var(--site-flow)' }} />
-          </linearGradient>
-        </defs>
-        <rect className="guidy-flow-base" x="1" y="1" pathLength={100} style={{ width: 'calc(100% - 2px)', height: 'calc(100% - 2px)', rx: 'var(--site-radius)' }} />
-        <rect className="guidy-flow-arc" x="1" y="1" pathLength={100} style={{ width: 'calc(100% - 2px)', height: 'calc(100% - 2px)', rx: 'var(--site-radius)' }} />
-      </svg>
+      <div ref={ringRef} className="guidy-flow-ring" aria-hidden="true">
+        <span className="flow-top" />
+        <span className="flow-right" />
+        <span className="flow-bottom" />
+        <span className="flow-left" />
+      </div>
       <div className="flex items-center justify-between border-b border-site-line px-3 py-2">
         <div className="flex items-center gap-1">
         <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="对话列表" title="对话与计划" onClick={() => openDrawer('plans')}>
