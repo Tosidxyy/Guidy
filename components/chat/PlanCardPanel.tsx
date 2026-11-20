@@ -239,7 +239,8 @@ export function PlanCardPanel() {
       {(
         <div className={cn('grid transition-[grid-template-rows,margin-top] duration-300 ease-out', open ? 'mt-0 grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
           <div className="overflow-hidden">
-            <div className="border-t border-site-line">
+            {/* 整张卡一个滚动容器：预览、调整清单、任务与约束一起滚，滚轮不会被裁在外层。 */}
+            <div className="max-h-[45vh] overflow-y-auto overscroll-contain border-t border-site-line">
           <div className="flex items-start justify-between gap-3 px-3.5 pt-3">
             <div>
               <h3 className="font-display text-sm font-semibold text-site-ink">{viewed.plan_title || '方案卡'}</h3>
@@ -321,7 +322,7 @@ export function PlanCardPanel() {
             </section>
           )}
 
-          <div className="max-h-[40vh] overflow-y-auto px-3.5 pb-3.5">
+          <div className="px-3.5 pb-3.5">
             <ConstraintSetBody
               draft={viewed}
               onChange={change}
