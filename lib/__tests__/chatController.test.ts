@@ -60,6 +60,15 @@ describe('chatController.send', () => {
     const [, init] = fetchFn.mock.calls[0];
     expect(JSON.parse((init as RequestInit).body as string).plan_id).toBeUndefined();
   });
+  it('fetch 网络失败：上浮 connection_failed 并结束思考态，不永久「思考中」', async () => {
+    const stream = fakeStream();
+    const fetchFn = vi.fn(async () => { throw new TypeError('Failed to fetch'); });
+    const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-net' });
+    c.send('三个月雅思计划');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(useChatStore.getState().error?.code).toBe('connection_failed');
+    expect(useChatStore.getState().streaming).toBe(false);
+  });
 });
 
 describe('chatController.interrupt / newConversation', () => {

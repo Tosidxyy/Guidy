@@ -213,14 +213,21 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           const projector = createProjector(nextSeq, assistantSeq);
           // 先发消息再开流：新回合已存在，续读游标之后的事件必达；避免「先开流再发消息」时续读流静默挂起。
           await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others, availability, sharedBlocks: sharedForPrompt, habits: profile.habits || undefined, learned: learned?.summary || undefined }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}${repairNote}` : ''), `${requestId}:${attempt}`);
-          // 每回合超时上限：静默流不得永久「思考中」；超时按失败重试，用户中断则直接抛出走 interrupted。
+          // 空闲超时：只要持续有帧就续期（长计划慢输出不被误杀）；静默超过阈值才重试，杜绝永久「思考中」。
           const attemptAbort = new AbortController();
-          const timer = setTimeout(() => attemptAbort.abort(), deps.config.attemptTimeoutMs ?? 90000);
+          const idleMs = deps.config.attemptTimeoutMs ?? 45000;
+          let idleTimer: ReturnType<typeof setTimeout> | undefined;
+          const resetIdle = () => {
+            if (idleTimer) clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => attemptAbort.abort(), idleMs);
+          };
+          resetIdle();
           const onUserAbort = () => attemptAbort.abort();
           abort.signal.addEventListener('abort', onUserAbort, { once: true });
           const upstream = await deps.qca.openStream(sessionId, { lastEventId: lastEventId ?? undefined, signal: attemptAbort.signal });
           try {
             for await (const frame of readSSE(upstream.body, { signal: attemptAbort.signal })) {
+              resetIdle();
               const ev = JSON.parse(frame.data);
               if (frame.id) lastEventId = frame.id;
               for (const p of projector.push(ev)) {
@@ -237,7 +244,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
             if (attempt < 2) continue;
             throw readErr;
           } finally {
-            clearTimeout(timer);
+            if (idleTimer) clearTimeout(idleTimer);
             abort.signal.removeEventListener('abort', onUserAbort);
             upstream.close();
           }

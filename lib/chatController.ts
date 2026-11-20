@@ -28,6 +28,12 @@ export function createChatController(deps: {
   const stream = deps.stream;
   const fetchFn = deps.fetchFn ?? fetch;
   const newId = deps.newId ?? (() => crypto.randomUUID());
+  // 连接失败/流中断必须上浮为错误并结束思考态；否则界面会永久停在「思考中」。
+  const onStreamError = (e: unknown) => {
+    if ((e as any)?.name === 'AbortError') return;
+    if (e instanceof ApiError) return; // openChecked 已上浮服务端错误包络
+    store.getState().applyFrame({ event: 'error', data: { seq: 0, code: 'connection_failed', message: '连接中断或服务暂时不可用，请重试', diagnostic_id: crypto.randomUUID() } });
+  };
 
   return {
     send(text: string) {
@@ -44,7 +50,7 @@ export function createChatController(deps: {
       stream.read((signal) => openChecked(fetchFn, SEND_URL, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body), signal, credentials: 'same-origin',
-      }, store)).catch(() => {});
+      }, store)).catch(onStreamError);
     },
     resume() {
       const st = store.getState();
@@ -54,7 +60,7 @@ export function createChatController(deps: {
       store.setState({ streaming: true, connection: 'connecting', error: null });
       stream.read((signal) => openChecked(fetchFn, EVENTS_URL(id, st.cursor), {
         signal, credentials: 'same-origin',
-      }, store)).catch(() => {});
+      }, store)).catch(onStreamError);
     },
     interrupt() {
       const st = store.getState();

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PanelLeftOpen, MessageCircle } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -15,6 +15,20 @@ import { ChatInput } from './ChatInput';
 import { QuestionCard } from './QuestionCard';
 import { PlanCardPanel } from './PlanCardPanel';
 import { PlansDrawer } from '@/components/workbench/PlansDrawer';
+
+// 思考计时：长计划（如 90 天）模型输出久，给用户可见的等待进度与预期，避免误以为卡死。
+function ThinkingHint() {
+  const [secs, setSecs] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setSecs((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <p className="animate-pulse px-1 text-[11px] text-site-ink-soft">
+      Guidy 正在思考…（{secs}s）{secs >= 45 ? ' 复杂计划可能需要 1–2 分钟，请稍候' : ''}
+    </p>
+  );
+}
 
 export function ChatPanel() {
   const chat = useChat();
@@ -178,9 +192,7 @@ export function ChatPanel() {
           </p>
         )}
         {connection === 'connecting' && <p className="px-1 text-[11px] text-site-ink-soft">正在连接…</p>}
-        {streaming && lastMessage?.role === 'user' && (
-          <p className="animate-pulse px-1 text-[11px] text-site-ink-soft">Guidy 正在思考…</p>
-        )}
+        {streaming && lastMessage?.role === 'user' && <ThinkingHint />}
         {streaming && lastMessage?.role !== 'user' && splitArtifactText(lastMessage?.content ?? '').artifactJson !== null && (
           <p className="animate-pulse px-1 text-[11px] text-site-ink-soft">正在生成方案…</p>
         )}
