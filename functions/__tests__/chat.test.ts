@@ -98,6 +98,14 @@ describe('chatSend', () => {
     expect(out.some((f) => f.event === 'error')).toBe(false);
     expect(out.at(-1).event).toBe('done');
   });
+  it('预算耗尽且零输出：不得静默 completed，必须发 empty_response', async () => {
+    const d = deps({ openStream: async () => ({ body: upstreamStream(replyFrames), close() {} }) }, createMemoryDb(), { turnBudgetMs: 1 });
+    const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '制定一个三个月计划' })));
+    const err = out.find((f) => f.event === 'error');
+    expect(err?.data.code).toBe('empty_response');
+    expect(out.some((f) => f.event === 'status' && f.data.state === 'completed')).toBe(false);
+    expect(out.at(-1).event).toBe('done');
+  });
   it('today/timezone 注入用户消息，供模型换算「下周」等相对日期', async () => {
     let sent = '';
     const d = deps({

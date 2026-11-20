@@ -47,6 +47,9 @@ function horizonRange(p: { horizon_start: string; horizon_days: number }) {
 
 const WINDOW_TYPES = new Set(['busy_window', 'active_window', 'fixed_block']);
 
+/** 用户是否在要「可执行的计划/方案」：此时只回文字或半截 JSON 都属于没交付。 */
+const PLAN_INTENT_RE = /(制定|做|排|列|生成|安排|规划|调整|修改|改|加|删).{0,8}(计划|方案|日程|作息|表)|直接给方案/;
+
 function windowSummary(constraints: any[]): { id: string; text: string }[] {
   return constraints
     .filter((c) => c.enabled !== false && WINDOW_TYPES.has(c.payload?.type))
@@ -296,7 +299,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           }
           // 空完成：上游只发了终态、没有任何正文/产物。不能静默 completed，否则气泡一片空白。
           if (!finalText.trim()) {
-            if (attempt < 2) { repairNote = '\n上一轮没有任何输出。不要检索、不要调用工具；直接回答用户，或直接输出一个 ```json 围栏产物（长计划请精简到 task_defs ≤4）。'; continue; }
+            if (attempt < 2 && turnDeadline - Date.now() > 8000) { repairNote = '\n上一轮没有任何输出。不要检索、不要调用工具；直接回答用户，或直接输出一个 ```json 围栏产物（长计划请精简到 task_defs ≤4）。'; continue; }
             terminalState = 'failed';
             const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'empty_response', message: 'AI 没有返回内容，请重试', diagnostic_id: crypto.randomUUID() } };
             emit(err); collected.push(err);
@@ -308,7 +311,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           // 口头承诺了提问/出计划却没给 JSON（如结尾停在冒号）：同样进修复重试，避免「说问三个问题却没有问题卡」。
           const promised = !parsed && (/[:：]\s*$/.test(finalText.trim()) || /问[一二三四五六七八九十\d]+[个道]/.test(finalText) || /(答完|定了|给我).{0,16}(就|直接)/.test(finalText));
           // 用户明确要「产出/调整方案」却只回了文字：要一次产物，避免「有文字没方案」的无声失败。
-          const asksPlan = !parsed && (/(制定|做|排|列|生成|安排|规划|调整|修改|改|加|删).{0,8}(计划|方案|日程|作息|表)|直接给方案/.test(text));
+          const asksPlan = !parsed && PLAN_INTENT_RE.test(text);
           if (parsed && parsed.kind === 'constraint_set') {
             // 预求解：不可行就把具体原因喂回修复重试，避免把排不下的方案直接当成成功。
             const pre = previewSolve(parsed.value);
@@ -375,18 +378,25 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           const pd: AppEvent = { event: 'delta', data: { seq: assistantSeq, text: finalProse.slice(emittedProse.length) } };
           emit(pd); collected.push(pd);
         }
-        // 收尾护栏：失败必须带明确错误码，成功至少要有可读正文或产物，绝不静默空白。
+        // 收尾护栏：失败必须带明确错误码；任何「零正文 + 零产物」的回合都不允许以 completed 收尾。
         const hasError = collected.some((e) => e.event === 'error');
         const hasArtifact = collected.some((e) => e.event === 'artifact');
-        if (terminalState === 'failed' && !hasError) {
-          if (!hasArtifact && !bestText.trim()) {
-            const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'empty_response', message: 'AI 没有返回内容，请重试', diagnostic_id: crypto.randomUUID() } };
-            emit(err); collected.push(err);
-            await insertMessage(deps.db, conv, { seq: err.data.seq, role: 'system', kind: 'error', content: 'empty_response' });
-          } else if (!hasArtifact) {
-            // 有正文没产物：普通对话回答已完整送达，按成功结束。
-            terminalState = 'completed';
-          }
+        const noOutput = !hasArtifact && !bestText.trim() && !finalProse.trim();
+        // 半截 JSON（正文全被剥离、也没得到产物）：同样算没交付，必须显式报错。
+        const cutJson = /```json|^\s*\{/.test(bestText) && !splitArtifactText(bestText).prose.trim();
+        if (!hasError && noOutput) {
+          const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'empty_response', message: 'AI 没有返回内容，请重试', diagnostic_id: crypto.randomUUID() } };
+          emit(err); collected.push(err);
+          terminalState = 'failed';
+          await insertMessage(deps.db, conv, { seq: err.data.seq, role: 'system', kind: 'error', content: 'empty_response' });
+        } else if (!hasError && !hasArtifact && cutJson) {
+          const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'artifact_invalid', message: 'AI 返回的方案不完整，请重试', diagnostic_id: crypto.randomUUID() } };
+          emit(err); collected.push(err);
+          terminalState = 'failed';
+          await insertMessage(deps.db, conv, { seq: err.data.seq, role: 'system', kind: 'error', content: 'artifact_invalid' });
+        } else if (terminalState === 'failed' && !hasError) {
+          // 有完整正文（普通对话回答）：按成功结束。
+          terminalState = 'completed';
         }
         await advanceCursor(deps.db, conv, seq, lastEventId);
         // 重试会删除上一轮的流式文本；若最终没有落任何助手内容，补存最长的那份解释，历史不再丢失。
