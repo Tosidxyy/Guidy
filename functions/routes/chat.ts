@@ -213,14 +213,17 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           const projector = createProjector(nextSeq, assistantSeq);
           // 先发消息再开流：新回合已存在，续读游标之后的事件必达；避免「先开流再发消息」时续读流静默挂起。
           await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others, availability, sharedBlocks: sharedForPrompt, habits: profile.habits || undefined, learned: learned?.summary || undefined }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}${repairNote}` : ''), `${requestId}:${attempt}`);
-          // 空闲超时：只要持续有帧就续期（长计划慢输出不被误杀）；静默超过阈值才重试，杜绝永久「思考中」。
+          // 空闲超时：持续有帧就续期；静默超过阈值重试。另有回合总预算（赶在平台 ~60s 强切前主动收尾，避免孤儿派发）。
           const attemptAbort = new AbortController();
-          const idleMs = deps.config.attemptTimeoutMs ?? 45000;
+          const idleMs = deps.config.attemptTimeoutMs ?? 20000;
+          const totalMs = deps.config.attemptTotalMs ?? 50000;
+          let abortReason: 'idle' | 'total' | null = null;
           let idleTimer: ReturnType<typeof setTimeout> | undefined;
           const resetIdle = () => {
             if (idleTimer) clearTimeout(idleTimer);
-            idleTimer = setTimeout(() => attemptAbort.abort(), idleMs);
+            idleTimer = setTimeout(() => { abortReason = 'idle'; attemptAbort.abort(); }, idleMs);
           };
+          const totalTimer = setTimeout(() => { abortReason = 'total'; attemptAbort.abort(); }, totalMs);
           resetIdle();
           const onUserAbort = () => attemptAbort.abort();
           abort.signal.addEventListener('abort', onUserAbort, { once: true });
@@ -241,10 +244,14 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
             }
           } catch (readErr) {
             if (abort.signal.aborted) throw readErr;
-            if (attempt < 2) continue;
+            if (attempt < 2) {
+              if (abortReason === 'total') repairNote = '\n上一轮输出超时（内容过长）。本轮请大幅精简：task_defs ≤6、notes ≤60 字、前言 ≤3 句、JSON 紧凑，禁止逐日列举，确保一次答完。';
+              continue;
+            }
             throw readErr;
           } finally {
             if (idleTimer) clearTimeout(idleTimer);
+            clearTimeout(totalTimer);
             abort.signal.removeEventListener('abort', onUserAbort);
             upstream.close();
           }

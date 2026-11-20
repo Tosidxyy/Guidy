@@ -571,6 +571,33 @@ describe('口头承诺补产物', () => {
   });
 });
 
+describe('回合总预算超时', () => {
+  it('慢而不断的流触总预算 → 带精简引导重试 → 成功（赶在平台强切前收尾）', async () => {
+    const set = { type: 'constraint_set', plan_title: 't', horizon_days: 90, task_defs: [{ key: 'a', title: 'A', category: 'study', duration_min: 15, frequency: { type: 'daily' }, priority: 'mid', splittable: true, sort_order: 0 }], constraints: [], clarifications_needed: [] };
+    const sends: string[] = [];
+    let opens = 0;
+    const endless = () => {
+      let timer: any;
+      return new ReadableStream<Uint8Array>({
+        start(c) { timer = setInterval(() => { try { c.enqueue(encodeSSE('event_delta', { type: 'event_delta', event_id: 'e1', delta: { type: 'content_delta', content: { type: 'text', text: 'x' } } })); } catch { /* closed */ } }, 5); },
+        cancel() { clearInterval(timer); },
+      });
+    };
+    const d = deps({
+      sendEvents: async (_s: string, text: string) => { sends.push(text); return { eventIds: ['evt'] }; },
+      openStream: async () => {
+        opens += 1;
+        if (opens === 1) return { body: endless(), close() {} };
+        return { body: upstreamStream([{ type: 'agent.message', id: 'e1', content: [{ type: 'text', text: '```json\n' + JSON.stringify(set) + '\n```' }] }, { type: 'session.status_idle' }]), close() {} };
+      },
+    }, createMemoryDb(), { attemptTimeoutMs: 5000, attemptTotalMs: 120 });
+    const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '三个月计划' })));
+    expect(out.some((f) => f.event === 'artifact' && f.data.kind === 'constraint_set')).toBe(true);
+    expect(sends.length).toBe(2);
+    expect(sends[1]).toContain('精简');
+  });
+});
+
 describe('坏 JSON 修复重试', () => {
   it('首回合截断 JSON → 带修复引导重试 → 第二回合合法产物', async () => {
     const set = { type: 'constraint_set', plan_title: 't', horizon_days: 7, task_defs: [{ key: 'a', title: 'A', category: 'study', duration_min: 15, frequency: { type: 'daily' }, priority: 'mid', splittable: true, sort_order: 0 }], constraints: [], clarifications_needed: [] };

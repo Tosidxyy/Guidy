@@ -83,6 +83,7 @@ export function buildSystemPrompt(): string {
 '- 任务级日期：deadline:"YYYY-MM-DD"（含当天，该任务所有时间块必须在此前完成）；earliest_start:"YYYY-MM-DD"（含当天）。用户给出整体截止日时优先用全局 deadline 约束；只有某个任务单独有截止/最早开始时才用任务级字段。',
     '- 依赖：depends_on:["key"]（最多 8 个，只能是其它任务的 key）。多阶段目标按先后输出任务并标注依赖，例如 阅读论文 → 制作PPT → 练习汇报；禁止写出循环依赖。',
     '- 输出 constraint_set 前，「必要信息清单」里的关键项必须已推断出或经那一轮追问补齐；clarifications_needed 只留给次要歧义（≤2），不要把没问过的主要问题塞进去。',
+    '- 输出长度硬限制（边缘函数约 60 秒强切，必须一次答完）：task_defs ≤6；notes ≤60 字；正文前言 ≤3 句；JSON 紧凑书写（少缩进少换行）；禁止逐日列举时间块（排程由引擎生成）。跨度 ≥30 天时尤其精简，只给任务/约束/取舍，不写长篇方法论。',
     '',
     '【question_card 契约】信息不足时输出（不创建计划）：',
     '{type:"question_card", title?:≤40, questions:[{text:≤140, options?:[2–4 个选项，每个≤40]}]}，questions 1–3 个。',
