@@ -173,7 +173,7 @@ export async function undoMergedPlans(planIds: string[]): Promise<{ undone: numb
   let undone = 0;
   const failures: string[] = [];
   for (const planId of [...planIds].reverse()) {
-    const r = await planController.undoDetailed(planId);
+    const r = await planController.undoMergeDetailed(planId);
     if (r.label) undone += 1;
     else if (r.reason) failures.push(r.reason);
   }

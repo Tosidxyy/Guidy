@@ -76,4 +76,25 @@ describe('createPlanUndo', () => {
     expect(r.reason).toContain('计划已被更新');
     expect(useBlockHistory.getState().entries.p1).toHaveLength(1);
   });
+  it('undoMergeDetailed：栈顶非合并条目时拒绝撤销，避免撤错后续修改', async () => {
+    useBlockHistory.setState({ entries: {}, redo: {} });
+    useBlockHistory.getState().push('p1', { at: 1, label: '合并「甲 + 乙」', forwardOps: [], inverseOps: [{ op: 'update_block', id: 'b1', patch: { title: '甲' } }] });
+    useBlockHistory.getState().push('p1', { at: 2, label: '保存方案卡修改', forwardOps: [], inverseOps: [{ op: 'update_plan', patch: { title: '旧' } }] });
+    const apply = vi.fn(async () => ({ ok: true }));
+    const undo = createPlanUndo({ apply, getPlanState: () => plan });
+    const r = await undo.undoMergeDetailed('p1');
+    expect(r.label).toBeNull();
+    expect(r.reason).toContain('请先撤销后续修改');
+    expect(apply).not.toHaveBeenCalled();
+    expect(useBlockHistory.getState().entries.p1).toHaveLength(2);
+  });
+  it('undoMergeDetailed：栈顶为合并条目时正常撤销', async () => {
+    useBlockHistory.setState({ entries: {}, redo: {} });
+    useBlockHistory.getState().push('p1', { at: 1, label: '合并「甲 + 乙」', forwardOps: [], inverseOps: [{ op: 'update_block', id: 'b1', patch: { title: '甲' } }] });
+    const apply = vi.fn(async () => ({ ok: true }));
+    const undo = createPlanUndo({ apply, getPlanState: () => plan });
+    const r = await undo.undoMergeDetailed('p1');
+    expect(r.label).toBe('合并「甲 + 乙」');
+    expect(useBlockHistory.getState().entries.p1).toHaveLength(0);
+  });
 });

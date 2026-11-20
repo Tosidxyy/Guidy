@@ -36,4 +36,5 @@ export const planController = {
   redo: (planId: string) => undoer.redo(planId),
   undoDetailed: (planId: string) => undoer.undoDetailed(planId),
   redoDetailed: (planId: string) => undoer.redoDetailed(planId),
+  undoMergeDetailed: (planId: string) => undoer.undoMergeDetailed(planId),
 };

@@ -39,5 +39,12 @@ export function createPlanUndo(deps: PlanUndoDeps) {
     redo: (planId: string) => run(planId, 'redo').then((r) => r.label),
     undoDetailed: (planId: string) => run(planId, 'entries'),
     redoDetailed: (planId: string) => run(planId, 'redo'),
+    // 跨计划撤销合并只允许撤栈顶的合并条目；合并后若有新修改，先撤后续修改，避免撤错操作。
+    undoMergeDetailed: (planId: string): Promise<UndoResult> => {
+      const top = (useBlockHistory.getState().entries[planId] ?? []).at(-1);
+      if (!top) return Promise.resolve({ label: null, reason: '没有可撤销的合并' });
+      if (!String(top.label).startsWith('合并「')) return Promise.resolve({ label: null, reason: '合并后已有新修改，请先撤销后续修改再撤销合并' });
+      return run(planId, 'entries');
+    },
   };
 }
