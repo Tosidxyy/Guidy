@@ -152,9 +152,10 @@ export const PatchOpSchema = z.discriminatedUnion('op', [
   }),
   z.object({ op: z.literal('remove_constraint'), id: z.string() }),
   z.object({ op: z.literal('add_block'), value: ManualBlockSchema, client_id: z.string().uuid().optional(), plan_id: z.string().uuid().optional() }),
-  z.object({ op: z.literal('update_block'), id: z.string(), patch: ManualBlockSchema.partial() }),
-  z.object({ op: z.literal('move_block'), id: z.string(), start_utc: z.string().datetime(), end_utc: z.string().datetime() }),
-  z.object({ op: z.literal('remove_block'), id: z.string() }),
+  // 块操作带语义定位（task_key/date/title）：AI 引用过期 id 时可按「哪个任务的哪一天」校正。
+  z.object({ op: z.literal('update_block'), id: z.string(), patch: ManualBlockSchema.partial(), task_key: z.string().optional(), date: z.string().optional(), title: z.string().optional() }),
+  z.object({ op: z.literal('move_block'), id: z.string(), start_utc: z.string().datetime(), end_utc: z.string().datetime(), task_key: z.string().optional(), date: z.string().optional(), title: z.string().optional() }),
+  z.object({ op: z.literal('remove_block'), id: z.string(), task_key: z.string().optional(), date: z.string().optional(), title: z.string().optional() }),
   z.object({ op: z.literal('reschedule'), scope: z.enum(['affected_only', 'all']).default('affected_only'), keep_pinned: z.literal(true) }),
   z.object({ op: z.literal('clear_plan') }),
 ]);

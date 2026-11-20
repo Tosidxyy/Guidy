@@ -35,7 +35,36 @@ function taskDefValue(t: TaskDef): TaskDef {
   };
 }
 
+/**
+ * 块操作的语义定位：AI 常引用上一版本的块 id。优先使用 id；当 id 不存在或与
+ * task_key/date/title 不符时，按「任务 + 本地日期 + 标题」找到唯一的块并改用它。
+ */
+function reconcileBlockOps(state: PlanState, ops: ApplyOp[]): ApplyOp[] {
+  const tz = state.plan.timezone || 'Asia/Shanghai';
+  const dayOf = (iso: string): string => {
+    try {
+      return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+    } catch { return iso.slice(0, 10); }
+  };
+  return ops.map((op) => {
+    if (op.op !== 'remove_block' && op.op !== 'move_block' && op.op !== 'update_block') return op;
+    const o = op as any;
+    // 没有语义字段时保持原行为：只按 id 找，找不到就报告缺失，绝不乱匹配。
+    if (!o.task_key && !o.date && !o.title) return op;
+    const direct = state.blocks.find((b) => b.id === o.id);
+    const ok = (b?: Block) => !!b
+      && (!o.task_key || b.task_key === o.task_key)
+      && (!o.date || dayOf(b.start_utc) === o.date)
+      && (!o.title || b.title === o.title);
+    if (ok(direct)) return op;
+    const matches = state.blocks.filter((b) => ok(b));
+    if (matches.length === 1 && matches[0].id !== o.id) return { ...op, id: matches[0].id } as ApplyOp;
+    return op;
+  });
+}
+
 export function applyPatch(state: PlanState, ops: ApplyOp[]): PatchResult {
+  ops = reconcileBlockOps(state, ops);
   const next = clone(state);
   const inverse: ApplyOp[] = [];
   const missing: string[] = [];

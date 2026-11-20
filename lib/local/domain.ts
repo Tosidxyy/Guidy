@@ -45,6 +45,23 @@ export function sanitizeTaskDates(tasks: TaskDef[], horizon_start: string, horiz
   });
 }
 
+/** 日常且不可拆分的任务，同一天最多一个块：AI 的块操作引用过期 id 时，防止旧块残留成两块。 */
+function enforceSinglePerDay(blocks: Block[], task_defs: TaskDef[], tz: string, keepFirst: Set<string>): Block[] {
+  const single = new Set(task_defs.filter((t) => !t.splittable && (t.frequency.type === 'daily' || t.frequency.type === 'once')).map((t) => t.key));
+  const seen = new Set<string>();
+  const out: Block[] = [];
+  for (const b of blocks) {
+    if (!b.task_key || !single.has(b.task_key)) { out.push(b); continue; }
+    const day = localDay(b.start_utc, tz);
+    const key = `${b.task_key}|${day}`;
+    if (!seen.has(key)) { seen.add(key); out.push(b); continue; }
+    // 已有一个：优先保留本次被显式移动/新增的块，否则丢弃后来的重复块。
+    const existingIdx = out.findIndex((x) => x.task_key === b.task_key && localDay(x.start_utc, tz) === day);
+    if (keepFirst.has(b.id) && existingIdx >= 0) out[existingIdx] = b;
+  }
+  return out;
+}
+
 const stateOf = (p: PlanRecord): PlanState => ({ plan: p, task_defs: p.task_defs, constraints: p.constraints, blocks: p.blocks });
 
 /** 忙时/固定日程已物化成共享块，计划自身不再持有这些约束；历史数据读取时同样剥掉。 */
@@ -271,6 +288,11 @@ export async function localApplyPatch(body: any): Promise<any> {
     blocks = [...out.blocks.filter((b) => !sharedIds.has(b.id)), ...inert];
     compromises = out.compromises;
   }
+  const movedIds = new Set(ops.flatMap((op) => {
+    if (op.op === 'move_block' || op.op === 'add_block') return [(op as any).id ?? (op as any).client_id].filter(Boolean);
+    return [];
+  }));
+  blocks = enforceSinglePerDay(blocks, patched.state.task_defs, rec.timezone, movedIds);
   const now = nowIso();
   const next: PlanRecord = {
     ...rec,

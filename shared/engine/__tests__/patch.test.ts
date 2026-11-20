@@ -168,3 +168,36 @@ describe('applyPatch — reschedule 与混合', () => {
     expect(JSON.stringify(base)).toBe(snapshot);
   });
 });
+describe('过期块 id 的语义校正', () => {
+  const plan = { id: 'p1', title: '论文', horizon_start: '2026-11-20', horizon_days: 7 as const, timezone: 'Asia/Shanghai', status: 'active' as const, version: 1, created_at: '', updated_at: '' };
+  const fit = (id: string, day: string, h: string) => ({
+    id, task_key: 'fitness', title: '健身', category: 'fitness' as const,
+    start_utc: `${day}T${h}:00:00.000Z`, end_utc: `${day}T${h === '12' ? '13' : '21'}:00:00.000Z`,
+    priority: 'mid' as const, pinned: false, origin: 'engine' as const, status: 'planned' as const,
+  });
+  const state = () => ({
+    plan,
+    task_defs: [{ key: 'fitness', title: '健身', category: 'fitness' as const, duration_min: 45, frequency: { type: 'daily' as const }, priority: 'mid' as const, splittable: false, sort_order: 0 }],
+    constraints: [],
+    blocks: [fit('live-wed', '2026-11-25', '12'), fit('live-thu', '2026-11-26', '12')],
+  });
+
+  it('remove/move 用过期 id 时按 task_key+date 定位到正确块', () => {
+    const r = applyPatch(state() as any, [
+      { op: 'remove_block', id: 'stale-1', task_key: 'fitness', date: '2026-11-25', title: '健身' },
+      { op: 'move_block', id: 'stale-2', task_key: 'fitness', date: '2026-11-26', title: '健身', start_utc: '2026-11-26T00:30:00.000Z', end_utc: '2026-11-26T01:15:00.000Z' },
+    ] as any);
+    expect(r.missing).toHaveLength(0);
+    const ids = r.state.blocks.map((b) => b.id);
+    expect(ids).toEqual(['live-thu']);
+    const thu = r.state.blocks[0];
+    expect(thu.start_utc).toBe('2026-11-26T00:30:00.000Z');
+  });
+
+  it('同日同任务多块（歧义）时不乱猜，按原 id 报告缺失', () => {
+    const s = state();
+    s.blocks.push(fit('live-wed-2', '2026-11-25', '14'));
+    const r = applyPatch(s as any, [{ op: 'remove_block', id: 'stale-3', task_key: 'fitness', date: '2026-11-25', title: '健身' }] as any);
+    expect(r.missing.map(String)).toContain('block:stale-3');
+  });
+});

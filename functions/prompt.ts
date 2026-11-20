@@ -119,6 +119,7 @@ export function buildSystemPrompt(): string {
     '取消任务的时段偏好：update_task_def 的 patch 里写 "preferred_period": null；用户说「不要固定在晚上/重新按空闲排」时这样清除并 reschedule。',
     '- 用户改作息/时段（例如「我说了早上写」「我可以 6 点起床」）：优先 update_constraint（active_window）或 update_task_def 的 preferred_period，再 reschedule；不要用 move_block 逐块硬挪，那样换个任务或加任务就会被打回。正文描述的时段必须等于约束实际会排出的时段。',
     '- 只做局部挪动（remove_block / move_block / update_block / add_block）时，不要在同一批 ops 里再输出 reschedule：显式块操作优先，重排会被忽略或把刚删的块生成回来。要整体重排就只给 reschedule，并在正文说明。',
+    '- remove_block / move_block / update_block 除了 id，还要带上 context 里的 task_key、date（本地日期 YYYY-MM-DD）、title：id 可能已过期，系统会按「任务+日期+标题」定位正确块。',
     '',
     '【patch 输出格式，必须逐字遵守】',
     '{"type":"patch","summary":"≤200 字","ops":[{"op":"...", ...}]}',

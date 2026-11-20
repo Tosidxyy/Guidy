@@ -147,6 +147,60 @@ describe('共享块不写回计划', () => {
   });
 });
 
+describe('过期块 id 的调整（周三挪周四）', () => {
+  it('AI 用 stale id 但带 task_key+date+title：删对块、只留周四早上', async () => {
+    const res = await commitPlan({
+      horizon_start: '2026-11-20', horizon_days: 14,
+      task_defs: [{ key: 'fitness', title: '健身', category: 'fitness', duration_min: 45, frequency: { type: 'daily' }, priority: 'mid', splittable: false, sort_order: 0, preferred_period: 'evening' }],
+      constraints: [{ id: 'c1', payload: { type: 'active_window', start: '00:00', end: '23:59' }, source: 'user', enabled: true }],
+    });
+    const st = await localPlan(res.plan.id);
+    const f = (b: any) => new Date(b.start_utc).toLocaleDateString('en-CA', { timeZone: st.plan.timezone });
+    const wed = st.blocks.find((b) => b.task_key === 'fitness' && f(b) === '2026-11-25')!;
+    const thu = st.blocks.find((b) => b.task_key === 'fitness' && f(b) === '2026-11-26')!;
+    expect(wed && thu).toBeTruthy();
+    const thuStart = thu.start_utc;
+    const applied = await localApplyPatch({
+      preview_id: crypto.randomUUID(), plan_id: res.plan.id, base_version: st.plan.version,
+      ops: [
+        { op: 'remove_block', id: 'eng-stale-1', task_key: 'fitness', date: '2026-11-25', title: '健身' },
+        { op: 'move_block', id: 'eng-stale-2', task_key: 'fitness', date: '2026-11-26', title: '健身', start_utc: thuStart, end_utc: thu.end_utc },
+      ],
+      engine_version: 1, result_hash: null,
+    });
+    expect(applied.version).toBe(st.plan.version + 1);
+    const after = await localPlan(res.plan.id);
+    const days = after.blocks.filter((b) => b.task_key === 'fitness').map(f);
+    expect(days.includes('2026-11-25')).toBe(false);
+    const thuAfter = after.blocks.filter((b) => b.task_key === 'fitness' && f(b) === '2026-11-26');
+    expect(thuAfter).toHaveLength(1);
+    // 周四块没被删掉也没被复制
+    expect(thuAfter[0].start_utc).toBe(thuStart);
+  });
+});
+
+describe('同一天同任务去重（不可拆分）', () => {
+  it('日常且不可拆分的任务，同一天只保留一个块', async () => {
+    const res = await commitPlan({
+      horizon_start: '2026-11-20', horizon_days: 7,
+      task_defs: [{ key: 'fitness', title: '健身', category: 'fitness', duration_min: 45, frequency: { type: 'daily' }, priority: 'mid', splittable: false, sort_order: 0 }],
+      constraints: [{ id: 'c1', payload: { type: 'active_window', start: '00:00', end: '23:59' }, source: 'user', enabled: true }],
+    });
+    const stored = (await getPlan(res.plan.id))!;
+    const day = stored.blocks[0].start_utc.slice(0, 10);
+    const dup = { ...stored.blocks[0], id: 'dup-1' };
+    await putPlan({ ...stored, blocks: [...stored.blocks, dup] });
+    await localApplyPatch({
+      preview_id: crypto.randomUUID(), plan_id: res.plan.id, base_version: stored.version,
+      ops: [{ op: 'update_plan', patch: { title: '健身计划' } }],
+      engine_version: 1, result_hash: null,
+    });
+    const after = await localPlan(res.plan.id);
+    const sameDay = after.blocks.filter((b) => b.task_key === 'fitness' && b.start_utc.slice(0, 10) === day);
+    expect(sameDay).toHaveLength(1);
+  });
+});
+
 describe('AI 日期自检', () => {
   const withDates = (dates: any) => commitPlan({
     task_defs: [{ key: 'mock', title: '模拟卷限时做完+复盘', category: 'study', duration_min: 120, frequency: { type: 'per_week', count: 2 }, priority: 'high', splittable: false, sort_order: 0, ...dates }],
