@@ -237,8 +237,8 @@ export function PlanCardPanel() {
       </div>
 
       {(
-        <div className={cn('grid transition-[grid-template-rows,margin-top] duration-300 ease-out', open ? 'mt-0 grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
-          <div className="overflow-hidden">
+        <div className={open ? 'block' : 'hidden'}>
+          <div>
             {/* 整张卡一个滚动容器：预览、调整清单、任务与约束一起滚，滚轮不会被裁在外层。 */}
             <div className="max-h-[min(45vh,calc(100dvh-360px))] overflow-y-auto overscroll-contain border-t border-site-line">
           <div className="flex items-start justify-between gap-3 px-3.5 pt-3">
