@@ -8,6 +8,14 @@ import { useSharedCalendar } from '@/store/useSharedCalendar';
 import type { PlanLayerSource } from '@/lib/calendarLayers';
 import type { PlanState } from '@/shared/types';
 
+// 根级共享忙时加载：日历 tab 未挂载时（移动端对话页）方案卡/求解也能拿到公共块。
+export function useSharedBusyLoader() {
+  const global = useQuery({ queryKey: ['calendar'], queryFn: () => api.calendar(), retry: false });
+  useEffect(() => {
+    useSharedCalendar.getState().setBusyBlocks((global.data?.blocks ?? []) as PlanState['blocks']);
+  }, [global.data]);
+}
+
 // 所有非活动计划的块层；活动计划由 usePlanStore 提供，保证本地编辑立即生效。
 // 同时把各计划的固定忙时汇总成「共享日历」，参与求解、校验与日历底色。
 export function usePlanLayers(activePlanId: string | null) {

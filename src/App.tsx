@@ -15,8 +15,10 @@ import { FeedbackDialog } from '@/components/workbench/FeedbackDialog';
 import { PrivacyFooter } from '@/components/brand/PrivacyFooter';
 import { BrandIntro } from '@/components/brand/BrandIntro';
 import { CalendarPanel } from '@/components/calendar/CalendarPanel';
+import { useSharedBusyLoader } from '@/lib/usePlanLayers';
 
 export default function App() {
+  useSharedBusyLoader();
   const theme = useUiStore((s) => s.theme);
   const mobileTab = useUiStore((s) => s.mobileTab);
   const setMobileTab = useUiStore((s) => s.setMobileTab);
