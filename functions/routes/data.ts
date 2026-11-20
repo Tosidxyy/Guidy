@@ -2,7 +2,7 @@ import { z } from '../../vendor/zod.ts';
 import { readJson } from '../router.ts';
 import { fail } from '../errors.ts';
 import { requireVisitor } from '../identity.ts';
-import { assertNoPendingDispatch } from '../quotas.ts';
+import { cancelPendingDispatches } from '../qca/dispatch.ts';
 import { deleteVisitorData } from '../ownership.ts';
 import type { Deps, RouteCtx } from '../types.ts';
 
@@ -13,7 +13,7 @@ export async function deleteAll(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const body = await readJson(ctx.request, 4096);
   const parsed = DeleteSchema.safeParse(body);
   if (!parsed.success) fail('validation_failed', 422, parsed.error.flatten());
-  await assertNoPendingDispatch(deps.db, visitor);
+  await cancelPendingDispatches(deps.db, visitor);
   const deleted = await deleteVisitorData(deps.db, visitor);
   return Response.json({ ok: true, deleted });
 }

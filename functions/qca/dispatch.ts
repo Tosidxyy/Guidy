@@ -14,3 +14,8 @@ export async function beginDispatch(db: Db, input: { request_id: string; visitor
 export async function markDispatch(db: Db, requestId: string, patch: Partial<DispatchIntent>): Promise<void> {
   rows(await db.from('dispatch_intents').update(patch).eq('request_id', requestId).select('request_id'));
 }
+// 删除全部数据/恢复码接管前取消仍在跑的派发：否则残留 pending 会把破坏性操作 409 锁死。
+export async function cancelPendingDispatches(db: Db, visitor: string): Promise<void> {
+  const pending = rows(await db.from('dispatch_intents').select('request_id').eq('visitor_id', visitor).eq('status', 'pending'));
+  for (const p of pending) await markDispatch(db, p.request_id, { status: 'interrupted' });
+}

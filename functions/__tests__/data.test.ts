@@ -80,12 +80,13 @@ describe('POST /api/data/delete-all', () => {
     expect(missing.status).toBe(422);
     expect(db.tables.plans).toHaveLength(2);
   });
-  it('pending 派发 → 409 dispatch_busy，数据不动', async () => {
+  it('pending 派发 → 先取消再删除，不再 409 锁死', async () => {
     const { db, app } = setup({ ...fullSeed(), dispatch_intents: [{ request_id: 'r1', visitor_id: 'visitor-a', status: 'pending' }] });
     const res = await app(req('POST', '/api/data/delete-all', { confirm_token: 'DELETE' }));
-    expect(res.status).toBe(409);
-    expect((await res.json()).error.code).toBe('dispatch_busy');
-    expect(db.tables.plans).toHaveLength(2);
+    expect(res.status).toBe(200);
+    expect(db.tables.plans.map((p: any) => p.id)).toEqual(['p2']);
+    const leftover = db.tables.dispatch_intents.find((i: any) => i.request_id === 'r1');
+    expect(leftover === undefined || leftover.status !== 'pending').toBe(true);
   });
   it('空数据访客 → 200 计数全 0', async () => {
     const { app } = setup();

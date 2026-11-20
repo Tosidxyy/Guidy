@@ -5,7 +5,8 @@ import { rows } from '../db.ts';
 import { requireVisitor } from '../identity.ts';
 import { generateCode, normalizeCode, formatCode, isValidCode } from '../recovery.ts';
 import { sha256Hex } from '../sse-app.ts';
-import { todayStr, incrementRecoveryAttempt, assertNoPendingDispatch } from '../quotas.ts';
+import { todayStr, incrementRecoveryAttempt } from '../quotas.ts';
+import { cancelPendingDispatches } from '../qca/dispatch.ts';
 import { deleteVisitorData, transferOwnership } from '../ownership.ts';
 import type { Deps, RouteCtx } from '../types.ts';
 
@@ -39,7 +40,7 @@ export async function recoveryClaim(ctx: RouteCtx, deps: Deps): Promise<Response
   const code_hash = await sha256Hex(normalized);
   const codeRow = rows(await deps.db.from('recovery_codes').select('*').eq('code_hash', code_hash).limit(1))[0];
   if (!codeRow || codeRow.visitor_id === visitor) fail('recovery_invalid', 404);
-  await assertNoPendingDispatch(deps.db, visitor);
+  await cancelPendingDispatches(deps.db, visitor);
   const now = (deps.now?.() ?? new Date()).toISOString();
   let locked = rows(await deps.db.from('recovery_codes').update({ used_at: now, claimed_by: visitor }).eq('id', codeRow.id).is('used_at', null).select('*'));
   if (!locked.length) locked = rows(await deps.db.from('recovery_codes').update({ claimed_by: visitor }).eq('id', codeRow.id).eq('claimed_by', visitor).select('*'));

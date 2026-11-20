@@ -11,6 +11,7 @@ import { buildUserMessage, ARTIFACT_REPAIR } from '../prompt.ts';
 import { appFrame, insertMessage, appendAssistant, advanceCursor, sha256Hex } from '../sse-app.ts';
 import { readSSE } from '../qca/sse.mjs';
 import { LIMITS, ENGINE_VERSION } from '../shared/constants.ts';
+import { splitArtifactText } from '../shared/artifactText.ts';
 import { solve } from '../engine.ts';
 import { findConflicts, type ConflictPlan, type PlanConflict } from '../shared/engine/conflicts.ts';
 import { trimArtifactToFit } from '../shared/engine/fit.ts';
@@ -304,9 +305,13 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         }
         await advanceCursor(deps.db, conv, seq, lastEventId);
         // 重试会删除上一轮的流式文本；若最终没有落任何助手内容，补存最长的那份解释，历史不再丢失。
-        const hasAssistantRow = rows(await deps.db.from('messages').select('id').eq('conversation_id', conv.id).eq('seq', assistantSeq).limit(1)).length > 0;
-        if (!hasAssistantRow && bestText) {
-          await insertMessage(deps.db, conv, { seq: assistantSeq, role: 'assistant', kind: 'text', content: bestText });
+        const assistantRow = rows(await deps.db.from('messages').select('id,content').eq('conversation_id', conv.id).eq('seq', assistantSeq).limit(1))[0];
+        if (!assistantRow && bestText) {
+          await insertMessage(deps.db, conv, { seq: assistantSeq, role: 'assistant', kind: 'text', content: splitArtifactText(bestText).prose });
+        } else if (assistantRow) {
+          // 落库只存可读 prose：任何客户端/恢复路径都不再漏出产物原文 JSON。
+          const prose = splitArtifactText(String(assistantRow.content)).prose;
+          if (prose !== assistantRow.content) rows(await deps.db.from('messages').update({ content: prose }).eq('id', assistantRow.id).select('id'));
         }
         const status: AppEvent = { event: 'status', data: { seq: nextSeq(), state: terminalState } };
         emit(status); collected.push(status);

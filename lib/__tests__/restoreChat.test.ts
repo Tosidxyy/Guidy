@@ -76,3 +76,19 @@ describe('restoreChat — 历史回放', () => {
     expect(r.artifact).toBeNull();
   });
 });
+
+describe('restoreChat — 问题卡已回答不重弹', () => {
+  const card = { type: 'question_card', title: '三个问题', questions: [{ text: '方向？', options: ['应试', '口语'] }] };
+  const base: HistoryRow[] = [
+    { seq: 1, role: 'user', kind: 'text', content: '排计划' },
+    { seq: 2, role: 'assistant', kind: 'question_card', content: '', payload: card },
+  ];
+  it('问题卡后已有用户回答 → 不再重弹（中途退出重进不要求重新作答）', () => {
+    const r = restoreChat([...base, { seq: 3, role: 'user', kind: 'text', content: '应试' }], plan({ plan: { ...plan().plan, id: null as any } }));
+    expect(r.question).toBeNull();
+  });
+  it('问题卡未被回答 → 仍恢复供作答', () => {
+    const r = restoreChat(base, plan({ plan: { ...plan().plan, id: null as any } }));
+    expect(r.question).toEqual(card);
+  });
+});

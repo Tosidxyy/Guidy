@@ -200,14 +200,14 @@ describe('POST /api/recovery/claim', () => {
     expect(body.error.code).toBe('recovery_rate_limited');
     expect(body.error.details).toEqual({ limit: 10 });
   });
-  it('pending 派发 → 409 dispatch_busy 且码未消费', async () => {
+  it('pending 派发 → 先取消再接管，不再 409 锁死', async () => {
     const { db, app } = setup({ dispatch_intents: [{ request_id: 'r-pending', visitor_id: 'visitor-a', status: 'pending' }] });
     const code = await generateFor(app, 'visitor-old');
     const res = await app(req('POST', '/api/recovery/claim', { code, strategy: 'overwrite' }));
-    expect(res.status).toBe(409);
-    expect((await res.json()).error.code).toBe('dispatch_busy');
-    expect(db.tables.recovery_codes[0].used_at).toBeNull();
-    expect(db.tables.recovery_codes[0].claimed_by).toBeNull();
+    expect(res.status).toBe(200);
+    const leftover = db.tables.dispatch_intents.find((i: any) => i.request_id === 'r-pending');
+    expect(leftover === undefined || leftover.status !== 'pending').toBe(true);
+    expect(db.tables.recovery_codes[0].claimed_by).toBe('visitor-a');
   });
   it('已被他人认领 → 统一 404', async () => {
     const { app } = setup(oldDeviceSeed());

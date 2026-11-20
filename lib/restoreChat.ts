@@ -65,6 +65,9 @@ export function restoreChat(rows: HistoryRow[], plan: PlanState): RestoredChat {
     ? (lastArtifact.payload as ConstraintSetArtifact)
     : null;
   const patch = lastArtifact?.kind === 'patch' ? (lastArtifact.payload as PatchArtifact) : null;
-  const question = lastArtifact?.kind === 'question_card' ? (lastArtifact.payload as QuestionCardArtifact) : null;
+  // 问题卡之后已有用户消息 = 已回答（含中途退出后重进）：不再重弹要求重新作答。
+  const questionAnswered = lastArtifact?.kind === 'question_card'
+    && rows.some((r) => r.role === 'user' && r.seq > (lastArtifact?.seq ?? 0));
+  const question = lastArtifact?.kind === 'question_card' && !questionAnswered ? (lastArtifact.payload as QuestionCardArtifact) : null;
   return { messages, artifact, patch, question, clarifications: artifact?.clarifications_needed ?? [] };
 }
