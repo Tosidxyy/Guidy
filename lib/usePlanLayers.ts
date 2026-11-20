@@ -3,7 +3,6 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { collectSharedWindows } from '@/lib/sharedCalendar';
 import { usePlanStore } from '@/store/usePlanStore';
-import { usePlanSync } from '@/store/usePlanSync';
 import { useSharedCalendar } from '@/store/useSharedCalendar';
 import type { PlanLayerSource } from '@/lib/calendarLayers';
 import type { PlanState } from '@/shared/types';
@@ -48,7 +47,7 @@ export function usePlanLayers(activePlanId: string | null) {
   const layersRef = useRef(layers);
   layersRef.current = layers;
   useEffect(() => {
-    for (const layer of layersRef.current) usePlanSync.getState().setServerVersion(layer.id, layer.state.plan.version);
+    
     const active = usePlanStore.getState().state;
     const others = layersRef.current.map((l) => l.state);
     useSharedCalendar.getState().setBusyBlocks((global.data?.blocks ?? []) as PlanState['blocks']);

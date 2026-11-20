@@ -3,15 +3,12 @@ import { queryClient } from '@/lib/queryClient';
 import { createPlanMutations } from '@/lib/planMutations';
 import { createPlanUndo } from '@/lib/planUndo';
 import { usePlanStore } from '@/store/usePlanStore';
-import { usePlanSync } from '@/store/usePlanSync';
 import { useBlockHistory } from '@/store/useBlockHistory';
 import type { PlanState } from '@/shared/types';
 
 const apply = createPlanMutations({
   patch: (body) => api.applyPatch(body),
-  getServerVersion: (id) => usePlanSync.getState().serverVersions[id],
   fetchPlan: (id) => api.plan(id) as Promise<PlanState>,
-  setServerVersion: (id, v) => usePlanSync.getState().setServerVersion(id, v),
   getActivePlanId: () => usePlanStore.getState().state.plan.id,
   getActiveState: () => usePlanStore.getState().state,
   applyActiveState: (patch) => usePlanStore.getState().applyServerState(patch),

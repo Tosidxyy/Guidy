@@ -6,7 +6,6 @@ import { planController } from '@/lib/planRuntime';
 import { queryClient } from '@/lib/queryClient';
 import { pickUndoSource } from '@/lib/undoPriority';
 import { usePlanStore } from '@/store/usePlanStore';
-import { usePlanSync } from '@/store/usePlanSync';
 import { useChatStore } from '@/store/useChatStore';
 import { useBlockHistory } from '@/store/useBlockHistory';
 import type { ApplyOp, ConstraintPayload, PlanState, TaskDef } from '@/shared/types';
@@ -133,8 +132,7 @@ async function doSaveDraftAction(): Promise<{ ok: boolean; planId?: string; reas
       },
     });
     store.importState({ plan: resp.plan, task_defs: resp.task_defs, constraints: resp.constraints, blocks: resp.blocks });
-    usePlanSync.getState().setServerVersion(resp.plan.id, resp.version);
-    void queryClient.invalidateQueries({ queryKey: ['plans'] });
+        void queryClient.invalidateQueries({ queryKey: ['plans'] });
     void queryClient.invalidateQueries({ queryKey: ['conversations'] });
     void queryClient.invalidateQueries({ queryKey: ['calendar'] });
     return { ok: true, planId: resp.plan.id };

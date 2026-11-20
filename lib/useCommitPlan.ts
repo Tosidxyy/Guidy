@@ -8,9 +8,9 @@ import { trimArtifactToFit } from '@/shared/engine/fit';
 import { relaxDraft } from '@/lib/relaxPlan';
 import { usePlanStore } from '@/store/usePlanStore';
 import { localLearnProfile } from '@/lib/local/domain';
-import { usePlanSync } from '@/store/usePlanSync';
 import { useChatStore } from '@/store/useChatStore';
 import { useBlockHistory } from '@/store/useBlockHistory';
+import { appliedPatches } from '@/lib/appliedPatches';
 import { snapshotOps } from '@/lib/snapshotOps';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 import type { PlanState } from '@/shared/types';
@@ -22,7 +22,6 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
     mutationFn: async (draft: ConstraintSetArtifact) => {
       const store = usePlanStore.getState();
       const plan = { horizon_start: store.state.plan.horizon_start, timezone: store.state.plan.timezone };
-      const { output } = solveArtifact(draft, plan, store.state.blocks);
       // 稳定幂等键：同一计划同一版本同一输入重复提交（含网络重试）不会创建重复事件。
       const idempotencyKey = stableHash(stableJson({
         v: 1,
@@ -36,7 +35,6 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
       const body = await buildCommitInput({
         draft,
         plan,
-        blocks: output.blocks,
         previewId: crypto.randomUUID(),
         planId: store.state.plan.id ?? null,
         conversationId: useChatStore.getState().conversationId,
@@ -44,7 +42,8 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
       });
       const before = store.state;
       const resp = await api.commit(body);
-      return { resp, before };
+      appliedPatches.mark(useChatStore.getState().conversationId, draft as any);
+      return { resp, before, draft };
     },
     onError: (err, draft) => {
       const e = err instanceof ApiError ? err : new ApiError('service_unavailable', 503, '提交失败，请重试');
@@ -93,7 +92,6 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
         blocks: serverPlan.blocks,
       };
       store.importState(next);
-      usePlanSync.getState().setServerVersion(serverPlan.plan.id, serverPlan.plan.version);
       // 确认生成同样可撤销：撤销=恢复提交前的任务/约束/块，重做=再次应用这次结果。
       useBlockHistory.getState().push(serverPlan.plan.id, {
         at: Date.now(),
@@ -106,7 +104,7 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
       qc.invalidateQueries({ queryKey: ['calendar'] });
       // 有新计划生成/调整后自动更新习惯画像（只用过去的块）。
       void localLearnProfile().then(() => qc.invalidateQueries({ queryKey: ['profile'] })).catch(() => null);
-      toast.success(serverPlan.server_authoritative ? '已按最新结果保存计划' : '计划已保存到本机');
+      toast.success('计划已保存到本机');
       if (Array.isArray(serverPlan.warnings) && serverPlan.warnings.length) toast.info(serverPlan.warnings[0], { duration: 8000 });
       onSaved?.(serverPlan.plan.id);
     },

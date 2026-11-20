@@ -80,22 +80,4 @@ export async function getProfile(ctx: RouteCtx, deps: Deps): Promise<Response> {
 
 const HabitsSchema = z.object({ habits: z.string().max(HABITS_MAX) });
 
-export async function updateProfile(ctx: RouteCtx, deps: Deps): Promise<Response> {
-  const visitor = requireVisitor(deps, ctx);
-  const body = await readJson(ctx.request, 4096);
-  const parsed = HabitsSchema.safeParse(body);
-  if (!parsed.success) fail('validation_failed', 422, parsed.error.flatten());
-  const profile = await ensureProfileRow(deps.db, visitor);
-  const habits = parsed.data.habits.trim();
-  const now = new Date().toISOString();
-  await deps.db.from('profiles').update({ habits, updated_at: now }).eq('visitor_id', visitor);
-  const learned = await ensureLearned(deps.db, visitor, profile);
-  return Response.json({ habits, learned, learned_at: profile.learned_at ?? null, updated_at: now }, { headers: { 'cache-control': 'no-store' } });
-}
 
-export async function learnProfile(ctx: RouteCtx, deps: Deps): Promise<Response> {
-  const visitor = requireVisitor(deps, ctx);
-  const profile = await ensureProfileRow(deps.db, visitor);
-  const learned = await ensureLearned(deps.db, visitor, profile, true);
-  return Response.json({ habits: profile.habits ?? '', learned, learned_at: new Date().toISOString(), updated_at: profile.updated_at ?? null }, { headers: { 'cache-control': 'no-store' } });
-}

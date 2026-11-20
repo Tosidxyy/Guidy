@@ -167,6 +167,8 @@ export function PlanCardPanel() {
     if (!proposal) return;
     setAttention(true);
     pulseOnce();
+    // 应用前在日历上用虚线幽灵块预览新方案。
+    usePlanStore.getState().previewArtifact(proposal);
   }, [proposal]);
 
   // 只改任务/约束的 AI patch：叠加在用户未保存的编辑草稿上，计数与内容同步更新，闪烁提示手动核对。
@@ -195,6 +197,7 @@ export function PlanCardPanel() {
     if (patchAlreadyApplied) { useChatStore.setState({ patch: null }); return; }
     setAttention(true);
     pulseOnce();
+    usePlanStore.getState().previewPatch(foreignPatch);
   }, [foreignPatch, patchAlreadyApplied]);
 
   // 打开时保留编辑草稿（AI patch 的结果暂存在草稿里，清掉会看到旧/空内容）。
@@ -249,6 +252,7 @@ export function PlanCardPanel() {
     }
     setDraft(null);
     setAttention(false);
+    usePlanStore.getState().discardPreview();
     void applyPatchOps(foreignPatch);
   };
 
@@ -318,7 +322,7 @@ export function PlanCardPanel() {
               </ul>
             )}
             <div className="mt-2 flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => useChatStore.setState({ patch: null })}>放弃</Button>
+              <Button variant="outline" size="sm" onClick={() => { usePlanStore.getState().discardPreview(); useChatStore.setState({ patch: null }); }}>放弃</Button>
               <Button size="sm" disabled={patchPending || saving} onClick={() => { void applyForeign(); }}>
                 {patchPending ? '应用中…' : '应用调整'}
               </Button>
@@ -397,7 +401,7 @@ export function PlanCardPanel() {
                 <ConstraintSetFooter>
                   {proposal ? (
                     <>
-                      <Button variant="outline" size="sm" onClick={() => { useChatStore.setState({ artifact: null, clarifications: [] }); close(); }}>取消</Button>
+                      <Button variant="outline" size="sm" onClick={() => { usePlanStore.getState().discardPreview(); useChatStore.setState({ artifact: null, clarifications: [] }); close(); }}>取消</Button>
                       <Button size="sm" disabled={isPending || viewed.task_defs.length === 0 || preview?.feasibility === 'INFEASIBLE'} onClick={() => commit(viewed)}>
                         {isPending ? '生成中…' : '确认并生成'}
                       </Button>

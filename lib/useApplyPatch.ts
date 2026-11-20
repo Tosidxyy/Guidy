@@ -14,7 +14,6 @@ import { useChatStore } from '@/store/useChatStore';
 import { useBlockHistory } from '@/store/useBlockHistory';
 import { localLearnProfile } from '@/lib/local/domain';
 import { usePlanStore } from '@/store/usePlanStore';
-import { usePlanSync } from '@/store/usePlanSync';
 import { useSharedCalendar } from '@/store/useSharedCalendar';
 import type { PatchArtifact } from '@/shared/schemas';
 import type { PlanState } from '@/shared/types';
@@ -65,7 +64,7 @@ export function useApplyPatch() {
       };
       if (activeOps.length) {
         try {
-          resp = await api.applyPatch(await buildBodyFor(usePlanSync.getState().serverVersions[activeId] ?? store.state.plan.version));
+          resp = await api.applyPatch(await buildBodyFor(store.state.plan.version));
         } catch (err) {
           // 云端版本已被其他保存/AI 调整推进：先对齐服务端全量状态，再按最新版本自动重试一次。
           const e = err instanceof ApiError ? err : null;
@@ -73,8 +72,7 @@ export function useApplyPatch() {
           if (e?.code === 'version_conflict' && d?.plan && Array.isArray(d.blocks)) {
             const s = usePlanStore.getState();
             s.applyServerState({ plan: d.plan, task_defs: d.task_defs, constraints: d.constraints, blocks: d.blocks });
-            usePlanSync.getState().setServerVersion(activeId, d.plan.version);
-            resp = await api.applyPatch(await buildBodyFor(d.plan.version));
+                        resp = await api.applyPatch(await buildBodyFor(d.plan.version));
           } else {
             throw err;
           }
@@ -129,8 +127,7 @@ export function useApplyPatch() {
         store.replaceStateKeepUndo(next);
         const planId = store.state.plan.id;
         if (planId) {
-          usePlanSync.getState().setServerVersion(planId, resp.version);
-          // 进入撤销栈：顶栏撤销/重做与手动拖动一致，撤销走服务端逆操作。
+                    // 进入撤销栈：顶栏撤销/重做与手动拖动一致，撤销走服务端逆操作。
           if (Array.isArray(resp.inverse_ops) && resp.inverse_ops.length) {
             useBlockHistory.getState().push(planId, {
               at: Date.now(),
@@ -145,7 +142,7 @@ export function useApplyPatch() {
       qc.invalidateQueries({ queryKey: ['calendar'] });
       void localLearnProfile().then(() => qc.invalidateQueries({ queryKey: ['profile'] })).catch(() => null);
       const suffix = foreignOps ? `（含其他计划/公共日历 ${foreignOps} 项）` : '';
-      toast.success(resp?.server_authoritative ? `已按最新结果保存调整${suffix}` : `调整已保存到本机${suffix}`);
+      toast.success(`调整已保存到本机${suffix}`);
       if (Array.isArray(resp?.warnings) && resp.warnings.length) toast.info(resp.warnings[0], { duration: 8000 });
       useChatStore.setState({ patch: null });
     },

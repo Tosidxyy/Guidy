@@ -1,4 +1,5 @@
 import type { PatchArtifact } from '@/shared/schemas';
+type ArtifactLike = PatchArtifact | { type: string; summary?: string; ops?: unknown };
 import { canonical } from '@/lib/restoreChat';
 
 const KEY = 'guidy.applied-patches.v1';
@@ -11,7 +12,7 @@ export interface KeyValue {
 type Book = Record<string, string[]>;
 
 // 同一份 patch 的标识：只取语义字段，避免重新解析后键序不同导致误判。
-export function patchSignature(patch: PatchArtifact): string {
+export function patchSignature(patch: ArtifactLike): string {
   return canonical({ summary: patch.summary, ops: patch.ops });
 }
 
@@ -40,11 +41,11 @@ export function createAppliedPatches(storage: KeyValue | null) {
   }
 
   return {
-    isApplied(conversationId: string | null, patch: PatchArtifact): boolean {
+    isApplied(conversationId: string | null, patch: ArtifactLike): boolean {
       if (!conversationId) return false;
       return (read()[conversationId] ?? []).includes(patchSignature(patch));
     },
-    mark(conversationId: string | null, patch: PatchArtifact): void {
+    mark(conversationId: string | null, patch: ArtifactLike): void {
       if (!conversationId) return;
       const signature = patchSignature(patch);
       const book = read();

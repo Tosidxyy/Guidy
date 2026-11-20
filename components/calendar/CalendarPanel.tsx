@@ -25,7 +25,6 @@ import { BlockCard, type BlockVisualState } from './BlockCard';
 import { ConflictBar } from './ConflictBar';
 import { GUTTER_PX, HOUR_PX, PX_PER_MIN, SNAP_MIN, layoutDay, snap } from './layout';
 import { QuickAddDialog } from './QuickAddDialog';
-import { ParallelReview } from './ParallelReview';
 import { loadPairs, pairKey } from '@/lib/parallel';
 
 const WEEKDAY_LABEL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -920,7 +919,6 @@ export function CalendarPanel() {
       </footer>
 
       <QuickAddDialog />
-      <ParallelReview />
 
       <AlertDialog open={!!foreignTarget} onOpenChange={(v) => { if (!v) setForeignTarget(null); }}>
         <AlertDialogContent>

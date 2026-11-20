@@ -5,8 +5,10 @@ import { useSharedCalendar } from '@/store/useSharedCalendar';
 import { queryClient } from '@/lib/queryClient';
 import {
   localAppendMessage, localEnsureConversation, localGetProfile, localPlan, localPlans,
-  localRemoveMessages, localTouchConversation,
+  localTouchConversation,
 } from '@/lib/local/domain';
+import { listMessages, deleteMessage } from '@/lib/local/repo';
+import { appliedPatches } from '@/lib/appliedPatches';
 
 export interface ChatStream {
   cancel(): void;
@@ -90,12 +92,17 @@ export function createChatController(deps: {
     const id = st.conversationId;
     if (!id) return;
     const rows = st.messages.filter((m) => !(m.role === 'user' && m.seq === -1) && !(m.role === 'assistant' && m.kind === 'text' && !m.content));
-    await localRemoveMessages(id);
-    let n = 0;
-    for (const m of rows) {
-      n += 1;
-      await localAppendMessage({ conversation_id: id, seq: n, role: m.role, kind: m.kind, content: m.content, ...(m.payload !== undefined ? { payload: m.payload } : {}) });
+    // 增量落库：只补写新增/变化的行，最后删除多余尾部；中途关页不会丢掉已有历史。
+    const existing = await listMessages(id);
+    for (let i = 0; i < rows.length; i++) {
+      const m = rows[i];
+      const seq = i + 1;
+      const prev = existing[i];
+      const payloadJson = JSON.stringify(m.payload ?? null);
+      if (prev && prev.seq === seq && prev.role === m.role && prev.kind === m.kind && prev.content === m.content && JSON.stringify(prev.payload ?? null) === payloadJson) continue;
+      await localAppendMessage({ conversation_id: id, seq, role: m.role, kind: m.kind, content: m.content, ...(m.payload !== undefined ? { payload: m.payload } : {}) });
     }
+    for (const prev of existing) if (prev.seq > rows.length) await deleteMessage(id, prev.seq);
     await localTouchConversation(id);
     void queryClient.invalidateQueries({ queryKey: ['conversations'] });
   };
@@ -138,11 +145,25 @@ export function createChatController(deps: {
       store.setState({ conversationId: conv.id });
     }
     const conversationId = store.getState().conversationId;
-    const history = store.getState().messages
-      .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.kind === 'text' && m.content)
-      .slice(0, -1)
-      .slice(-12)
-      .map((m) => ({ role: m.role, content: m.content }));
+    // 历史带上方案/调整摘要与「是否已应用」，否则模型只看到纯文字、不知道上一轮排了什么。
+    const convForHistory = store.getState().conversationId;
+    const history: { role: string; content: string }[] = [];
+    for (const m of store.getState().messages) {
+      if (m.role === 'user' && m.content) { history.push({ role: 'user', content: m.content }); continue; }
+      if (m.role !== 'assistant') continue;
+      if (m.kind === 'text' && m.content) { history.push({ role: 'assistant', content: m.content }); continue; }
+      const p = m.payload as any;
+      if (m.kind === 'constraint_set' && p) {
+        const applied = appliedPatches.isApplied(convForHistory, p);
+        history.push({ role: 'assistant', content: `[方案] ${p.plan_title ?? '方案'}：任务 ${p.task_defs?.length ?? 0} 个、约束 ${p.constraints?.length ?? 0} 条${applied ? '（用户已确认生成）' : '（待用户确认）'}` });
+      } else if (m.kind === 'patch' && p) {
+        const applied = appliedPatches.isApplied(convForHistory, p);
+        history.push({ role: 'assistant', content: `[调整建议] ${p.summary ?? '调整'}：${p.ops?.length ?? 0} 项改动${applied ? '（用户已应用）' : '（待用户应用）'}` });
+      } else if (m.kind === 'question_card' && p) {
+        history.push({ role: 'assistant', content: `[问题卡] ${p.title ?? '追问'}：${(p.questions ?? []).map((q: any) => q.text).join('；').slice(0, 120)}` });
+      }
+    }
+    const trimmedHistory = history.slice(-12);
     const context = await buildContext(planId);
     // 本机对话的 seq 由客户端延续：服务端无状态，若每轮从 1 开始会与上一轮气泡撞号。
     const seqBase = store.getState().messages.reduce((mx, m) => Math.max(mx, m.seq), 0);
@@ -155,7 +176,7 @@ export function createChatController(deps: {
       today: new Date().toLocaleDateString('sv-SE'),
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       ...context,
-      history,
+      history: trimmedHistory,
     };
     stream.read((signal) => openChecked(fetchFn, SEND_URL, {
       method: 'POST', headers: { 'content-type': 'application/json' },

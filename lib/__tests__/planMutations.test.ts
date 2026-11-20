@@ -16,9 +16,7 @@ function deps(over: Partial<PlanMutationDeps> = {}): PlanMutationDeps {
       constraints: [],
       inverse_ops: [{ op: 'remove_block', id: 'b1' }],
     })),
-    getServerVersion: () => 1,
     fetchPlan: vi.fn(async () => state()),
-    setServerVersion: vi.fn(),
     getActivePlanId: () => 'p1',
     getActiveState: state,
     applyActiveState: vi.fn(),
@@ -43,7 +41,6 @@ describe('createPlanMutations', () => {
       plan: expect.objectContaining({ version: 2 }),
       blocks: [expect.objectContaining({ id: 'b1' })],
     }));
-    expect(d.setServerVersion).toHaveBeenCalledWith('p1', 2);
     expect(d.pushHistory).toHaveBeenCalledTimes(1);
   });
 
@@ -79,19 +76,7 @@ describe('createPlanMutations', () => {
     const r = await apply({ planId: 'p1', ops: [{ op: 'remove_block', id: 'b1' }], label: '删除', optimistic: { blocks: [] } });
     expect(r.ok).toBe(false);
     expect(d.applyActiveState).toHaveBeenLastCalledWith(expect.objectContaining({ plan }));
-    expect(d.setServerVersion).not.toHaveBeenCalled();
     expect(d.pushHistory).not.toHaveBeenCalled();
-  });
-
-  it('缺少版本时先拉取计划', async () => {
-    const d = deps({
-      getServerVersion: () => undefined,
-      fetchPlan: vi.fn(async () => ({ plan: { ...plan, version: 4 }, task_defs: [], constraints: [], blocks: [] })),
-    });
-    const apply = createPlanMutations(d);
-    await apply({ planId: 'p1', ops: [{ op: 'remove_block', id: 'b1' }], label: '删除', optimistic: { blocks: [] } });
-    expect(d.fetchPlan).toHaveBeenCalledWith('p1');
-    expect(d.setServerVersion).toHaveBeenCalledWith('p1', 4);
   });
 
   it('patch_target_missing 时重新拉取并对齐云端', async () => {
@@ -105,31 +90,6 @@ describe('createPlanMutations', () => {
     expect(r.ok).toBe(false);
     expect(r.reason).toContain('刷新');
     expect(d.applyActiveState).toHaveBeenLastCalledWith(expect.objectContaining({ plan: expect.objectContaining({ version: 5 }) }));
-    expect(d.setServerVersion).toHaveBeenCalledWith('p1', 5);
-  });
-
-  it('version_conflict：对齐服务端全量后按新版本自动重试一次', async () => {
-    const calls: any[] = [];
-    const fresh = { ...state(), plan: { ...plan, version: 7 } };
-    const d = deps({
-      patch: vi.fn(async (body: any) => {
-        calls.push(body);
-        if (calls.length === 1) {
-          throw new ApiError('version_conflict', 409, '计划已在其他地方更新', undefined, {
-            plan: fresh.plan, task_defs: fresh.task_defs, constraints: fresh.constraints, blocks: fresh.blocks,
-          });
-        }
-        return { plan: { ...plan, version: 8 }, version: 8, blocks: [], task_defs: [], constraints: [], inverse_ops: [] };
-      }),
-    });
-    const apply = createPlanMutations(d);
-    const r = await apply({ planId: 'p1', ops: [{ op: 'remove_block', id: 'b1' }], label: '删除', optimistic: { blocks: [] } });
-    expect(r.ok).toBe(true);
-    expect(calls).toHaveLength(2);
-    expect(calls[0].base_version).toBe(1);
-    expect(calls[1].base_version).toBe(7);
-    expect(d.setServerVersion).toHaveBeenCalledWith('p1', 7);
-    expect(d.setServerVersion).toHaveBeenCalledWith('p1', 8);
   });
 
   it('同意图重试使用同一 preview_id（幂等），不同 base_version 则不同', async () => {

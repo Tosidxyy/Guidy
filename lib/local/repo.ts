@@ -94,6 +94,9 @@ export async function listMessages(conversationId: string): Promise<MessageRecor
 export async function appendMessage(m: MessageRecord): Promise<void> {
   await putOne('messages', [m.conversation_id, m.seq], m);
 }
+export async function deleteMessage(conversationId: string, seq: number): Promise<void> {
+  await deleteOne('messages', [conversationId, seq]);
+}
 export async function removeMessages(conversationId: string): Promise<void> {
   for (const m of await getAll<MessageRecord>('messages')) {
     if (m.conversation_id === conversationId) await deleteOne('messages', [m.conversation_id, m.seq]);

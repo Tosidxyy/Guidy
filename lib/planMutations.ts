@@ -6,9 +6,7 @@ import type { BlockHistoryEntry } from '@/store/useBlockHistory';
 
 export interface PlanMutationDeps {
   patch(body: unknown): Promise<any>;
-  getServerVersion(planId: string): number | undefined;
   fetchPlan(planId: string): Promise<PlanState>;
-  setServerVersion(planId: string, version: number): void;
   getActivePlanId(): string | null;
   getActiveState(): PlanState;
   applyActiveState(patch: Partial<PlanState>): void;
@@ -46,20 +44,11 @@ export function previewIdFor(planId: string, baseVersion: number, ops: ApplyOp[]
 }
 
 export function createPlanMutations(deps: PlanMutationDeps) {
-  return async function applyPlanOps(req: PlanOpRequest, retried = false, versionOverride?: number): Promise<{ ok: boolean; reason?: string; resp?: any }> {
-    let version = versionOverride ?? deps.getServerVersion(req.planId);
-    if (version === undefined) {
-      try {
-        const plan = await deps.fetchPlan(req.planId);
-        version = plan.plan.version;
-        deps.setServerVersion(req.planId, version);
-      } catch (err) {
-        return { ok: false, reason: err instanceof ApiError ? err.message : '无法读取计划版本' };
-      }
-    }
+  return async function applyPlanOps(req: PlanOpRequest): Promise<{ ok: boolean; reason?: string; resp?: any }> {
     const active = deps.getActivePlanId() === req.planId;
     const previous = active ? deps.getActiveState() : deps.getLayer(req.planId);
     if (!previous) return { ok: false, reason: '计划数据未就绪' };
+    const version = previous.plan.version;
     const applyState = (patch: Partial<PlanState>) => active
       ? deps.applyActiveState(patch)
       : deps.applyLayerState(req.planId, patch);
@@ -71,7 +60,6 @@ export function createPlanMutations(deps: PlanMutationDeps) {
         ...(req.undo ? { undo: true } : {}),
       });
       applyState(serverState(resp, previous));
-      deps.setServerVersion(req.planId, resp.version);
       const inverse = Array.isArray(resp.inverse_ops) ? resp.inverse_ops : [];
       if (req.record !== false && inverse.length > 0) {
         deps.pushHistory(req.planId, { at: Date.now(), label: req.label, forwardOps: req.ops, inverseOps: inverse });
@@ -80,21 +68,15 @@ export function createPlanMutations(deps: PlanMutationDeps) {
       return { ok: true, resp };
     } catch (err) {
       applyState(previous);
-      if (err instanceof ApiError && (err.code === 'patch_target_missing' || err.code === 'version_conflict' || err.code === 'commit_conflict')) {
-        // 云端状态已领先（其他标签页/自动保存/上一次成功但响应丢失）：先对齐，再按新版本自动重试一次。
+      if (err instanceof ApiError && err.code === 'patch_target_missing') {
         const details = err.details as any;
-        let fresh: PlanState | null = null;
-        if (details?.plan && Array.isArray(details.blocks)) {
-          fresh = { plan: details.plan, task_defs: details.task_defs ?? previous.task_defs, constraints: details.constraints ?? previous.constraints, blocks: details.blocks } as PlanState;
+        try {
+          const fresh = details?.plan && Array.isArray(details.blocks)
+            ? ({ plan: details.plan, task_defs: details.task_defs ?? previous.task_defs, constraints: details.constraints ?? previous.constraints, blocks: details.blocks } as PlanState)
+            : await deps.fetchPlan(req.planId);
           applyState(fresh);
-        } else {
-          try { fresh = await deps.fetchPlan(req.planId); applyState(fresh); } catch { /* 保持回滚后的本地状态 */ }
-        }
-        if (fresh) {
-          deps.setServerVersion(req.planId, fresh.plan.version);
-          if (err.code !== 'patch_target_missing' && !retried) return applyPlanOps(req, true, fresh.plan.version);
-        }
-        return { ok: false, reason: err.code === 'patch_target_missing' ? '目标已变化，已刷新到最新状态，请重试' : '已同步到最新版本，请再试一次' };
+        } catch { /* 保持回滚后的本地状态 */ }
+        return { ok: false, reason: '目标已变化，已刷新到最新状态，请重试' };
       }
       return { ok: false, reason: err instanceof ApiError ? err.message : '操作失败，已恢复原状态' };
     }

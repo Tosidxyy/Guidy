@@ -502,7 +502,11 @@ export async function migrateFromCloudOnce(base: string, signal?: AbortSignal): 
       await putConversation({ id: c.id, title: c.title, plan_id: c.plan_id ?? null, status: c.status === 'archived' ? 'archived' : 'active', created_at: c.created_at ?? nowIso(), updated_at: c.updated_at ?? nowIso() });
       const h = await req(`/chat/history?conversation_id=${encodeURIComponent(c.id)}`);
       for (const m of h.messages ?? []) {
-        await appendMessage({ conversation_id: c.id, seq: m.seq, role: m.role, kind: m.kind, content: m.content, ...(m.payload !== undefined ? { payload: m.payload } : {}) });
+        // 只迁移可读对话：跳过系统/状态行、空助手消息和带 ```json 原文的气泡；产物只留结构化 payload。
+        if (m.role === 'system' || m.kind === 'status' || m.kind === 'error' || m.kind === 'progress') continue;
+        if (m.role === 'assistant' && m.kind === 'text' && (!String(m.content ?? '').trim() || String(m.content).includes('```'))) continue;
+        const content = m.kind === 'text' ? String(m.content ?? '') : '';
+        await appendMessage({ conversation_id: c.id, seq: m.seq, role: m.role, kind: m.kind, content, ...(m.payload !== undefined ? { payload: m.payload } : {}) });
       }
     }
     try {
@@ -510,6 +514,8 @@ export async function migrateFromCloudOnce(base: string, signal?: AbortSignal): 
       await putProfile({ habits: profile.habits ?? '', learned: profile.learned ?? null, learned_at: profile.learned_at ?? null, updated_at: profile.updated_at ?? null });
     } catch { /* 画像可选 */ }
     await setMeta({ migrated: true });
+    // 画像在导入完成后基于本机数据计算。
+    try { await localLearnProfile(); } catch { /* 画像可选 */ }
     return { migrated: true, source: 'cloud' };
   } catch (e) {
     // 云端不可用或没有旧数据：不写 migrated，下次打开再试；本地已有数据时同样视为完成。

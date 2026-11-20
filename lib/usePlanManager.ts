@@ -3,7 +3,6 @@ import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import { usePlanStore } from '@/store/usePlanStore';
-import { usePlanSync } from '@/store/usePlanSync';
 import { useChatStore } from '@/store/useChatStore';
 import { chatController } from '@/lib/chatRuntime';
 import { createPlanManager } from '@/lib/planManagerCore';
@@ -52,8 +51,7 @@ export function usePlanManager() {
     switchPlan: (id: string) => run(async () => {
       await manager.switchPlan(id);
       const plan = usePlanStore.getState().state.plan;
-      if (plan.id === id) usePlanSync.getState().setServerVersion(id, plan.version);
-    }),
+          }),
     newPlan: () => run(() => manager.newPlan()),
     deletePlan: (id: string) => run(async () => {
       // 删除正在规划的当前对话：先通知服务端中断，避免流继续写已删除的对话。
