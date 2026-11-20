@@ -13,73 +13,205 @@ interface Turn {
   waiter?: (message: string) => void;
 }
 
-interface CompletionChunk {
-  choices?: { delta?: { content?: string }; message?: { content?: string } }[];
+interface ToolCall {
+  id: string;
+  name: string;
+  arguments: string;
 }
 
-// OpenAI 兼容的本地 QCA 替身：把 functions/prompt.ts 的系统提示交给真实模型，
-// 再把回复包装成 app 消费的 QCA 事件流。密钥只在本地 Function 进程内使用。
+interface CompletionChunk {
+  choices?: {
+    delta?: {
+      content?: string;
+      tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[];
+    };
+    message?: { content?: string; tool_calls?: { id: string; function: { name: string; arguments: string } }[] };
+  }[];
+}
+
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
+const MAX_ROUNDS = 5;
+
+const TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'WebSearch',
+      description: '搜索互联网，返回最多 6 条标题/链接/摘要。需要外部事实（天气、日期、政策、价格等）时先搜再答。',
+      parameters: { type: 'object', properties: { query: { type: 'string', description: '搜索词' } }, required: ['query'] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'WebFetch',
+      description: '抓取一个公开 http(s) 网页并返回正文文本（截断至 6000 字）。用于核实搜索结果的细节。',
+      parameters: { type: 'object', properties: { url: { type: 'string', description: '完整 URL' } }, required: ['url'] },
+    },
+  },
+];
+
+function isPublicUrl(raw: string): boolean {
+  let u: URL;
+  try { u = new URL(raw); } catch { return false; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  const h = u.hostname.toLowerCase();
+  if (h === 'localhost' || h.endsWith('.local') || h.endsWith('.internal')) return false;
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(h)) {
+    const [a, b] = h.split('.').map(Number);
+    if (a === 10 || a === 127 || a === 0 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254)) return false;
+  }
+  if (h === '[::1]' || h.startsWith('[fc') || h.startsWith('[fd')) return false;
+  return true;
+}
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function webSearch(query: string): Promise<string> {
+  const sources = [
+    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+    `https://www.bing.com/search?q=${encodeURIComponent(query)}`,
+  ];
+  for (const url of sources) {
+    try {
+      const res = await fetch(url, { headers: { 'user-agent': UA, 'accept-language': 'zh-CN,zh;q=0.9' }, signal: AbortSignal.timeout(9000) });
+      if (!res.ok) continue;
+      const html = await res.text();
+      const results: { title: string; url: string; snippet: string }[] = [];
+      const blockRe = /<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>(?:[\s\S]*?class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>)?/g;
+      const bingRe = /<li class="b_algo"[\s\S]*?<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?(?:<p[^>]*>([\s\S]*?)<\/p>)?/g;
+      const re = url.includes('duckduckgo') ? blockRe : bingRe;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(html)) && results.length < 6) {
+        const href = m[1];
+        if (!href.startsWith('http')) continue;
+        results.push({ title: stripHtml(m[2]).slice(0, 120), url: href, snippet: stripHtml(m[3] ?? '').slice(0, 220) });
+      }
+      if (results.length) return JSON.stringify({ results });
+    } catch { /* 换下一个搜索源 */ }
+  }
+  return JSON.stringify({ results: [], note: '联网搜索当前不可用（网络受限）。不要声称检索过；如需外部事实，向用户追问或明说假设。' });
+}
+
+async function webFetch(url: string): Promise<string> {
+  if (!isPublicUrl(url)) return JSON.stringify({ error: '仅允许公开 http(s) 地址' });
+  try {
+    const res = await fetch(url, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(12000), redirect: 'follow' });
+    if (!res.ok) return JSON.stringify({ error: `http_${res.status}` });
+    const html = await res.text();
+    const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '').trim();
+    return JSON.stringify({ title: stripHtml(title).slice(0, 120), text: stripHtml(html).slice(0, 6000) });
+  } catch (e) {
+    return JSON.stringify({ error: 'fetch_failed', detail: String(e).slice(0, 120) });
+  }
+}
+
+async function runTool(call: ToolCall): Promise<string> {
+  let args: Record<string, string> = {};
+  try { args = JSON.parse(call.arguments || '{}'); } catch { /* 空参数 */ }
+  if (call.name === 'WebSearch') return webSearch(String(args.query ?? ''));
+  if (call.name === 'WebFetch') return webFetch(String(args.url ?? ''));
+  return JSON.stringify({ error: 'unknown_tool' });
+}
+
+// OpenAI 兼容的本地 QCA 替身：系统提示 + function-calling 检索循环，
+// 把回复包装成 app 消费的 QCA 事件流。密钥只在本地 Function 进程内使用。
 export function createOpenAiQca(config: LocalLlmConfig): QcaAdapter {
   const endpoint = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
   const turns = new Map<string, Turn>();
-  // QCA 的会话自带上下文；直连 OpenAI 兼容接口是无状态的，这里按 session 保留最近对话。
-  const histories = new Map<string, { role: 'user' | 'assistant'; content: string }[]>();
+  const histories = new Map<string, { role: string; content: string | null; tool_calls?: unknown[]; tool_call_id?: string }[]>();
 
-  async function complete(sessionId: string, message: string, signal: AbortSignal | undefined, onDelta: (text: string) => void): Promise<string> {
+  async function complete(
+    sessionId: string,
+    message: string,
+    signal: AbortSignal | undefined,
+    onDelta: (text: string) => void,
+    onTool: (name: string) => void,
+  ): Promise<string> {
     const history = [...(histories.get(sessionId) ?? [])];
     const last = history.at(-1);
     if (last?.role !== 'user' || last.content !== message) history.push({ role: 'user', content: message });
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${config.apiKey}` },
-      body: JSON.stringify({
-        model: config.model,
-        stream: true,
-        messages: [
-          { role: 'system', content: buildSystemPrompt() },
-          ...history,
-        ],
-      }),
-      signal,
-    });
-    if (!res.ok) throw new Error(`llm_http_${res.status}`);
-    if (!(res.headers.get('content-type') ?? '').includes('text/event-stream')) {
-      const json = (await res.json()) as CompletionChunk;
-      const text = json.choices?.[0]?.message?.content ?? '';
-      if (text) onDelta(text);
-      histories.set(sessionId, [...history, { role: 'assistant', content: text }].slice(-20));
-      return text;
-    }
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let full = '';
-    try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let newline = buffer.indexOf('\n');
-        while (newline >= 0) {
-          const line = buffer.slice(0, newline).replace(/\r$/, '');
-          buffer = buffer.slice(newline + 1);
-          newline = buffer.indexOf('\n');
-          if (!line.startsWith('data:')) continue;
-          const data = line.slice(5).trim();
-          if (!data || data === '[DONE]') continue;
-          let json: CompletionChunk;
-          try { json = JSON.parse(data) as CompletionChunk; } catch { continue; }
-          const delta = json.choices?.[0]?.delta?.content ?? '';
-          if (!delta) continue;
-          full += delta;
-          onDelta(delta);
+    const messages: unknown[] = [{ role: 'system', content: buildSystemPrompt() }, ...history];
+    let finalText = '';
+
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${config.apiKey}` },
+        body: JSON.stringify({ model: config.model, stream: true, tools: TOOLS, tool_choice: 'auto', messages }),
+        signal,
+      });
+      if (!res.ok) throw new Error(`llm_http_${res.status}`);
+
+      let content = '';
+      const calls: ToolCall[] = [];
+      const isStream = (res.headers.get('content-type') ?? '').includes('text/event-stream');
+      if (!isStream) {
+        const json = (await res.json()) as CompletionChunk;
+        const msg = json.choices?.[0]?.message;
+        content = msg?.content ?? '';
+        for (const c of msg?.tool_calls ?? []) calls.push({ id: c.id, name: c.function.name, arguments: c.function.arguments });
+        if (content) onDelta(content);
+      } else {
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let newline = buffer.indexOf('\n');
+            while (newline >= 0) {
+              const line = buffer.slice(0, newline).replace(/\r$/, '');
+              buffer = buffer.slice(newline + 1);
+              newline = buffer.indexOf('\n');
+              if (!line.startsWith('data:')) continue;
+              const data = line.slice(5).trim();
+              if (!data || data === '[DONE]') continue;
+              let json: CompletionChunk;
+              try { json = JSON.parse(data) as CompletionChunk; } catch { continue; }
+              const delta = json.choices?.[0]?.delta;
+              if (delta?.content) { content += delta.content; onDelta(delta.content); }
+              for (const tc of delta?.tool_calls ?? []) {
+                const i = tc.index ?? calls.length;
+                while (calls.length <= i) calls.push({ id: '', name: '', arguments: '' });
+                if (tc.id) calls[i].id = tc.id;
+                if (tc.function?.name) calls[i].name += tc.function.name;
+                if (tc.function?.arguments) calls[i].arguments += tc.function.arguments;
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock();
         }
       }
-    } finally {
-      reader.releaseLock();
+
+      const valid = calls.filter((c) => c.name);
+      if (!valid.length) {
+        finalText = content;
+        break;
+      }
+      messages.push({ role: 'assistant', content: content || null, tool_calls: valid.map((c) => ({ id: c.id || `call_${round}_${c.name}`, type: 'function', function: { name: c.name, arguments: c.arguments } })) });
+      for (const c of valid) {
+        onTool(c.name);
+        const result = await runTool(c);
+        messages.push({ role: 'tool', tool_call_id: c.id || `call_${round}_${c.name}`, content: result });
+      }
+      if (round === MAX_ROUNDS - 1) finalText = content;
     }
-    if (full) histories.set(sessionId, [...history, { role: 'assistant', content: full }].slice(-20));
-    return full;
+
+    if (finalText) histories.set(sessionId, [...history, { role: 'assistant', content: finalText }].slice(-20));
+    return finalText;
   }
 
   return {
@@ -114,9 +246,13 @@ export function createOpenAiQca(config: LocalLlmConfig): QcaAdapter {
           try {
             const message = await pending;
             if (opts.signal?.aborted) throw new DOMException('aborted', 'AbortError');
-            const full = await complete(sessionId, message, opts.signal, (text) => {
-              controller.enqueue(encodeSSE('event_delta', { type: 'event_delta', event_id: 'local', delta: { type: 'content_delta', content: { type: 'text', text } } }));
-            });
+            const full = await complete(
+              sessionId,
+              message,
+              opts.signal,
+              (text) => controller.enqueue(encodeSSE('event_delta', { type: 'event_delta', event_id: 'local', delta: { type: 'content_delta', content: { type: 'text', text } } })),
+              (name) => controller.enqueue(encodeSSE('agent.tool_use', { type: 'agent.tool_use', name })),
+            );
             controller.enqueue(encodeSSE('agent.message', { type: 'agent.message', id: 'local', content: [{ type: 'text', text: full }] }));
             controller.enqueue(encodeSSE('session.status', { type: 'session.status', status: 'idle' }));
           } catch {
