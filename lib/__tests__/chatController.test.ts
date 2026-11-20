@@ -67,6 +67,16 @@ describe('chatController.send', () => {
     const [, init] = fetchFn.mock.calls[0];
     expect(JSON.parse((init as RequestInit).body as string).plan_id).toBeUndefined();
   });
+  it('body 携带 seq_base：延续本机已有消息编号', async () => {
+    const stream = fakeStream();
+    const fetchFn = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => ({ ok: true, status: 202 }) as Response);
+    useChatStore.getState().setConversation('c1', [{ seq: 7, role: 'assistant', kind: 'text', content: '旧回复' }]);
+    const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-s' });
+    c.send('新一句');
+    await tick();
+    const [, init] = fetchFn.mock.calls[0];
+    expect(JSON.parse((init as RequestInit).body as string).seq_base).toBe(7);
+  });
   it('fetch 网络失败：上浮 connection_failed 并结束思考态，不永久「思考中」', async () => {
     const stream = fakeStream();
     const fetchFn = vi.fn(async () => { throw new TypeError('Failed to fetch'); });

@@ -135,9 +135,12 @@ export function createChatController(deps: {
       .slice(-12)
       .map((m) => ({ role: m.role, content: m.content }));
     const context = await buildContext(planId);
+    // 本机对话的 seq 由客户端延续：服务端无状态，若每轮从 1 开始会与上一轮气泡撞号。
+    const seqBase = store.getState().messages.reduce((mx, m) => Math.max(mx, m.seq), 0);
     const body = {
       conversation_id: conversationId ?? undefined,
       text,
+      seq_base: Math.max(0, seqBase),
       request_id: newId(),
       plan_id: planId ?? undefined,
       today: new Date().toLocaleDateString('sv-SE'),

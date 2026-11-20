@@ -58,6 +58,16 @@ describe('aiChat 无状态代理', () => {
     expect(tables).toHaveLength(0);
   });
 
+  it('seq_base 续号：新回合不会复用旧消息的 seq', async () => {
+    const d = deps({ openStream: async () => ({ body: upstreamStream([
+      { type: 'agent.message', id: 'e1', content: [{ type: 'text', text: '好的' }] },
+      { type: 'session.status', status: 'idle' },
+    ]), close() {} }) });
+    const frames = await collect(await application(d)(ctx({ ...body, seq_base: 10 })));
+    expect(frames[0].data.seq).toBe(11);
+    expect(frames.filter((f) => f.event !== 'accepted').every((f) => f.data.seq > 10)).toBe(true);
+  });
+
   it('客户端上下文进入 prompt：计划块/历史/画像都随请求携带', async () => {
     let sent = '';
     const d = deps({

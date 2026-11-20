@@ -24,6 +24,8 @@ interface ChatContext {
   text: string;
   conversation_id: string | null;
   request_id: string;
+  /** 客户端本机已用的最大 seq：续号，避免新一轮的 delta 与旧气泡同 seq 被合并。 */
+  seq_base: number;
   today?: string;
   timezone?: string;
   plan: any | null;
@@ -49,6 +51,7 @@ function parseContext(body: any): ChatContext {
     text,
     conversation_id: typeof body?.conversation_id === 'string' ? body.conversation_id : null,
     request_id: typeof body?.request_id === 'string' && body.request_id ? body.request_id : crypto.randomUUID(),
+    seq_base: Math.max(0, Math.floor(Number(body?.seq_base) || 0)),
     today,
     timezone,
     plan: body?.plan && typeof body.plan === 'object' ? body.plan : null,
@@ -150,7 +153,7 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const stream = new ReadableStream<Uint8Array>({
     cancel() { live = false; },
     async start(controller) {
-      let seq = 0;
+      let seq = Number(chat.seq_base) || 0;
       const nextSeq = () => ++seq;
       let aborter: AbortController | null = null;
       const emit = (e: AppEvent) => {
