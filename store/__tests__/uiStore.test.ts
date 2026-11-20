@@ -27,3 +27,17 @@ describe('多选状态', () => {
     expect(useUiStore.getState().selectedBlockIds).toEqual([]);
   });
 });
+describe('resolveTheme（宣传主页跳转主题一致）', () => {
+  it('?theme= 优先于已保存与系统偏好', async () => {
+    const { resolveTheme } = await import('../useUiStore');
+    expect(resolveTheme('?theme=dark', 'light', false)).toBe('dark');
+    expect(resolveTheme('?theme=light', 'dark', true)).toBe('light');
+  });
+  it('无参数时已保存优先于系统', async () => {
+    const { resolveTheme } = await import('../useUiStore');
+    expect(resolveTheme('', 'dark', false)).toBe('dark');
+    expect(resolveTheme('', null, true)).toBe('dark');
+    expect(resolveTheme('', null, false)).toBe('light');
+    expect(resolveTheme('?theme=bogus', 'light', true)).toBe('light');
+  });
+});

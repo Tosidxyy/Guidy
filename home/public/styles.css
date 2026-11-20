@@ -1,16 +1,29 @@
 :root {
-  --site-bg: #000;
-  --site-fg: #e7e9ea;
-  --site-accent: #e7e9ea;
-  --site-on-accent: #000;
-  --site-surface: #0a0a0a;
-  --site-muted: #71767b;
-  --site-border: #2f3336;
+  --site-bg: #ffffff;
+  --site-fg: #0f1419;
+  --site-accent: #0f1419;
+  --site-on-accent: #ffffff;
+  --site-surface: #ffffff;
+  --site-surface-2: #f7f9f9;
+  --site-muted: #536471;
+  --site-border: #eff3f4;
   --site-font: "Inter", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
-  --site-radius: 20px;
+  --site-radius: 16px;
   --site-space: 1;
   --site-type: 1;
   --site-motion: 1;
+  color-scheme: light;
+}
+
+.dark {
+  --site-bg: #000000;
+  --site-fg: #e7e9ea;
+  --site-accent: #e7e9ea;
+  --site-on-accent: #000000;
+  --site-surface: #000000;
+  --site-surface-2: #16181c;
+  --site-muted: #71767b;
+  --site-border: #2f3336;
   color-scheme: dark;
 }
 
@@ -59,7 +72,26 @@ body {
   padding: 7px 16px;
   transition: background-color calc(180ms * var(--site-motion, 1)) ease, border-color calc(180ms * var(--site-motion, 1)) ease;
 }
-.top-cta:hover { background: var(--site-surface); border-color: var(--site-muted); }
+.top-cta:hover { background: var(--site-surface-2); border-color: var(--site-muted); }
+.top-actions { display: flex; align-items: center; gap: 8px; }
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--site-fg);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color calc(180ms * var(--site-motion, 1)) ease;
+}
+.theme-toggle:hover { background: var(--site-surface-2); }
+.theme-toggle svg { width: 18px; height: 18px; }
+.theme-toggle .icon-sun { display: none; }
+.dark .theme-toggle .icon-sun { display: block; }
+.dark .theme-toggle .icon-moon { display: none; }
 
 main { max-width: 1040px; margin: 0 auto; padding: 0 calc(24px * var(--site-space, 1)); }
 
@@ -101,7 +133,7 @@ main { max-width: 1040px; margin: 0 auto; padding: 0 calc(24px * var(--site-spac
 .btn.primary { background: var(--site-accent); color: var(--site-on-accent); }
 .btn.primary:hover { opacity: .9; }
 .btn.ghost { border: 1px solid var(--site-border); color: var(--site-fg); }
-.btn.ghost:hover { background: var(--site-surface); }
+.btn.ghost:hover { background: var(--site-surface-2); }
 
 .video-section { padding: calc(24px * var(--site-space, 1)) 0 calc(8px * var(--site-space, 1)); }
 .video-section h2 {

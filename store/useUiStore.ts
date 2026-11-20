@@ -29,11 +29,19 @@ interface UiStore {
   setMobileTab: (t: MobileTab) => void;
 }
 
+export function resolveTheme(search: string, saved: string | null, systemDark: boolean): 'light' | 'dark' {
+  const param = new URLSearchParams(search).get('theme');
+  if (param === 'light' || param === 'dark') return param;
+  if (saved === 'light' || saved === 'dark') return saved;
+  return systemDark ? 'dark' : 'light';
+}
+
 function initialTheme(): 'light' | 'dark' {
   try {
-    const saved = localStorage.getItem('guidy.theme');
-    if (saved === 'light' || saved === 'dark') return saved;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    // 宣传主页跳转会带 ?theme=，落地时与应用主题保持一致并持久化。
+    const param = new URLSearchParams(window.location.search).get('theme');
+    if (param === 'light' || param === 'dark') localStorage.setItem('guidy.theme', param);
+    return resolveTheme(window.location.search, localStorage.getItem('guidy.theme'), window.matchMedia('(prefers-color-scheme: dark)').matches);
   } catch {
     return 'light';
   }

@@ -1,3 +1,34 @@
+const APP_URL = 'https://guidy-app-oxg3oo3dpdz.qoder.zone';
+const THEME_KEY = 'guidy.theme';
+
+function initialTheme() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === 'light' || saved === 'dark') return saved;
+  } catch { /* ignore */ }
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+let theme = initialTheme();
+const toggle = document.getElementById('themeToggle');
+const favicon = document.getElementById('favicon');
+
+function applyTheme() {
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+  const src = theme === 'dark' ? 'assets/symbol-white.png' : 'assets/symbol-black.png';
+  document.querySelectorAll('[data-brand]').forEach((img) => { img.src = src; });
+  if (favicon) favicon.href = src;
+  toggle.setAttribute('aria-label', theme === 'dark' ? '切换到浅色' : '切换到深色');
+  document.querySelectorAll('[data-app-link]').forEach((a) => { a.href = `${APP_URL}/?theme=${theme}`; });
+}
+applyTheme();
+
+toggle.addEventListener('click', () => {
+  theme = theme === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem(THEME_KEY, theme); } catch { /* ignore */ }
+  applyTheme();
+});
+
 const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const reveals = document.querySelectorAll('.reveal');
 if (reduce || !('IntersectionObserver' in window)) {
