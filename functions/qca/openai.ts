@@ -1,4 +1,6 @@
 import type { QcaAdapter } from '../types.ts';
+import { rows } from '../db.ts';
+import type { Db } from '../db.ts';
 import { buildSystemPrompt } from '../prompt.ts';
 import { encodeSSE } from './sse.mjs';
 
@@ -123,12 +125,24 @@ async function runTool(call: ToolCall): Promise<string> {
   return JSON.stringify({ error: 'unknown_tool' });
 }
 
-// OpenAI 兼容的本地 QCA 替身：系统提示 + function-calling 检索循环，
-// 把回复包装成 app 消费的 QCA 事件流。密钥只在本地 Function 进程内使用。
-export function createOpenAiQca(config: LocalLlmConfig): QcaAdapter {
+// OpenAI 兼容的 QCA 替身：系统提示 + function-calling 检索循环，
+// 把回复包装成 app 消费的 QCA 事件流。密钥只在 Function 进程内使用。
+// 会话历史以 DB 对话记录为准（跨 isolate 不丢上下文）；无 db 时退化为内存历史。
+export function createOpenAiQca(config: LocalLlmConfig, db?: Db): QcaAdapter {
   const endpoint = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
   const turns = new Map<string, Turn>();
   const histories = new Map<string, { role: string; content: string | null; tool_calls?: unknown[]; tool_call_id?: string }[]>();
+
+  async function dbHistory(sessionId: string) {
+    const convId = sessionId.replace(/^local-/, '');
+    const rs = rows(await db!.from('messages').select('role,kind,content,seq').eq('conversation_id', convId).order('seq', { ascending: true }).limit(40));
+    const hist = rs
+      .filter((m: any) => (m.role === 'user' || m.role === 'assistant') && m.content)
+      .map((m: any) => ({ role: m.role as string, content: String(m.content) }));
+    // 本轮用户消息已由 message 参数提供（DB 里是先落库的原文），去掉尾部重复。
+    if (hist.at(-1)?.role === 'user') hist.pop();
+    return hist;
+  }
 
   async function complete(
     sessionId: string,
@@ -137,7 +151,7 @@ export function createOpenAiQca(config: LocalLlmConfig): QcaAdapter {
     onDelta: (text: string) => void,
     onTool: (name: string) => void,
   ): Promise<string> {
-    const history = [...(histories.get(sessionId) ?? [])];
+    const history = db ? await dbHistory(sessionId) : [...(histories.get(sessionId) ?? [])];
     const last = history.at(-1);
     if (last?.role !== 'user' || last.content !== message) history.push({ role: 'user', content: message });
     const messages: unknown[] = [{ role: 'system', content: buildSystemPrompt() }, ...history];
@@ -210,13 +224,16 @@ export function createOpenAiQca(config: LocalLlmConfig): QcaAdapter {
       if (round === MAX_ROUNDS - 1) finalText = content;
     }
 
-    if (finalText) histories.set(sessionId, [...history, { role: 'assistant', content: finalText }].slice(-20));
+    if (finalText && !db) histories.set(sessionId, [...history, { role: 'assistant', content: finalText }].slice(-20));
     return finalText;
   }
 
   return {
     async ensureBinding() { return { agent: { type: 'agent', id: 'local-openai', version: 1 }, environment_id: 'local' }; },
-    async createSession() { return { id: `local-${crypto.randomUUID()}` }; },
+    async createSession(_binding, _title, metadata) {
+      const convId = (metadata as any)?.conversation_id;
+      return { id: convId ? `local-${convId}` : `local-${crypto.randomUUID()}` };
+    },
     async sendEvents(sessionId, text) {
       const turn = turns.get(sessionId) ?? {};
       if (turn.waiter) {
