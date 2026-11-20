@@ -108,6 +108,7 @@ export async function applyPatchRoute(ctx: RouteCtx, deps: Deps): Promise<Respon
     if (!id) continue;
     const b = patched.state.blocks.find((x) => x.id === id);
     if (!b) continue;
+    if ((op as any).allow_overlap) continue;
     const check = validatePlacement({ id: b.id, task_key: b.task_key, title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc }, pctx);
     if (!check.ok) fail('placement_invalid', 422, { reason: check.hard?.reason });
   }

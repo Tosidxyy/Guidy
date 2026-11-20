@@ -72,11 +72,11 @@ describe('mergeConflictOps', () => {
     expect(parts).toHaveLength(2);
     expect(parts[0]).toEqual({
       planId: 'p1',
-      ops: [{ op: 'update_block', id: 'a1', patch: { title: '数学真题 + 核心训练', start_utc: c.start_utc, end_utc: c.end_utc, pinned: true } }],
+      ops: [{ op: 'update_block', id: 'a1', allow_overlap: true, patch: { title: '数学真题 + 核心训练', start_utc: c.start_utc, end_utc: c.end_utc, pinned: true } }],
     });
     expect(parts[1]).toEqual({
       planId: 'p2',
-      ops: [{ op: 'update_block', id: 'b1', patch: { title: '数学真题 + 核心训练', start_utc: c.start_utc, end_utc: c.end_utc, pinned: true } }],
+      ops: [{ op: 'update_block', id: 'b1', allow_overlap: true, patch: { title: '数学真题 + 核心训练', start_utc: c.start_utc, end_utc: c.end_utc, pinned: true } }],
     });
   });
 

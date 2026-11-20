@@ -142,7 +142,7 @@ export function applyPatch(state: PlanState, ops: ApplyOp[]): PatchResult {
         if (!b) { missing.push(`block:${op.id}`); break; }
         const old: Record<string, unknown> = {};
         for (const k of Object.keys(op.patch)) { old[k] = clone((b as any)[k]); (b as any)[k] = clone((op.patch as any)[k]); }
-        inverse.push({ op: 'update_block', id: op.id, patch: old as any });
+        inverse.push({ op: 'update_block', id: op.id, patch: old as any, ...((op as any).allow_overlap ? { allow_overlap: true } : {}) } as ApplyOp);
         break;
       }
       case 'move_block': {

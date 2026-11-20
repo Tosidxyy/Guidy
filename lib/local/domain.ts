@@ -259,6 +259,8 @@ export async function localApplyPatch(body: any): Promise<any> {
     if (!id) continue;
     const b = patched.state.blocks.find((x) => x.id === id);
     if (!b) continue;
+    // 合并（用户明确接受重叠）放行落点校验；普通拖拽/调整仍严格校验。
+    if ((op as any).allow_overlap) continue;
     const check = validatePlacement({ id: b.id, task_key: b.task_key, title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc }, pctx);
     if (!check.ok) throw new ApiError('placement_invalid', 422, check.hard?.reason ?? '时间块位置不合法');
   }
