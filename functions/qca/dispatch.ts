@@ -18,4 +18,35 @@ export async function markDispatch(db: Db, requestId: string, patch: Partial<Dis
 export async function cancelPendingDispatches(db: Db, visitor: string): Promise<void> {
   const pending = rows(await db.from('dispatch_intents').select('request_id').eq('visitor_id', visitor).eq('status', 'pending'));
   for (const p of pending) await markDispatch(db, p.request_id, { status: 'interrupted' });
+  await releaseTurnLock(db, visitor);
+}
+// 原子回合锁：check-then-act 的 pending 守卫在并发下会双放行；用 commit_claims 主键唯一性做门。
+export async function acquireTurnLock(db: Db, visitor: string, opts: { staleMs?: number; nowMs?: number } = {}): Promise<void> {
+  const staleMs = opts.staleMs ?? 300000;
+  const nowMs = opts.nowMs ?? Date.now();
+  const pending = rows(await db.from('dispatch_intents').select('request_id,created_at').eq('visitor_id', visitor).eq('status', 'pending'));
+  for (const p of pending) {
+    const age = nowMs - Date.parse(p.created_at);
+    if (Number.isFinite(age) && age > staleMs) await markDispatch(db, p.request_id, { status: 'failed' });
+    else fail('dispatch_busy', 409);
+  }
+  const key = `turn:${visitor}`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const inserted = rows(await db.from('commit_claims').insertIfAbsent(
+      { idempotency_key: key, visitor_id: visitor, plan_id: null, state: 'pending', fence: 1, fingerprint: 'turn-lock' },
+      { onConflict: 'idempotency_key' },
+    ).select('idempotency_key'));
+    if (inserted.length) return;
+    const existing = rows(await db.from('commit_claims').select('created_at').eq('idempotency_key', key).limit(1))[0];
+    const age = nowMs - Date.parse(existing?.created_at ?? '');
+    if (Number.isFinite(age) && age > staleMs) {
+      await db.from('commit_claims').delete().eq('idempotency_key', key);
+      continue;
+    }
+    fail('dispatch_busy', 409);
+  }
+  fail('dispatch_busy', 409);
+}
+export async function releaseTurnLock(db: Db, visitor: string): Promise<void> {
+  await db.from('commit_claims').delete().eq('idempotency_key', `turn:${visitor}`);
 }

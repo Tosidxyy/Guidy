@@ -3,7 +3,7 @@ import { fail } from '../errors.ts';
 import { rows } from '../db.ts';
 import { requireVisitor } from '../identity.ts';
 import { incrementChatTurn, assertNoPendingDispatch, todayStr } from '../quotas.ts';
-import { beginDispatch, markDispatch } from '../qca/dispatch.ts';
+import { beginDispatch, markDispatch, acquireTurnLock, releaseTurnLock } from '../qca/dispatch.ts';
 import { ensureConversation, getOwnedConversation, ensureQcaSession } from '../qca/sessions.ts';
 import { createProjector } from '../qca/project.ts';
 import { parseModelText } from '../artifacts.ts';
@@ -131,7 +131,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
   }
   const day = todayStr(deps.now?.() ?? new Date());
   await incrementChatTurn(deps.db, visitor, day);
-  await assertNoPendingDispatch(deps.db, visitor, { staleMs: deps.config.dispatchStaleMs, nowMs: (deps.now?.() ?? new Date()).getTime() });
+  await acquireTurnLock(deps.db, visitor, { staleMs: deps.config.dispatchStaleMs, nowMs: (deps.now?.() ?? new Date()).getTime() });
   const fingerprint = await sha256Hex(`${visitor}:${text}`);
   const { replay, intent } = await beginDispatch(deps.db, { request_id: requestId, visitor_id: visitor, conversation_id: conv.id, payload_fingerprint: fingerprint });
   const planState = await loadPlanState(deps.db, visitor, body.plan_id ?? null);
@@ -328,6 +328,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         await markDispatch(deps.db, requestId, { status: 'failed' }).catch(() => {});
       } finally {
         interruptRegistry.delete(conv.id);
+        await releaseTurnLock(deps.db, conv.owner_visitor_id).catch(() => {});
         try { controller.close(); } catch { /* 客户端已断开 */ }
       }
     },
