@@ -190,6 +190,10 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
       };
       const abort = new AbortController();
       interruptRegistry.set(conv.id, abort);
+      // SSE 心跳：模型思考间隙无字节时，代理可能空闲断流；注释帧不被任何 SSE 解析器消费。
+      const heartbeat = setInterval(() => {
+        try { controller.enqueue(new TextEncoder().encode(': ping\n\n')); } catch { /* 已关闭 */ }
+      }, 5000);
       try {
         const userSeq = nextSeq();
         emit({ event: 'accepted', data: { request_id: requestId, conversation_id: conv.id, seq: userSeq } });
@@ -372,6 +376,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         await advanceCursor(deps.db, conv, seq, lastEventId).catch(() => {});
         await markDispatch(deps.db, requestId, { status: 'failed' }).catch(() => {});
       } finally {
+        clearInterval(heartbeat);
         interruptRegistry.delete(conv.id);
         await releaseTurnLock(deps.db, conv.owner_visitor_id).catch(() => {});
         try { controller.close(); } catch { /* 客户端已断开 */ }
