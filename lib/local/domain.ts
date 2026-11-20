@@ -118,7 +118,7 @@ export async function localCommit(body: any): Promise<any> {
     constraints: (input.constraints ?? []).map((c: Constraint) => ({ ...c })),
     pinned_blocks: shared.map((b) => ({ ...b, pinned: true })),
   });
-  if (solved.violations.length) throw new ApiError('engine_infeasible', 422, '当前约束下排不下全部任务', undefined, { violations: solved.violations, compromises: solved.compromises });
+  if (solved.violations.length) throw new ApiError('engine_infeasible', 422, `当前约束下排不下全部任务：${solved.violations[0]?.reason ?? '无可安排时段'}`, undefined, { violations: solved.violations, compromises: solved.compromises });
   const busyIds = new Set(shared.map((b) => b.id));
   const freshBlocks = solved.blocks.filter((b) => !busyIds.has(b.id));
   const existing = body.plan_id ? await getPlan(String(body.plan_id)) : undefined;
@@ -231,7 +231,7 @@ export async function localApplyPatch(body: any): Promise<any> {
       constraints: patched.state.constraints,
       pinned_blocks: pinned,
     });
-    if (out.violations.length) throw new ApiError('engine_infeasible', 422, '当前约束下排不下全部任务', undefined, { violations: out.violations, compromises: out.compromises });
+    if (out.violations.length) throw new ApiError('engine_infeasible', 422, `当前约束下排不下全部任务：${out.violations[0]?.reason ?? '无可安排时段'}`, undefined, { violations: out.violations, compromises: out.compromises });
     const sharedIds = new Set(shared.map((b) => b.id));
     const inert = patched.state.blocks.filter((b) => b.status === 'cancelled' || b.status === 'skipped');
     blocks = [...out.blocks.filter((b) => !sharedIds.has(b.id)), ...inert];
