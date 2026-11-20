@@ -149,6 +149,25 @@ describe('chatController 卡死防护', () => {
   });
 });
 
+describe('失败重试', () => {
+  it('error 标记最后一条用户消息；retryLast 不新增气泡', async () => {
+    const stream = silentEndStream();
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 202 }) as Response);
+    const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-f' });
+    c.send('会失败的请求');
+    await tick(); await tick();
+    const st = useChatStore.getState();
+    const failedUser = st.messages.filter((m) => m.role === 'user' && m.failed);
+    expect(failedUser).toHaveLength(1);
+    const before = st.messages.length;
+    c.retryLast();
+    await tick();
+    expect(useChatStore.getState().messages.length).toBe(before);
+    expect(useChatStore.getState().messages.filter((m) => m.role === 'user')).toHaveLength(1);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('chatController.interrupt / newConversation', () => {
   it('interrupt 取消 stream 并投影 interrupted', () => {
     const stream = fakeStream();

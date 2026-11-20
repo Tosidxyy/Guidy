@@ -212,10 +212,19 @@ describe('本地 patch：版本与幂等', () => {
 });
 
 describe('本地画像', () => {
-  it('learn 从本地块统计出画像', async () => {
-    await commitPlan();
+  it('只统计过去的块，未来计划不参与', async () => {
+    const res = await commitPlan();
+    const plan = (await getPlan(res.plan.id))!;
+    const past = { ...plan.blocks[0], id: 'past-1', start_utc: '2026-09-01T01:00:00.000Z', end_utc: '2026-09-01T02:00:00.000Z' };
+    await putPlan({ ...plan, blocks: [past, ...plan.blocks] });
     const p = await localLearnProfile();
-    expect(p.learned?.summary).toBeTruthy();
+    expect(p.learned?.stats.block_count ?? 0).toBeGreaterThan(0);
+    expect(p.learned?.stats.block_count ?? 0).toBeLessThan(plan.blocks.length);
+  });
+  it('公共忙时（上班）不计入画像', async () => {
+    await commitPlan({ constraints: [{ id: 'c1', payload: { type: 'busy_window', weekday: 1, start: '09:00', end: '17:30', label: '上班' }, source: 'user', enabled: true }] });
+    const p = await localLearnProfile();
+    expect(p.learned?.stats.topTitles.some((t) => t.title === '上班')).toBe(false);
   });
 });
 

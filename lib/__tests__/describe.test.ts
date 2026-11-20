@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { constraintText } from '@/lib/describe';
 import { patchOpText } from '@/lib/describe';
 
 const title = (k: string) => (k === 'math' ? '数学' : k);
@@ -33,5 +34,20 @@ describe('patchOpText：按计划时区显示本地时间', () => {
     expect(patchOpText(op, undefined, 'America/Denver')).toContain('11-28 14:00');
     const sunrise = { op: 'add_block' as const, value: { ...op.value, title: '日出', start_utc: '2026-11-29T12:30:00.000Z', end_utc: '2026-11-29T15:00:00.000Z' } };
     expect(patchOpText(sunrise, undefined, 'America/Denver')).toContain('05:30');
+  });
+});
+
+
+describe('分类与偏好的中文化', () => {
+  it('daily_cap 与 preferred_period 不出现英文 category/task_key', () => {
+    const cap = constraintText({ type: 'daily_cap', category: 'study', max_minutes: 120 } as any);
+    expect(cap).toContain('学习');
+    expect(cap).not.toContain('study');
+    const pref = constraintText({ type: 'preferred_period', task_key: 'thesis_writing', period: 'morning' } as any, (k) => (k === 'thesis_writing' ? '毕业论文写作' : k));
+    expect(pref).toContain('毕业论文写作');
+    expect(pref).not.toContain('thesis_writing');
+    const catPref = constraintText({ type: 'preferred_period', category: 'fitness', period: 'evening' } as any);
+    expect(catPref).toContain('健身');
+    expect(catPref).not.toContain('fitness');
   });
 });

@@ -186,6 +186,9 @@ function pushOtherPlans(
     }
     if (other.blocks.length > limit) lines.push(`  - …共 ${other.blocks.length} 个时间块，仅列前 ${limit} 个`);
   }
+  if (others.length) {
+    lines.push('以上其他计划的块按天列出：不同日期的时段可能不同，不要概括成「每天同一时段」；描述现状时以列表里的日期和时间为准。');
+  }
   if (!opts.editing) return;
   lines.push('其他计划的「已有时段」是既有安排：安排当前计划时要避开这些忙时，不要重复问用户什么时候有空。');
   lines.push('修改其他计划的块：move_block / update_block / remove_block 直接使用上面的块 id。');

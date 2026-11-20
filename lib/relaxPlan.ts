@@ -3,6 +3,7 @@ import { applyPatch } from '@/shared/engine';
 import { trimArtifactToFit } from '@/shared/engine/fit';
 import { artifactFromPlan, diffPlanCard } from '@/lib/planCard';
 import type { ConstraintSetArtifact, PatchArtifact } from '@/shared/schemas';
+import { CATEGORY_MAP } from '@/shared/constants';
 import type { Block, PlanState } from '@/shared/types';
 
 type PlanMeta = { horizon_start: string; timezone: string };
@@ -52,7 +53,7 @@ export function relaxDraft(
     if (c.type === 'daily_cap') {
       const need = dailySum.get(c.category) ?? 0;
       if (need > c.max_minutes) {
-        changes.push(`「${c.category}」每日上限 ${c.max_minutes}→${need} 分钟`);
+        changes.push(`「${CATEGORY_MAP[c.category as string]?.label ?? c.category}」每日上限 ${c.max_minutes}→${need} 分钟`);
         return { ...c, max_minutes: need };
       }
     }

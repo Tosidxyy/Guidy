@@ -120,9 +120,18 @@ export function createChatController(deps: {
     };
   };
 
-  async function start(text: string) {
+  async function start(text: string, retainUser = false) {
     const st = store.getState();
-    st.startSend(text);
+    if (retainUser) {
+      store.setState({
+        ...store.getState(),
+        streaming: true, connection: 'connecting', error: null, artifact: null, artifactPreview: null, patchPreview: null,
+        patch: null, question: null, clarifications: [], searching: false, thinking: false, switching: false, restoreDone: true,
+        messages: store.getState().messages.map((m) => (m.role === 'user' && m.content === text ? { ...m, failed: false } : m)),
+      });
+    } else {
+      st.startSend(text);
+    }
     const planId = deps.getPlanId?.() ?? null;
     if (!store.getState().conversationId) {
       const conv = await localEnsureConversation(null, text, planId);
@@ -177,6 +186,14 @@ export function createChatController(deps: {
       }, 300);
     },
     pump,
+    /** 失败重试：复用最后一条失败的用户气泡，不再插入新消息。 */
+    retryLast() {
+      const st = store.getState();
+      if (st.streaming) return;
+      const lastUser = [...st.messages].reverse().find((m) => m.role === 'user');
+      if (!lastUser || !lastUser.failed) return;
+      void start(lastUser.content, true);
+    },
     resume() {
       // 本机模式：历史已从 IndexedDB 恢复，服务端没有可尾随的流。
     },

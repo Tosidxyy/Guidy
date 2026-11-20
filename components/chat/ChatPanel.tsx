@@ -156,6 +156,7 @@ export function ChatPanel() {
             key={`${m.seq}-${m.role}-${m.kind}`}
             message={m}
             streaming={streaming && m.seq === lastAssistant?.seq}
+            onRetry={() => chat.retryLast()}
           />
         ))}
         {question && (

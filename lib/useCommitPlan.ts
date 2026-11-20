@@ -7,6 +7,7 @@ import { solveArtifact } from '@/lib/preview';
 import { trimArtifactToFit } from '@/shared/engine/fit';
 import { relaxDraft } from '@/lib/relaxPlan';
 import { usePlanStore } from '@/store/usePlanStore';
+import { localLearnProfile } from '@/lib/local/domain';
 import { usePlanSync } from '@/store/usePlanSync';
 import { useChatStore } from '@/store/useChatStore';
 import { useBlockHistory } from '@/store/useBlockHistory';
@@ -103,6 +104,8 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
       qc.invalidateQueries({ queryKey: ['plans'] });
       qc.invalidateQueries({ queryKey: ['conversations'] });
       qc.invalidateQueries({ queryKey: ['calendar'] });
+      // 有新计划生成/调整后自动更新习惯画像（只用过去的块）。
+      void localLearnProfile().then(() => qc.invalidateQueries({ queryKey: ['profile'] })).catch(() => null);
       toast.success(serverPlan.server_authoritative ? '已按最新结果保存计划' : '计划已保存到本机');
       if (Array.isArray(serverPlan.warnings) && serverPlan.warnings.length) toast.info(serverPlan.warnings[0], { duration: 8000 });
       onSaved?.(serverPlan.plan.id);

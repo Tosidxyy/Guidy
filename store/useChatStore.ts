@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { ConstraintSetArtifact, PatchArtifact, QuestionCardArtifact } from '@/shared/schemas';
-export interface ChatMessage { seq: number; role: 'user' | 'assistant' | 'system'; kind: string; content: string; payload?: unknown; /** 服务端重试轮次：变大时整段替换气泡文字，避免重复。 */ attempt?: number }
+export interface ChatMessage { seq: number; role: 'user' | 'assistant' | 'system'; kind: string; content: string; payload?: unknown; /** 服务端重试轮次：变大时整段替换气泡文字，避免重复。 */ attempt?: number; /** 该轮失败（可原地重试，不新增气泡）。 */ failed?: boolean }
 export interface QueuedMessage { id: string; text: string }
 export interface ChatState {
   conversationId: string | null;
@@ -76,8 +76,13 @@ export function reduceFrame(state: ChatState, frame: AppFrame): ChatState {
       // 上游终态 status 早于 artifact/done（服务端还要解析与落库）：不能据此结束回合，
       // 否则输入提前变回「发送」，此时发送会撞 dispatch_busy。只有 done/error 结束。
       return { ...state, searching: TERMINAL.includes(d.state) ? false : state.searching, switching: TERMINAL.includes(d.state) ? false : state.switching, thinking: TERMINAL.includes(d.state) ? false : state.thinking };
-    case 'error':
-      return { ...state, streaming: false, connection: 'error', error: { code: d.code, message: d.message, diagnosticId: d.diagnostic_id }, searching: false, thinking: false, switching: false };
+    case 'error': {
+      const messages = [...state.messages];
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') { messages[i] = { ...messages[i], failed: true }; break; }
+      }
+      return { ...state, messages, streaming: false, connection: 'error', error: { code: d.code, message: d.message, diagnosticId: d.diagnostic_id }, searching: false, thinking: false, switching: false };
+    }
     case 'done':
       return { ...state, streaming: false, connection: 'idle', searching: false, thinking: false, switching: false };
     default:

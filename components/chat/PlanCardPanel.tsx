@@ -27,28 +27,63 @@ function SharedBusySection() {
   if (!busy.length) return null;
   const fmtDay = (iso: string) => new Date(iso).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short', timeZone: tz });
   const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz });
-  const sorted = [...busy].sort((a, b) => a.start_utc.localeCompare(b.start_utc));
+  // 按「标题 + 时段 + 星期几」合并：18 条「上班 · 某日」→「上班 · 周一至周五 09:00–18:00」。
+  const WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  const groups = new Map<string, { title: string; start: string; end: string; days: Set<number>; dates: string[]; ids: { id: string; day: string }[] }>();
+  for (const b of busy) {
+    const d = new Date(b.start_utc);
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+    const wd = new Date(`${day}T12:00:00Z`).getUTCDay();
+    const start = fmtTime(b.start_utc);
+    const end = fmtTime(b.end_utc);
+    const key = `${b.title}|${start}|${end}`;
+    const g = groups.get(key) ?? { title: b.title, start, end, days: new Set<number>(), dates: [], ids: [] };
+    g.days.add(wd);
+    g.dates.push(day);
+    g.ids.push({ id: b.id, day });
+    groups.set(key, g);
+  }
+  const weekdayText = (days: Set<number>) => {
+    const arr = [...days].sort((a, b) => a - b);
+    if (arr.length === 7) return '每天';
+    if (arr.length >= 2 && arr.every((d, i) => i === 0 || d === arr[i - 1] + 1)) return `${WD[arr[0]]}至${WD[arr[arr.length - 1]]}`;
+    return arr.map((d) => WD[d]).join('、');
+  };
   return (
     <section className="mt-3 border-t border-site-line pt-2">
-      <h4 className="text-xs font-semibold text-site-ink">固定日程 / 公共忙时（{sorted.length}）</h4>
-      <p className="mt-0.5 text-[11px] text-site-ink-soft">来自共享日历（如「上班」），参与排程避让；可在此删除（例如某天请假）。</p>
+      <h4 className="text-xs font-semibold text-site-ink">固定日程 / 公共忙时（{groups.size}）</h4>
+      <p className="mt-0.5 text-[11px] text-site-ink-soft">来自共享日历（如「上班」），参与排程避让；可展开管理某一天（例如请假删除）。</p>
       <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto">
-        {sorted.slice(0, 60).map((b) => (
-          <li key={b.id} className="flex items-center justify-between gap-2 rounded border border-site-line bg-site-surface-2 px-2 py-1 text-[11px] text-site-ink">
-            <span className="truncate">{b.title} · {fmtDay(b.start_utc)} {fmtTime(b.start_utc)}–{fmtTime(b.end_utc)}</span>
-            <Button
-              variant="ghost" size="sm" className="h-6 px-1.5 text-[11px] text-site-danger"
-              onClick={() => { void applySharedOps([{ op: 'remove_block', id: b.id }]).then((r) => { if (!r.ok) toast.error(r.reason ?? '删除失败'); }); }}
-            >
-              删除
-            </Button>
+        {[...groups.values()].map((g) => (
+          <li key={`${g.title}|${g.start}|${g.end}`} className="rounded border border-site-line bg-site-surface-2 px-2 py-1 text-[11px] text-site-ink">
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate">{g.title} · {weekdayText(g.days)} {g.start}–{g.end}</span>
+              <details className="shrink-0">
+                <summary className="cursor-pointer select-none text-site-ink-soft">某天…</summary>
+                <ul className="mt-1 max-h-32 space-y-0.5 overflow-y-auto">
+                  {g.dates.map((day) => (
+                    <li key={day} className="flex items-center justify-between gap-2">
+                      <span>{day}（{WD[new Date(`${day}T12:00:00Z`).getUTCDay()]}）</span>
+                      <Button
+                        variant="ghost" size="sm" className="h-5 px-1 text-[10px] text-site-danger"
+                        onClick={() => {
+                          const id = g.ids.find((x) => x.day === day)?.id;
+                          if (id) void applySharedOps([{ op: 'remove_block', id }]).then((r) => { if (!r.ok) toast.error(r.reason ?? '删除失败'); });
+                        }}
+                      >
+                        删除
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </div>
           </li>
         ))}
       </ul>
     </section>
   );
 }
-
 /**
  * 方案卡：制定计划与日常修改都只用这一张卡。
  * - AI 给出 constraint_set 或只改任务/约束的 patch 时自动展开，点「确认并生成」直接落库出排程；
@@ -59,6 +94,7 @@ export function PlanCardPanel() {
   const [attention, setAttention] = useState(false);
   // 新方案/新调整到达时整卡闪一下（展开状态也闪），4 秒后停；收起的卡另外保留常驻提示。
   const [flash, setFlash] = useState(false);
+  const adjustRef = useRef<HTMLElement | null>(null);
   const flashTimer = useRef<number | null>(null);
   const pulseOnce = () => {
     setFlash(true);
@@ -106,7 +142,8 @@ export function PlanCardPanel() {
   const preview: any = (proposal ? (serverPreview ?? localPreview) : null) as any;
   const num = (v: unknown) => Number(v) || 0;
   const unplacedList: any[] = preview?.unplaced ?? [];
-  const violationsList: any[] = preview?.violations ?? [];
+  const unplacedReasons = new Set(unplacedList.map((u: any) => String(u.reason ?? '')).filter(Boolean));
+  const violationsList: any[] = (preview?.violations ?? []).filter((v: any) => !unplacedReasons.has(String(v.reason ?? '')));
   const compromisesList: any[] = preview?.compromises ?? [];
   const targetMin = unplacedList.reduce((m, u) => m + num(u.target_minutes), 0);
   const placedMin = unplacedList.reduce((m, u) => m + num(u.placed_minutes), 0);
@@ -163,6 +200,8 @@ export function PlanCardPanel() {
   // 打开时保留编辑草稿（AI patch 的结果暂存在草稿里，清掉会看到旧/空内容）。
   const openPlan = () => {
     setAttention(false);
+    // 有「排程调整」时，展开后直接定位到调整清单与应用按钮。
+    setTimeout(() => adjustRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 0);
     setOpen(true);
   };
 
@@ -262,7 +301,7 @@ export function PlanCardPanel() {
           </div>
 
           {foreignPatch && !patchAlreadyApplied && (
-          <section className="mx-3.5 mt-3 rounded-lg border border-site-line bg-site-bg p-2.5">
+          <section ref={adjustRef} className="mx-3.5 mt-3 rounded-lg border border-site-line bg-site-bg p-2.5">
             <p className="text-xs font-semibold text-site-ink">排程调整 · {foreignPatch.summary}</p>
             <ul className="mt-1.5 max-h-28 space-y-1 overflow-y-auto">
               {foreignPatch.ops.map((op, i) => (

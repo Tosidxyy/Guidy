@@ -344,6 +344,10 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
                 compromises: out.compromises, notes: preferenceNotes(applied.state, out.blocks),
               };
             }
+            if (parsed.kind === 'patch' && !proseNow.trim()) {
+              const summary = String((parsed.value as any).summary ?? '').slice(0, 80);
+              emit({ event: 'delta', data: { seq: assistantSeq, text: `已按你的要求更新：${summary || '完成这轮调整'}。`, attempt } as any });
+            }
             if (missingPrefs.length) {
               const base = (preview as any) ?? (preview = {});
               base.notes = [...(base.notes ?? []), ...missingPrefs.map((m) => `正文说「${m.title}」放在${m.period === 'morning' ? '早上' : m.period === 'afternoon' ? '下午' : '下班后'}，但产物未设置时段偏好，实际排程可能不符；可在方案卡里调整后重新生成`)];

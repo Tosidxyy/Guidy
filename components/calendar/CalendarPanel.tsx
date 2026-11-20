@@ -721,6 +721,7 @@ export function CalendarPanel() {
           leftPct={(p.lane / p.lanes) * 100}
           widthPct={100 / p.lanes}
           visual={visual}
+          overlap={!!foreignInfo && state.blocks.some((mine) => Date.parse(mine.start_utc) < Date.parse(p.block.end_utc) && Date.parse(mine.end_utc) > Date.parse(p.block.start_utc))}
           planLabel={composite ? '并行' : foreignInfo?.planLabel}
           titleLines={composite ? p.block.title.split(' + ') : undefined}
           compact={(p.endMin - p.startMin) * PX_PER_MIN < 40}

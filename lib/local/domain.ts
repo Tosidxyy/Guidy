@@ -389,10 +389,19 @@ function collectActivities(blocks: { start_utc: string; end_utc: string; title: 
 
 export async function localLearnProfile(): Promise<Profile> {
   const profile = await getProfile();
+  const nowMs = Date.now();
+  const plans = await listPlans();
   const acts: LocalActivity[] = [];
-  for (const p of await listPlans()) acts.push(...collectActivities(p.blocks, p.timezone ?? 'Asia/Shanghai'));
-  acts.push(...collectActivities(await listShared(), 'Asia/Shanghai'));
-  const learned = summarizeHabit(acts.slice(0, 400), new Date().toISOString().slice(0, 10));
+  // 只统计已经发生过的块（结束时间在过去），未来计划不参与画像。
+  for (const p of plans) {
+    const tz = p.timezone ?? 'Asia/Shanghai';
+    acts.push(...collectActivities(p.blocks.filter((b) => Date.parse(b.end_utc) < nowMs), tz));
+  }
+  // 公共忙时（上班等）不是用户的选择，单独排除，避免拉偏统计。
+  const shared = (await listShared()).filter((b) => b.notes !== MATERIALIZED_NOTE && Date.parse(b.end_utc) < nowMs);
+  const sharedTz = plans[0]?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'Asia/Shanghai';
+  acts.push(...collectActivities(shared, sharedTz));
+  const learned = summarizeHabit(acts, new Date().toISOString().slice(0, 10));
   const now = nowIso();
   const next: Profile = { ...profile, learned, learned_at: now, updated_at: now };
   await putProfile(next);

@@ -38,6 +38,8 @@ export function trimArtifactToFit(
 ): { draft: ConstraintSetArtifact; changes: string[] } | null {
   if (artifactFeasible(draft, plan, pinned)) return null;
   const d = cloneDraft(draft);
+  // 每个任务只保留最终一条建议：3→2→1 不能同时出现两条。
+  const notes = new Map<string, string>();
   const changes: string[] = [];
   const flexible = d.task_defs
     .map((t) => ({ t }))
@@ -50,8 +52,8 @@ export function trimArtifactToFit(
     while (current.frequency.type === 'per_week' && (current.frequency as { count: number }).count > 1) {
       const next = (current.frequency as { count: number }).count - 1;
       d.task_defs = d.task_defs.map((x): TaskDef => (x.key === t.key ? { ...x, frequency: { type: 'per_week', count: next } } : x));
-      changes.push(`「${t.title}」每周次数降为 ${next}`);
-      if (artifactFeasible(d, plan, pinned)) return { draft: d, changes };
+      notes.set(t.key, `「${t.title}」每周次数降为 ${next}`);
+      if (artifactFeasible(d, plan, pinned)) return { draft: d, changes: [...notes.values()] };
       current = d.task_defs.find((x) => x.key === t.key)!;
     }
   }
@@ -60,8 +62,9 @@ export function trimArtifactToFit(
     const cur = d.task_defs.find((x) => x.key === t.key);
     if (!cur || cur.frequency.type === 'daily') continue;
     d.task_defs = d.task_defs.filter((x) => x.key !== t.key);
-    changes.push(`暂缓「${t.title}」（本周放不下，可下周补或调高优先级）`);
-    if (artifactFeasible(d, plan, pinned)) return { draft: d, changes };
+    notes.delete(t.key);
+    notes.set(t.key, `暂缓「${t.title}」（本周放不下，可下周补或调高优先级）`);
+    if (artifactFeasible(d, plan, pinned)) return { draft: d, changes: [...notes.values()] };
   }
   return null;
 }

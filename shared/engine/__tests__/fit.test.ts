@@ -29,6 +29,14 @@ describe('trimArtifactToFit（服务端自动取舍）', () => {
     const r = trimArtifactToFit(d, meta);
     expect(r!.draft.task_defs.map((t) => t.key)).toEqual(['b']);
   });
+  it('同一任务只给一条最终降次建议（不并列 3→2、2→1）', () => {
+    const d = draft([task({ key: 'en', title: '学英语', frequency: { type: 'per_week', count: 9 } })], 7);
+    const r = trimArtifactToFit(d, meta);
+    expect(r).not.toBeNull();
+    const hits = r!.changes.filter((c) => c.includes('每周次数'));
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toContain('降为 7');
+  });
   it('可行时不动', () => {
     const d = draft([task({ key: 'a' })], 7, { start: '07:00', end: '23:00' });
     expect(trimArtifactToFit(d, meta)).toBeNull();

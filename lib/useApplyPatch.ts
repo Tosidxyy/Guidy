@@ -12,6 +12,7 @@ import { applySharedOps } from '@/lib/sharedBlocks';
 import { appliedPatches } from '@/lib/appliedPatches';
 import { useChatStore } from '@/store/useChatStore';
 import { useBlockHistory } from '@/store/useBlockHistory';
+import { localLearnProfile } from '@/lib/local/domain';
 import { usePlanStore } from '@/store/usePlanStore';
 import { usePlanSync } from '@/store/usePlanSync';
 import { useSharedCalendar } from '@/store/useSharedCalendar';
@@ -142,6 +143,7 @@ export function useApplyPatch() {
       }
       qc.invalidateQueries({ queryKey: ['plans'] });
       qc.invalidateQueries({ queryKey: ['calendar'] });
+      void localLearnProfile().then(() => qc.invalidateQueries({ queryKey: ['profile'] })).catch(() => null);
       const suffix = foreignOps ? `（含其他计划/公共日历 ${foreignOps} 项）` : '';
       toast.success(resp?.server_authoritative ? `已按最新结果保存调整${suffix}` : `调整已保存到本机${suffix}`);
       if (Array.isArray(resp?.warnings) && resp.warnings.length) toast.info(resp.warnings[0], { duration: 8000 });

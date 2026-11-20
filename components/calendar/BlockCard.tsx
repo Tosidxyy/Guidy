@@ -18,6 +18,8 @@ interface Props {
   visual: BlockVisualState;
   compact: boolean;
   planLabel?: string;
+  /** 与其他计划块重叠：加明显描边，避免被当前计划完全盖住。 */
+  overlap?: boolean;
   /** 并行合并块：逐行显示标题（防文字重叠）。 */
   titleLines?: string[];
   onPointerDown?: (e: React.PointerEvent, block: Block) => void;
@@ -28,7 +30,7 @@ interface Props {
 
 export const BlockCard = memo(function BlockCard({
   block, startMin, endMin, top, height, leftPct, widthPct, visual, compact,
-  planLabel, titleLines, onPointerDown, onResizeDown, onOpen, onClick,
+  planLabel, titleLines, overlap, onPointerDown, onResizeDown, onOpen, onClick,
 }: Props) {
   const ghost = visual.startsWith('ghost');
   const interactive = !ghost && visual !== 'dimmed';
@@ -44,7 +46,9 @@ export const BlockCard = memo(function BlockCard({
         'transition-shadow duration-150',
         interactive && !block.pinned && 'cursor-grab active:cursor-grabbing touch-none',
         interactive && block.pinned && 'cursor-default',
-        visual === 'foreign' && 'border-dashed border-site-line opacity-45 hover:opacity-80',
+        visual === 'foreign' && (overlap
+          ? 'z-10 border-2 border-dashed border-site-flow bg-site-surface/90 opacity-90 ring-2 ring-site-flow/40 hover:opacity-100'
+          : 'border-dashed border-site-line opacity-45 hover:opacity-80'),
         visual === 'normal' && 'border-transparent shadow-sm hover:shadow-md',
         visual === 'selected' && 'border-site-ink shadow-md ring-2 ring-site-ink/30',
         visual === 'invalid' && 'border-site-danger ring-2 ring-site-danger/40 animate-guidy-shake',
