@@ -7,6 +7,18 @@ export interface SplitArtifactText {
 
 const FENCE = '```json';
 
+// 气泡里不该出现围栏残留或空引号（模型偶发只吐 ``` / ```json、或空 ‘’)：统一清掉。
+function tidyProse(prose: string): string {
+  return prose
+    .replace(/```(?:json)?[ \t]*\n?[\s\S]*?```/g, ' ')
+    .replace(/```(?:json)?/g, '')
+    .replace(/`{1,3}/g, '')
+    .replace(/‘’|“”|''|""/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export function splitArtifactText(content: string): SplitArtifactText {
   // 兼容 ```json 与裸 ``` 围栏（后接 JSON 对象）。
   const fenceMatch = content.match(/```(?:json)?[ \t]*(?=\{)/);
@@ -17,13 +29,13 @@ export function splitArtifactText(content: string): SplitArtifactText {
     const close = body.indexOf('```');
     const json = (close >= 0 ? body.slice(0, close) : body).trim();
     const after = close >= 0 ? body.slice(close + 3) : '';
-    const prose = [before.trim(), after.trim()].filter(Boolean).join('\n\n');
-    return { prose, artifactJson: json };
+    const prose = [before, after].map((s) => s.trim()).filter(Boolean).join('\n\n');
+    return { prose: tidyProse(prose), artifactJson: json };
   }
   // 行内/行首裸 JSON 对象（含 "type" 字段）都视为产物，不进气泡。
   const bare = content.match(/\{[\s\S]*?"type"\s*:/);
   if (bare && bare.index !== undefined) {
-    return { prose: content.slice(0, bare.index).trim(), artifactJson: content.slice(bare.index).trim() };
+    return { prose: tidyProse(content.slice(0, bare.index)), artifactJson: content.slice(bare.index).trim() };
   }
-  return { prose: content, artifactJson: null };
+  return { prose: tidyProse(content), artifactJson: null };
 }

@@ -47,4 +47,14 @@ describe('splitArtifactText — 助手文本拆成可读前言 + 产物 JSON（J
     const r = splitArtifactText('用 {key} 表示任务，比如 {math}。');
     expect(r.artifactJson).toBeNull();
   });
+  it('残留 ```json（无内容）与孤立 ``` 不进 prose', () => {
+    expect(splitArtifactText('已生成方案```json').prose).not.toContain('`');
+    expect(splitArtifactText('已生成方案 ``` ').prose).toBe('已生成方案');
+  });
+  it('空引号对 ‘’/“”/"" 被清理', () => {
+    const r = splitArtifactText('第一段 ‘’ 第二段 “” 第三段');
+    expect(r.prose).not.toContain('‘’');
+    expect(r.prose).not.toContain('“”');
+    expect(r.prose).toContain('第一段');
+  });
 });
