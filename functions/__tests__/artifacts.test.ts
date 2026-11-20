@@ -28,6 +28,57 @@ describe('artifacts', () => {
   it('普通文本 → null', () => { expect(parseModelText('你好，请告诉我你的目标')).toBeNull(); });
   it('非法 JSON → null', () => { expect(parseModelText('{bad')).toBeNull(); });
   it('schema 不合法 → null', () => { expect(parseModelText(JSON.stringify({ type: 'constraint_set', task_defs: [] }))).toBeNull(); });
+
+  describe('输出被截断的兜底（长计划常见）', () => {
+    const big = {
+      type: 'constraint_set', plan_title: '雅思三个月', horizon_days: 90,
+      task_defs: [
+        { key: 'vocab', title: '背单词', category: 'study', duration_min: 30, frequency: { type: 'daily' } },
+        { key: 'listening', title: '听力精听', category: 'study', duration_min: 45, frequency: { type: 'per_week', count: 5 } },
+      ],
+      constraints: [{ type: 'daily_cap', category: 'study', max_minutes: 180 }],
+      clarifications_needed: [],
+    };
+    const full = JSON.stringify(big);
+    it('第二个任务写到一半被截断 → 丢掉半截任务仍可解析', () => {
+      const cut = full.indexOf('"listening"') + 40;
+      const r = parseModelText('前言两句话。\n```json\n' + full.slice(0, cut));
+      expect(r?.kind).toBe('constraint_set');
+      if (r?.kind === 'constraint_set') {
+        expect(r.value.task_defs.length).toBe(1);
+        expect(r.value.task_defs[0].key).toBe('vocab');
+        expect(r.value.plan_title).toBe('雅思三个月');
+      }
+    });
+    it('截断在字符串（notes）内部 → 闭合字符串后仍可解析', () => {
+      const withNotes = JSON.stringify({ ...big, task_defs: [{ ...big.task_defs[0], notes: '每天用 App 背 50 个新词并复习前一天的错词库' }] });
+      const cut = withNotes.indexOf('复习前一天的错词库') + 3;
+      const r = parseModelText(withNotes.slice(0, cut));
+      expect(r?.kind).toBe('constraint_set');
+      if (r?.kind === 'constraint_set') expect(r.value.task_defs[0].key).toBe('vocab');
+    });
+    it('patch 的 ops 截断 → 保留完整 ops，丢弃半截 op', () => {
+      const p = JSON.stringify({ type: 'patch', summary: '调整', ops: [
+        { op: 'move_block', id: 'b1', start_utc: '2026-11-17T01:00:00Z', end_utc: '2026-11-17T02:00:00Z' },
+        { op: 'remove_block', id: 'b2' },
+      ] });
+      const cut = p.indexOf('"b2"') + 3;
+      const r = parseModelText(p.slice(0, cut));
+      expect(r?.kind).toBe('patch');
+      if (r?.kind === 'patch') {
+        expect(r.value.ops.length).toBe(1);
+        expect(r.value.ops[0].op).toBe('move_block');
+      }
+    });
+    it('还没写出任何 task 就被截断 → null（不伪造空计划）', () => {
+      const cut = full.indexOf('"task_defs":[') + 13;
+      expect(parseModelText(full.slice(0, cut))).toBeNull();
+    });
+    it('普通文本里的残缺 JSON 片段不会误判', () => {
+      expect(parseModelText('我打算用 {"type":"patch" 的方式说明，但这不是产物')).toBeNull();
+      expect(parseModelText('今天聊点别的：{"foo":1')).toBeNull();
+    });
+  });
   it('截止日硬护栏：horizon 取 ≥ 剩余天数的最小档位', () => {
     const withDeadline = (horizon_days: number, date: string, horizon_start?: string) => ({
       ...validSet, horizon_days, horizon_start,
@@ -142,21 +193,27 @@ describe('question_card 产物', () => {
     expect(parseModelText(JSON.stringify({ type: 'question_card', questions: [{ text: 'x', options: ['只有一个'] }] }))).toBeNull();
   });
 });
-describe('prompt 研究式规划指引 — 用户不知道做什么时联网检索', () => {
-  it('声明研究式规划并点名 WebSearch/WebFetch', () => {
+describe('prompt 联网检索 — 默认不搜，先判断必要性', () => {
+  it('要求先判断是否需要检索，排程请求不搜', () => {
     const p = buildSystemPrompt();
-    expect(p).toContain('研究式规划');
-    expect(p).toContain('WebSearch');
-    expect(p).toContain('WebFetch');
+    expect(p).toContain('默认不搜');
+    expect(p).toContain('先判断');
+    expect(p).toContain('排程类请求');
+    expect(p).toContain('一律不搜');
+  });
+  it('检索仅限会变化的外部事实，最多一次', () => {
+    const p = buildSystemPrompt();
+    expect(p).toContain('外部可核实且会变化的事实');
+    expect(p).toContain('最多 1 次');
+    expect(p).toContain('通用知识');
   });
   it('要求把来源依据写进正文，不暴露原始搜索词', () => {
     const p = buildSystemPrompt();
     expect(p).toContain('来源');
     expect(p).toContain('不要暴露原始搜索词');
   });
-  it('检索无果回退自身知识，适度搜索不拖延', () => {
+  it('结果不足立即停止检索，直接给方案', () => {
     const p = buildSystemPrompt();
-    expect(p).toContain('回退自身知识');
-    expect(p).toContain('不要过度搜索');
+    expect(p).toContain('结果不足时立刻停止检索');
   });
 });

@@ -8,7 +8,11 @@ export interface LocalLlmConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** 单轮输出上限。长计划（3 个月、多任务）需要更多 token，1800 会在 JSON 中途截断。 */
+  maxTokens?: number;
 }
+
+const DEFAULT_MAX_TOKENS = 3200;
 
 interface Turn {
   message?: string;
@@ -32,7 +36,7 @@ interface CompletionChunk {
 }
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
-const MAX_ROUNDS = 5;
+const MAX_TOOL_ROUNDS = 1;
 
 const TOOLS = [
   {
@@ -78,28 +82,33 @@ function stripHtml(html: string): string {
     .trim();
 }
 
+interface SearchHit { title: string; url: string; snippet: string }
+
+async function searchSource(url: string, re: RegExp): Promise<SearchHit[]> {
+  const res = await fetch(url, { headers: { 'user-agent': UA, 'accept-language': 'zh-CN,zh;q=0.9' }, signal: AbortSignal.timeout(4000) });
+  if (!res.ok) return [];
+  const html = await res.text();
+  const hits: SearchHit[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) && hits.length < 6) {
+    const href = m[1];
+    if (!href.startsWith('http')) continue;
+    hits.push({ title: stripHtml(m[2]).slice(0, 120), url: href, snippet: stripHtml(m[3] ?? '').slice(0, 220) });
+  }
+  return hits;
+}
+
 async function webSearch(query: string): Promise<string> {
-  const sources = [
-    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
-    `https://www.bing.com/search?q=${encodeURIComponent(query)}`,
-  ];
-  for (const url of sources) {
-    try {
-      const res = await fetch(url, { headers: { 'user-agent': UA, 'accept-language': 'zh-CN,zh;q=0.9' }, signal: AbortSignal.timeout(9000) });
-      if (!res.ok) continue;
-      const html = await res.text();
-      const results: { title: string; url: string; snippet: string }[] = [];
-      const blockRe = /<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>(?:[\s\S]*?class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>)?/g;
-      const bingRe = /<li class="b_algo"[\s\S]*?<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?(?:<p[^>]*>([\s\S]*?)<\/p>)?/g;
-      const re = url.includes('duckduckgo') ? blockRe : bingRe;
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(html)) && results.length < 6) {
-        const href = m[1];
-        if (!href.startsWith('http')) continue;
-        results.push({ title: stripHtml(m[2]).slice(0, 120), url: href, snippet: stripHtml(m[3] ?? '').slice(0, 220) });
-      }
-      if (results.length) return JSON.stringify({ results });
-    } catch { /* 换下一个搜索源 */ }
+  // 搜索在工具轮里执行，期间没有 SSE 帧：必须并行且短超时，否则 15s 空闲保护会把整个回合掐掉。
+  const q = encodeURIComponent(query);
+  const blockRe = /<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>(?:[\s\S]*?class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>)?/g;
+  const bingRe = /<li class="b_algo"[\s\S]*?<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?(?:<p[^>]*>([\s\S]*?)<\/p>)?/g;
+  const settled = await Promise.allSettled([
+    searchSource(`https://html.duckduckgo.com/html/?q=${q}`, blockRe),
+    searchSource(`https://www.bing.com/search/?q=${q}`, bingRe),
+  ]);
+  for (const s of settled) {
+    if (s.status === 'fulfilled' && s.value.length) return JSON.stringify({ results: s.value });
   }
   return JSON.stringify({ results: [], note: '联网搜索当前不可用（网络受限）。不要声称检索过；如需外部事实，向用户追问或明说假设。' });
 }
@@ -156,12 +165,15 @@ export function createOpenAiQca(config: LocalLlmConfig, db?: Db): QcaAdapter {
     if (last?.role !== 'user' || last.content !== message) history.push({ role: 'user', content: message });
     const messages: unknown[] = [{ role: 'system', content: buildSystemPrompt() }, ...history];
     let finalText = '';
+    // 检索最多一轮：工具执行期间没有上游增量，多轮检索会把整轮预算耗光。
+    let toolRounds = 0;
 
-    for (let round = 0; round < MAX_ROUNDS; round++) {
+    for (let round = 0; round < MAX_TOOL_ROUNDS + 2; round++) {
+      const useTools = toolRounds < MAX_TOOL_ROUNDS;
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${config.apiKey}` },
-        body: JSON.stringify({ model: config.model, stream: true, max_tokens: 1800, tools: TOOLS, tool_choice: 'auto', messages }),
+        body: JSON.stringify({ model: config.model, stream: true, max_tokens: config.maxTokens ?? DEFAULT_MAX_TOKENS, messages, ...(useTools ? { tools: TOOLS, tool_choice: 'auto' } : {}) }),
         signal,
       });
       if (!res.ok) throw new Error(`llm_http_${res.status}`);
@@ -211,17 +223,19 @@ export function createOpenAiQca(config: LocalLlmConfig, db?: Db): QcaAdapter {
       }
 
       const valid = calls.filter((c) => c.name);
-      if (!valid.length) {
+      if (!valid.length || !useTools) {
         finalText = content;
         break;
       }
+      toolRounds++;
       messages.push({ role: 'assistant', content: content || null, tool_calls: valid.map((c) => ({ id: c.id || `call_${round}_${c.name}`, type: 'function', function: { name: c.name, arguments: c.arguments } })) });
       for (const c of valid) {
         onTool(c.name);
         const result = await runTool(c);
         messages.push({ role: 'tool', tool_call_id: c.id || `call_${round}_${c.name}`, content: result });
       }
-      if (round === MAX_ROUNDS - 1) finalText = content;
+      // 工具轮已用完：明确要求直接作答，避免模型再耗一轮空转。
+      if (toolRounds >= MAX_TOOL_ROUNDS) messages.push({ role: 'system', content: '检索轮已结束。现在不要再调用工具，直接基于已有信息给出最终回答或完整 JSON 产物。' });
     }
 
     if (finalText && !db) histories.set(sessionId, [...history, { role: 'assistant', content: finalText }].slice(-20));

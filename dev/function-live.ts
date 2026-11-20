@@ -29,12 +29,13 @@ setInterval(() => {
     /* 本地持久化失败不影响请求 */
   }
 }, 2000);
-const qca = createOpenAiQca({ baseUrl, model, apiKey });
+const llmMaxTokens = Number(Deno.env.get('LLM_MAX_TOKENS')) || undefined;
+const qca = createOpenAiQca({ baseUrl, model, apiKey, maxTokens: llmMaxTokens });
 const fallbacks: QcaProvider[] = [];
 const dsKey = Deno.env.get('DEEPSEEK_API_KEY');
-if (dsKey) fallbacks.push({ name: 'deepseek', adapter: createOpenAiQca({ baseUrl: Deno.env.get('DEEPSEEK_BASE_URL') ?? 'https://api.deepseek.com/v1', apiKey: dsKey, model: Deno.env.get('DEEPSEEK_MODEL') ?? 'deepseek-flash' }) });
+if (dsKey) fallbacks.push({ name: 'deepseek', adapter: createOpenAiQca({ baseUrl: Deno.env.get('DEEPSEEK_BASE_URL') ?? 'https://api.deepseek.com/v1', apiKey: dsKey, model: Deno.env.get('DEEPSEEK_MODEL') ?? 'deepseek-flash', maxTokens: llmMaxTokens }) });
 const blKey = Deno.env.get('BAILIAN_API_KEY');
-if (blKey) fallbacks.push({ name: 'bailian', adapter: createOpenAiQca({ baseUrl: Deno.env.get('BAILIAN_BASE_URL') ?? 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', apiKey: blKey, model: Deno.env.get('BAILIAN_MODEL') ?? 'deepseek-v4.1-flash-1017' }) });
+if (blKey) fallbacks.push({ name: 'bailian', adapter: createOpenAiQca({ baseUrl: Deno.env.get('BAILIAN_BASE_URL') ?? 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', apiKey: blKey, model: Deno.env.get('BAILIAN_MODEL') ?? 'deepseek-v4.1-flash-1017', maxTokens: llmMaxTokens }) });
 const resilient = fallbacks.length ? createResilientQca([{ name: 'local', adapter: qca }, ...fallbacks]) : qca;
 const handle = application({ db, requireUser: (ctx) => { if (!ctx.user) throw Object.assign(new Error('unauthorized'), { code: 'unauthorized', status: 401 }); return ctx.user; }, qca: resilient, config: { cloudApiOrigin: 'http://local', appScope: 'local-live', modelId: model } });
 function visitorOf(request: Request): string {

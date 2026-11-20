@@ -214,7 +214,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         let pendingViolations: Violation[] = [];
         let terminalState: 'completed' | 'failed' | 'interrupted' = 'failed';
         // 整请求总预算（跨重试）：平台约 60s 强切，必须在强切前主动收尾，避免孤儿派发与断流。
-        const turnDeadline = Date.now() + (deps.config.turnBudgetMs ?? 50000);
+        const turnDeadline = Date.now() + (deps.config.turnBudgetMs ?? 55000);
         for (let attempt = 0; attempt < 3; attempt++) {
           if (attempt > 0) {
             await deps.db.from('messages').delete().eq('conversation_id', conv.id).eq('seq', assistantSeq);
@@ -228,7 +228,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           // 空闲超时：持续有帧就续期；静默超过阈值重试。另有回合总预算（赶在平台 ~60s 强切前主动收尾，避免孤儿派发）。
           const attemptAbort = new AbortController();
           const idleMs = deps.config.attemptTimeoutMs ?? 15000;
-          const totalMs = Math.min(deps.config.attemptTotalMs ?? 35000, remaining);
+          const totalMs = Math.min(deps.config.attemptTotalMs ?? 40000, remaining);
           let abortReason: 'idle' | 'total' | null = null;
           let idleTimer: ReturnType<typeof setTimeout> | undefined;
           const resetIdle = () => {
@@ -275,7 +275,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
               if (abortReason === 'total') repairNote = '\n上一轮输出超时（内容过长）。本轮请大幅精简：task_defs ≤6、notes ≤60 字、前言 ≤3 句、JSON 紧凑，禁止逐日列举，确保一次答完。';
               continue;
             }
-            throw readErr;
+            // 最后一次也超时/断流：保留已收到的部分文本继续走解析（截断兜底可能救回产物），不再整轮丢弃。
           } finally {
             if (idleTimer) clearTimeout(idleTimer);
             clearTimeout(totalTimer);
@@ -285,10 +285,18 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           finalText = projector.text();
           if (finalText.length > bestText.length) bestText = finalText;
           if (abort.signal.aborted) { terminalState = 'interrupted'; break; }
-          if (!projector.isTerminal()) { terminalState = 'failed'; break; }
+          // 上游没有终态就断流：还有时间就重试，别把已知的剩余预算浪费掉。
+          if (!projector.isTerminal()) {
+            if (attempt < 2 && turnDeadline - Date.now() > 8000) {
+              repairNote = '\n上一轮输出中断。请直接给出完整回答或一个完整闭合的 ```json 围栏产物（长计划请精简到 task_defs ≤4）。';
+              continue;
+            }
+            terminalState = 'failed';
+            break;
+          }
           // 空完成：上游只发了终态、没有任何正文/产物。不能静默 completed，否则气泡一片空白。
           if (!finalText.trim()) {
-            if (attempt < 2) { repairNote = '\n上一轮没有任何输出。请正常回答用户，或直接输出一个 ```json 围栏产物。'; continue; }
+            if (attempt < 2) { repairNote = '\n上一轮没有任何输出。不要检索、不要调用工具；直接回答用户，或直接输出一个 ```json 围栏产物（长计划请精简到 task_defs ≤4）。'; continue; }
             terminalState = 'failed';
             const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'empty_response', message: 'AI 没有返回内容，请重试', diagnostic_id: crypto.randomUUID() } };
             emit(err); collected.push(err);
@@ -299,6 +307,8 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           const parsed = parseModelText(finalText, day);
           // 口头承诺了提问/出计划却没给 JSON（如结尾停在冒号）：同样进修复重试，避免「说问三个问题却没有问题卡」。
           const promised = !parsed && (/[:：]\s*$/.test(finalText.trim()) || /问[一二三四五六七八九十\d]+[个道]/.test(finalText) || /(答完|定了|给我).{0,16}(就|直接)/.test(finalText));
+          // 用户明确要「产出/调整方案」却只回了文字：要一次产物，避免「有文字没方案」的无声失败。
+          const asksPlan = !parsed && (/(制定|做|排|列|生成|安排|规划|调整|修改|改|加|删).{0,8}(计划|方案|日程|作息|表)|直接给方案/.test(text));
           if (parsed && parsed.kind === 'constraint_set') {
             // 预求解：不可行就把具体原因喂回修复重试，避免把排不下的方案直接当成成功。
             const pre = previewSolve(parsed.value);
@@ -337,18 +347,22 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
             }
             const art: AppEvent = { event: 'artifact', data: { seq: nextSeq(), kind: parsed.kind, payload: parsed.value, ...(preview ? { preview } : {}) } };
             emit(art); collected.push(art);
+            if (terminalState !== 'interrupted') terminalState = 'completed';
             await insertMessage(deps.db, conv, { seq: art.data.seq, role: 'assistant', kind: parsed.kind, content: bestText || finalText, payload: parsed.value });
             break;
           }
-          if ((expectsArtifact || promised) && attempt < 2) {
+          if ((expectsArtifact || promised || asksPlan) && attempt < 2) {
             if (promised && !expectsArtifact) {
               repairNote = '\n上一轮你口头承诺了提问或出计划，但没有输出 JSON 产物。本轮请直接输出 ```json 围栏的 question_card 或 constraint_set，前言保持 1–2 句。';
             } else if (expectsArtifact && !parsed) {
-              repairNote = '\n上一轮输出的 JSON 无法解析（可能被截断或含注释/尾逗号）。本轮请只输出一个完整、合法的 ```json 围栏对象（constraint_set / patch / question_card），不要省略字段、不要截断，前言保持 1–2 句。';
+              // 长计划最常见的是输出被上限截断：重试既要修格式，也必须让 JSON 变短。
+              repairNote = '\n上一轮 JSON 被截断或无法解析。本轮必须一次写完：JSON 单行紧凑（不缩进、不换行）、task_defs ≤4、constraints ≤6、ops ≤6、省略 notes、clarifications_needed ≤1、正文 ≤2 句；宁可少列任务也不要截断，字段必须完整闭合。';
+            } else if (asksPlan) {
+              repairNote = '\n用户要的是可直接执行的方案，本轮除了 1–2 句说明，必须直接输出 ```json 围栏的 constraint_set（修改已有计划则 patch），不要把方案只写在正文里。';
             }
             continue;
           }
-          if (expectsArtifact) {
+          if (expectsArtifact || asksPlan) {
             const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'artifact_invalid', message: 'AI 返回的结构化结果无效，请重试', diagnostic_id: crypto.randomUUID() } };
             emit(err); collected.push(err); terminalState = 'failed';
             await insertMessage(deps.db, conv, { seq: err.data.seq, role: 'system', kind: 'error', content: 'artifact_invalid' });
@@ -360,6 +374,19 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         if (finalProse.length > emittedProse.length) {
           const pd: AppEvent = { event: 'delta', data: { seq: assistantSeq, text: finalProse.slice(emittedProse.length) } };
           emit(pd); collected.push(pd);
+        }
+        // 收尾护栏：失败必须带明确错误码，成功至少要有可读正文或产物，绝不静默空白。
+        const hasError = collected.some((e) => e.event === 'error');
+        const hasArtifact = collected.some((e) => e.event === 'artifact');
+        if (terminalState === 'failed' && !hasError) {
+          if (!hasArtifact && !bestText.trim()) {
+            const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'empty_response', message: 'AI 没有返回内容，请重试', diagnostic_id: crypto.randomUUID() } };
+            emit(err); collected.push(err);
+            await insertMessage(deps.db, conv, { seq: err.data.seq, role: 'system', kind: 'error', content: 'empty_response' });
+          } else if (!hasArtifact) {
+            // 有正文没产物：普通对话回答已完整送达，按成功结束。
+            terminalState = 'completed';
+          }
         }
         await advanceCursor(deps.db, conv, seq, lastEventId);
         // 重试会删除上一轮的流式文本；若最终没有落任何助手内容，补存最长的那份解释，历史不再丢失。

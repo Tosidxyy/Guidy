@@ -48,7 +48,7 @@ describe('chatSend', () => {
     let sends = 0;
     const d = deps({ openStream: async () => ({ body: upstreamStream(replyFrames), close() {} }), sendEvents: async () => { sends++; return { eventIds: ['evt_1'] }; } });
     const app = application(d);
-    const body = { text: '排计划', request_id: 'req-dup' };
+    const body = { text: '你好', request_id: 'req-dup' };
     await collect(await app(ctx('POST', '/api/chat/send', body)));
     const second = await collect(await app(ctx('POST', '/api/chat/send', body)));
     expect(second[0].event).toBe('accepted');
@@ -78,6 +78,25 @@ describe('chatSend', () => {
     expect(sends).toHaveLength(2);
     expect(sends[1]).toContain('修正要求');
     expect(out.some((f) => f.event === 'artifact' && f.data.kind === 'patch')).toBe(true);
+  });
+  it('输出被截断的长计划：一次尝试内兜底解析出 artifact，不再整轮报错', async () => {
+    const set = { type: 'constraint_set', plan_title: '雅思三个月', horizon_days: 90, task_defs: [
+      { key: 'vocab', title: '背单词', category: 'study', duration_min: 30, frequency: { type: 'daily' } },
+      { key: 'listening', title: '听力精听', category: 'study', duration_min: 45, frequency: { type: 'per_week', count: 5 } },
+    ], constraints: [{ type: 'daily_cap', category: 'study', max_minutes: 180 }], clarifications_needed: [] };
+    const full = JSON.stringify(set);
+    const cut = full.indexOf('"listening"') + 40;
+    const frames = [
+      { type: 'agent.message', id: 'e1', content: [{ type: 'text', text: '```json\n' + full.slice(0, cut) }] },
+      { type: 'session.status', status: 'idle' },
+    ];
+    const d = deps({ openStream: async () => ({ body: upstreamStream(frames), close() {} }) });
+    const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '三个月雅思计划' })));
+    const art = out.find((f) => f.event === 'artifact');
+    expect(art?.data.kind).toBe('constraint_set');
+    expect((art as any)?.data.payload.task_defs).toHaveLength(1);
+    expect(out.some((f) => f.event === 'error')).toBe(false);
+    expect(out.at(-1).event).toBe('done');
   });
   it('today/timezone 注入用户消息，供模型换算「下周」等相对日期', async () => {
     let sent = '';
@@ -318,7 +337,7 @@ describe('断线后规划继续（切换对话）', () => {
     let opens = 0;
     const d = deps({ openStream: async () => { opens++; return { body: up.body, close() {} }; } });
     const app = application(d);
-    const sendRes = await app(ctx('POST', '/api/chat/send', { text: '排计划', request_id: 'req-tail' }));
+    const sendRes = await app(ctx('POST', '/api/chat/send', { text: '你好', request_id: 'req-tail' }));
     const sr = sendRes.body!.getReader();
     await sr.read();
     await sr.cancel();

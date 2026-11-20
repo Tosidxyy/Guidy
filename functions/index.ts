@@ -12,6 +12,8 @@ const config = {
 // 默认走用户环境变量注入的 OpenAI 兼容供应商（DeepSeek → Bailian），不再依赖 Qoder 云端 QCA。
 // 密钥只从平台 Secret 注入，缺失时该供应商自动跳过。
 const providers: QcaProvider[] = [];
+// 长计划 JSON 需要更多输出 token；可用 LLM_MAX_TOKENS 覆盖默认值。
+const llmMaxTokens = Number(Deno.env.get('LLM_MAX_TOKENS')) || undefined;
 const deepseekKey = Deno.env.get('DEEPSEEK_API_KEY');
 if (deepseekKey) {
   providers.push({
@@ -20,6 +22,7 @@ if (deepseekKey) {
       baseUrl: Deno.env.get('DEEPSEEK_BASE_URL') ?? 'https://api.deepseek.com/v1',
       apiKey: deepseekKey,
       model: Deno.env.get('DEEPSEEK_MODEL') ?? 'deepseek-flash',
+      maxTokens: llmMaxTokens,
     }, db),
   });
 }
@@ -31,6 +34,7 @@ if (bailianKey) {
       baseUrl: Deno.env.get('BAILIAN_BASE_URL') ?? 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
       apiKey: bailianKey,
       model: Deno.env.get('BAILIAN_MODEL') ?? 'deepseek-v4.1-flash-1017',
+      maxTokens: llmMaxTokens,
     }, db),
   });
 }
