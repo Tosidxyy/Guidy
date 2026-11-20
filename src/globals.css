@@ -35,7 +35,7 @@
   --site-text-body: 14px;
   --site-text-secondary: 13px;
   --site-text-label: 12px;
-  --site-focus-ring: color-mix(in srgb, var(--site-ink) 22%, transparent);
+  --site-focus-ring: color-mix(in srgb, var(--site-fg) 45%, transparent);
   --site-space: 1;
   --site-type: 1;
   --site-motion: 1;

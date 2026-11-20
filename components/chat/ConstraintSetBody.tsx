@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Check, Plus, Trash2 } from 'lucide-react';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 import { constraintText } from '@/lib/describe';
@@ -22,6 +23,7 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
   planStart: string;
   footer?: React.ReactNode;
 }) {
+  const [editingKey, setEditingKey] = useState<string | null>(null);
   const set = (next: ConstraintSetArtifact) => onChange(next);
   const schedules = groupSchedules(draft);
   const rules = draft.constraints
@@ -48,33 +50,54 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
         </div>
         <ul className="guidy-stagger space-y-1.5">
           {draft.task_defs.map((t) => (
-            <li key={t.key} className="rounded-[var(--site-radius-card)] border border-site-line bg-site-bg px-2.5 py-1.5">
-              <div className="flex items-center gap-2">
-              <Input
-                value={t.title}
-                aria-label={`任务标题 ${t.title}`}
-                onChange={(e) => set(updateTaskTitle(draft, t.key, e.target.value.slice(0, 60)))}
-                className="h-7 flex-1 text-xs"
-              />
-              <Input
-                type="number" min={15} max={480} value={t.duration_min}
-                aria-label={`任务时长 ${t.title}`}
-                onChange={(e) => set(updateTaskDuration(draft, t.key, Math.max(15, Math.min(480, Number(e.target.value) || 15))))}
-                className="tabular h-7 w-20 text-xs"
-              />
-              <span className="text-xs text-site-ink-soft">分钟</span>
-              <button type="button" aria-label={`删除任务 ${t.title}`} className="rounded p-1 text-site-ink-soft hover:text-site-danger" onClick={() => set(removeTask(draft, t.key))}>
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-              </div>
-              <Input
-                value={t.notes ?? ''}
-                aria-label={`任务备注 ${t.title}`}
-                placeholder="备注：动作、组数或资料要点"
-                onChange={(e) => set(updateTaskNotes(draft, t.key, e.target.value))}
-                className="mt-1 h-7 text-xs"
-              />
-            </li>
+            editingKey === t.key ? (
+              <li key={t.key} className="rounded-[var(--site-radius-card)] border border-site-ink bg-site-bg px-2.5 py-1.5">
+                <div className="flex items-center gap-2">
+                  <Input
+                    autoFocus
+                    value={t.title}
+                    aria-label={`任务标题 ${t.title}`}
+                    onChange={(e) => set(updateTaskTitle(draft, t.key, e.target.value.slice(0, 60)))}
+                    className="h-7 flex-1 text-xs"
+                  />
+                  <Input
+                    type="number" min={15} max={480} value={t.duration_min}
+                    aria-label={`任务时长 ${t.title}`}
+                    onChange={(e) => set(updateTaskDuration(draft, t.key, Math.max(15, Math.min(480, Number(e.target.value) || 15))))}
+                    className="tabular h-7 w-20 text-xs"
+                  />
+                  <span className="text-xs text-site-ink-soft">分钟</span>
+                  <button type="button" aria-label={`完成编辑 ${t.title}`} className="rounded p-1 text-site-ink hover:bg-site-surface-2" onClick={() => setEditingKey(null)}>
+                    <Check className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <Input
+                  value={t.notes ?? ''}
+                  aria-label={`任务备注 ${t.title}`}
+                  placeholder="备注：动作、组数或资料要点"
+                  onChange={(e) => set(updateTaskNotes(draft, t.key, e.target.value))}
+                  className="mt-1 h-7 text-xs"
+                />
+              </li>
+            ) : (
+              <li
+                key={t.key}
+                role="button" tabIndex={0}
+                aria-label={`编辑任务 ${t.title}`}
+                onClick={() => setEditingKey(t.key)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setEditingKey(t.key); } }}
+                className="cursor-pointer rounded-[var(--site-radius-card)] border border-site-line bg-site-bg px-2.5 py-1.5 transition-colors hover:bg-site-surface-2"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-site-ink">{t.title}</span>
+                  <span className="tabular shrink-0 text-xs text-site-ink-soft">{t.duration_min} 分钟</span>
+                  <button type="button" aria-label={`删除任务 ${t.title}`} className="rounded p-1 text-site-ink-soft hover:text-site-danger" onClick={(e) => { e.stopPropagation(); set(removeTask(draft, t.key)); }}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                {t.notes && <p className="mt-0.5 truncate text-xs text-site-ink-soft">{t.notes}</p>}
+              </li>
+            )
           ))}
           {schedules.map((g) => (
             <li key={`sch-${g.type}-${g.label}-${g.start}-${g.end}-${g.indices[0]}`} className="rounded-[var(--site-radius-card)] border border-site-line bg-site-bg px-2.5 py-1.5">

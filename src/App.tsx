@@ -91,7 +91,7 @@ export default function App() {
         <BlockDrawer />
         <SettingsDrawer />
         <FeedbackDialog />
-        <Toaster position="top-center" closeButton />
+        <Toaster position="bottom-right" closeButton />
       </div>
       {intro && <BrandIntro onDone={() => setIntro(false)} onUnblur={() => setIntroBlur(false)} />}
     </TooltipProvider>

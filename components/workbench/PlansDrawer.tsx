@@ -96,17 +96,17 @@ export function PlansDrawer() {
           {plans.map((p) => (
             <div key={p.id} className={cn('rounded-[var(--site-radius-card)] border px-3 py-2', p.id === currentId ? 'border-site-ink/50 bg-site-ink/5' : 'border-site-line')}>
               <div className="flex items-center justify-between gap-2">
-                <button type="button" className="min-w-0 flex-1 truncate text-left text-sm font-medium text-site-ink hover:text-site-ink disabled:opacity-50" onClick={() => requestSwitch(p.id)} disabled={busy || p.id === currentId}>
+                <button type="button" className="min-w-0 flex-1 truncate text-left text-sm font-medium text-site-ink hover:text-site-ink disabled:opacity-50" onClick={() => requestSwitch(p.id)} disabled={busy}>
                   {p.title}
                 </button>
                 {p.id === currentId && <Badge variant="secondary">当前</Badge>}
               </div>
-              <p className="tabular mt-0.5 text-xs text-site-ink-soft">{p.horizon_start} · {p.horizon_days} 天 · v{p.version} · 更新于 {p.updated_at.slice(0, 10)}</p>
+              <p className="tabular mt-0.5 text-xs text-site-ink-soft">{p.horizon_start} · {p.horizon_days} 天 · 更新于 {p.updated_at.slice(0, 10)}</p>
               <div className="mt-1.5 flex justify-end gap-1">
                 {p.id === currentId && (
                   <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => { setDraft(p.title); setRenaming(true); }}>重命名</Button>
                 )}
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-site-danger hover:text-site-danger" aria-label={`删除「${p.title}」`} onClick={() => requestDelete(p.id, p.title)} disabled={busy}>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-site-ink-soft hover:text-site-danger" aria-label={`删除「${p.title}」`} onClick={() => requestDelete(p.id, p.title)} disabled={busy}>
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>

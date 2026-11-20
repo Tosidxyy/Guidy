@@ -124,14 +124,14 @@ export function SettingsDrawer() {
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
           <section className="space-y-2">
             <Label>主题</Label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-1 rounded-[var(--site-radius-control)] border border-site-line p-1" role="radiogroup" aria-label="主题">
               {(['light', 'dark'] as const).map((t) => (
                 <button
-                  key={t} type="button"
+                  key={t} type="button" role="radio" aria-checked={theme === t}
                   onClick={() => setTheme(t)}
                   className={cn(
-                    'flex items-center justify-center gap-2 rounded-[var(--site-radius-card)] border px-3 py-2.5 text-sm font-medium transition-colors',
-                    theme === t ? 'border-site-ink bg-site-ink/10 text-site-ink' : 'border-site-line text-site-ink-soft hover:bg-site-surface-2',
+                    'flex items-center justify-center gap-2 rounded-[calc(var(--site-radius-control)-2px)] px-3 py-2 text-sm font-medium transition-colors',
+                    theme === t ? 'bg-site-ink text-site-bg' : 'text-site-ink-soft hover:bg-site-surface-2 hover:text-site-ink',
                   )}
                 >
                   {t === 'light' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -145,8 +145,9 @@ export function SettingsDrawer() {
 
           <section className="space-y-2">
             <Label>日历显示时段</Label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center gap-2">
               <NativeSelect
+                className="flex-1"
                 value={String(visibleStart / 60)} aria-label="显示开始小时"
                 onChange={(e) => {
                   const v = Number(e.target.value) * 60;
@@ -155,7 +156,9 @@ export function SettingsDrawer() {
               >
                 {HOURS.slice(0, 23).map((h) => <NativeSelectOption key={h} value={String(h)}>{String(h).padStart(2, '0')}:00 起</NativeSelectOption>)}
               </NativeSelect>
+              <span className="shrink-0 text-xs text-site-ink-soft">至</span>
               <NativeSelect
+                className="flex-1"
                 value={String(visibleEnd / 60)} aria-label="显示结束小时"
                 onChange={(e) => {
                   const v = Number(e.target.value) * 60;
@@ -192,7 +195,7 @@ export function SettingsDrawer() {
           <section className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label>Agent 学到的习惯</Label>
-              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={learning} onClick={() => { void relearn(); }}>
+              <Button variant="outline" size="sm" className="h-7 px-2 text-xs" disabled={learning} onClick={() => { void relearn(); }}>
                 {learning ? '学习中…' : '重新学习'}
               </Button>
             </div>
@@ -227,8 +230,8 @@ export function SettingsDrawer() {
 
           <Separator />
 
-          <section className="space-y-2">
-            <Label>删除数据</Label>
+          <section className="space-y-2 rounded-[var(--site-radius-card)] border border-site-danger/30 bg-site-danger/5 p-3">
+            <Label className="text-site-danger">危险区</Label>
             <p className="text-xs leading-relaxed text-site-ink-soft">永久删除本机浏览器里的全部计划、对话与共享日历，不可恢复。</p>
             <Button variant="destructive" className="w-full" disabled={streaming || isDeleting} onClick={() => setConfirmDelete(true)}>
               <Trash2 className="mr-1.5 h-4 w-4" /> {isDeleting ? '删除中…' : '删除我的全部数据'}

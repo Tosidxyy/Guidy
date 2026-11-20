@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { HelpCircle, Send, X } from 'lucide-react';
+import { ArrowUp, Check, HelpCircle, X } from 'lucide-react';
 import type { QuestionCardArtifact } from '@/shared/schemas';
 import { composeAnswers, shouldSendImmediately, CUSTOM_ANSWER_LABEL } from '@/lib/questionCard';
 import { Button } from '@/components/ui/button';
@@ -43,7 +43,6 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
       aria-label="待确认的问题"
       className="animate-guidy-fade-up rounded-(--site-radius) border border-site-line bg-site-surface p-4 shadow-sm"
     >
-      <div className="mb-3 h-px bg-site-line" />
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="font-display flex items-center gap-1.5 text-sm font-semibold text-site-ink">
@@ -77,12 +76,13 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
                       aria-pressed={active}
                       onClick={() => pick(i, option)}
                       className={cn(
-                        'rounded-full border px-2.5 py-1 text-xs transition-colors',
+                        'inline-flex items-center gap-1 rounded-[var(--site-radius-control)] border px-3 py-1.5 text-[13px] transition-all duration-[var(--site-motion-quick)] active:scale-[0.97]',
                         active
-                          ? 'border-site-ink bg-site-ink/10 font-medium text-site-ink'
-                          : 'border-site-line bg-site-surface text-site-ink-soft hover:border-site-ink/40 hover:text-site-ink',
+                          ? 'border-site-ink bg-site-ink font-medium text-site-bg'
+                          : 'border-site-line bg-site-surface text-site-ink hover:border-site-ink/40 hover:bg-site-surface-2',
                       )}
                     >
+                      {active && <Check className="h-3.5 w-3.5" />}
                       {option}
                     </button>
                   );
@@ -92,12 +92,13 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
                   aria-pressed={!!custom[i]}
                   onClick={() => pick(i, CUSTOM_ANSWER_LABEL)}
                   className={cn(
-                    'rounded-full border border-dashed px-2.5 py-1 text-xs transition-colors',
+                    'inline-flex items-center gap-1 rounded-[var(--site-radius-control)] border border-dashed px-3 py-1.5 text-[13px] transition-all duration-[var(--site-motion-quick)] active:scale-[0.97]',
                     custom[i]
-                      ? 'border-site-ink bg-site-ink/10 font-medium text-site-ink'
-                      : 'border-site-line bg-site-surface text-site-ink-soft hover:border-site-ink/40 hover:text-site-ink',
+                      ? 'border-site-ink bg-site-ink font-medium text-site-bg'
+                      : 'border-site-line bg-site-surface text-site-ink hover:border-site-ink/40 hover:bg-site-surface-2',
                   )}
                 >
+                  {custom[i] && <Check className="h-3.5 w-3.5" />}
                   {CUSTOM_ANSWER_LABEL}
                 </button>
               </div>
@@ -125,7 +126,7 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
             disabled={answered === 0}
             onClick={() => onAnswer(composeAnswers(artifact, answers))}
           >
-            <Send className="mr-1 h-3.5 w-3.5" /> 发送回答（{answered}/{total}）
+            <ArrowUp className="mr-1 h-3.5 w-3.5" /> 发送回答（{answered}/{total}）
           </Button>
         </div>
       )}

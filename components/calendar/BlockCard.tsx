@@ -41,6 +41,7 @@ export const BlockCard = memo(function BlockCard({
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
       aria-label={`${block.title} ${minToHHmm(startMin)} 到 ${minToHHmm(endMin)}${planLabel ? `，${planLabel}` : ''}`}
+      title={`${block.title} ${minToHHmm(startMin)}–${minToHHmm(endMin)}${planLabel ? `（${planLabel}）` : ''}`}
       className={cn(
         'group absolute select-none overflow-hidden rounded-[var(--site-radius-control)] border text-left hover:[--cat-fill:18%]',
         'transition-shadow duration-150',
@@ -54,9 +55,9 @@ export const BlockCard = memo(function BlockCard({
         visual === 'invalid' && 'border-site-danger ring-2 ring-site-danger/40 animate-guidy-shake',
         visual === 'soft' && 'border-site-warning ring-2 ring-site-warning/30',
         visual === 'dimmed' && 'opacity-25 pointer-events-none',
-        visual === 'ghost-added' && 'border-dashed border-site-success pointer-events-none',
-        visual === 'ghost-removed' && 'border-dashed border-site-danger pointer-events-none opacity-60',
-        visual === 'ghost-moved' && 'border-dashed border-site-warning pointer-events-none',
+        visual === 'ghost-added' && 'border border-dashed border-site-success/50 pointer-events-none',
+        visual === 'ghost-removed' && 'border border-dashed border-site-danger/50 pointer-events-none opacity-60',
+        visual === 'ghost-moved' && 'border border-dashed border-site-warning/50 pointer-events-none',
         block.status === 'completed' && 'opacity-60',
         block.status === 'partial' && 'border-dashed border-site-warning',
       )}
@@ -99,7 +100,7 @@ export const BlockCard = memo(function BlockCard({
           {block.origin === 'fixed' && <Lock className="h-3 w-3 shrink-0 text-site-ink-soft" aria-label="固定" />}
           {planLabel && <span className="ml-auto max-w-[55%] truncate rounded bg-site-surface/85 px-1 text-xs leading-tight text-site-ink-soft">{planLabel}</span>}
           {visual === 'ghost-removed' && <span className="ml-auto text-xs text-site-danger">移除</span>}
-          {visual === 'ghost-added' && <span className="ml-auto text-xs text-site-success">新增</span>}
+          {visual === 'ghost-added' && <span aria-label="新增" className="ml-auto size-1.5 shrink-0 rounded-full bg-site-success" />}
         </div>
         {!compact && (
           <span className="tabular mt-0.5 text-xs leading-tight text-site-ink-soft">

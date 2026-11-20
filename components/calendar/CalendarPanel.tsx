@@ -896,7 +896,7 @@ export function CalendarPanel() {
       </div>
 
       {isEmpty && (
-        <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-site-surface/85 backdrop-blur-sm">
+        <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-site-bg">
           <EmptyCalendar className="h-40 w-64" />
           <div className="text-center">
             <p className="font-display text-lg font-semibold text-site-ink">日历还是空的</p>
