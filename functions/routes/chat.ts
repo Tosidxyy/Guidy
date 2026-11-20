@@ -313,7 +313,8 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         emit({ event: 'done', data: { seq: nextSeq() } });
         await markDispatch(deps.db, requestId, { status: terminalState === 'completed' ? 'done' : terminalState, session_id: sessionId, result: collected });
         await deps.db.from('conversations').update({ status: terminalState === 'completed' ? 'active' : terminalState }).eq('id', conv.id);
-      } catch {
+      } catch (e) {
+        console.error('chat_send_failed', (e as any)?.code ?? '', String((e as any)?.message ?? e).slice(0, 200));
         const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'upstream_error', message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID() } };
         emit(err);
         emit({ event: 'done', data: { seq: nextSeq() } });

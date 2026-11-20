@@ -46,6 +46,16 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
   function refOf(wrapperId: string): SessionRef {
     let ref = sessions.get(wrapperId);
     if (!ref) {
+      if (wrapperId.startsWith('{')) {
+        try {
+          const p = JSON.parse(wrapperId) as { i?: number; r?: string };
+          if (typeof p.r === 'string' && p.r) {
+            ref = { idx: typeof p.i === 'number' ? p.i : idx, realId: p.r };
+            sessions.set(wrapperId, ref);
+            return ref;
+          }
+        } catch { /* fall through */ }
+      }
       ref = { idx, realId: '' };
       sessions.set(wrapperId, ref);
     }
@@ -68,8 +78,9 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
       throw lastErr;
     },
     async createSession(_binding, title, metadata) {
-      const id = `w-${crypto.randomUUID()}`;
       const realId = await sessionAt(idx, title, metadata ?? {});
+      // 映射持久化进会话 id（JSON）：edge 多 isolate 不共享内存，冷启动靠它复用真实会话，避免重建撞 409。
+      const id = JSON.stringify({ i: idx, r: realId });
       sessions.set(id, { idx, realId });
       return { id };
     },
@@ -106,14 +117,17 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
             let failed = false;
             try {
               if (!realId) realId = await sessionAt(i, 'resume', {});
-              const upstream = await providers[i].adapter.openStream(realId, opts);
+              // 先 send 再 open：带续读游标时 QCA 只推送开流之后已存在的新回合事件，先开后发会静默挂起。
               await providers[i].adapter.sendEvents(realId, text, `resilient-${wrapperId}-${i}`);
+              const upstream = await providers[i].adapter.openStream(realId, opts);
               const decoder = new TextDecoder();
               for await (const frame of readSSE(upstream.body, { signal: opts.signal })) {
                 const raw = new TextEncoder().encode(`id: ${frame.id ?? ''}\nevent: ${frame.event}\ndata: ${frame.data}\n\n`);
                 controller.enqueue(raw);
                 const chunk = decoder.decode(raw);
                 if (chunk.includes('session.error') || /"status"\s*:\s*"failed"/.test(chunk)) failed = true;
+                // QCA 持久流不 EOF：遇到终态即结束本轮，否则流不释放、下一轮 send 撞 409。
+                if (/"type"\s*:\s*"session\.(status_idle|completed)"/.test(chunk) || /"type"\s*:\s*"session\.status"[^}]*"status"\s*:\s*"idle"/.test(chunk)) break;
               }
               upstream.close();
               ref.idx = i;
@@ -125,6 +139,7 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
               }
               lastErr = new Error(`provider_${providers[i].name}_stream_failed`);
             } catch (e) {
+              console.error('provider_failed', providers[i].name, (e as any)?.code ?? '', String((e as any)?.message ?? e).slice(0, 200));
               lastErr = e;
               if (!isFailoverError(e)) break;
             }
@@ -138,7 +153,7 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
       return { body, close() {} };
     },
     async listEvents(wrapperId, opts) {
-      const ref = sessions.get(wrapperId);
+      const ref = refOf(wrapperId);
       const order = ref ? [ref.idx, ...providers.map((_, i) => i).filter((i) => i !== ref.idx)] : providers.map((_, i) => i);
       let lastErr: unknown;
       for (const i of order) {
