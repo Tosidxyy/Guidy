@@ -36,6 +36,10 @@ if (process.env.LOCAL_LLM_CONFIG) {
   for (const [key, value] of Object.entries(mapping)) {
     if (process.env[key] === undefined && value) process.env[key] = String(value);
   }
+  // 兜底供应商配置同样只留在本进程内。
+  for (const [key, value] of Object.entries(cfg)) {
+    if ((key.startsWith('DEEPSEEK_') || key.startsWith('BAILIAN_')) && process.env[key] === undefined && value) process.env[key] = String(value);
+  }
 }
 
 const entry = process.argv[2] ?? 'dev/function-live.ts';
