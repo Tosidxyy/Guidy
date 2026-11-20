@@ -30,7 +30,13 @@ export function parsePersisted(raw: string | null): PersistedState | null {
 
 export function loadPersisted(): PersistedState | null {
   try {
-    return parsePersisted(localStorage.getItem(KEY));
+    const parsed = parsePersisted(localStorage.getItem(KEY));
+    if (!parsed) return null;
+    // 忙时/固定日程已物化为共享块：本地历史状态里残留的这些约束会在日历上画成灰色斜纹。
+    const constraints = parsed.state.constraints.filter(
+      (c) => c.payload?.type !== 'busy_window' && c.payload?.type !== 'fixed_block',
+    );
+    return constraints.length === parsed.state.constraints.length ? parsed : { state: { ...parsed.state, constraints } };
   } catch {
     return null;
   }

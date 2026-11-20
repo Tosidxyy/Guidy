@@ -4,6 +4,7 @@ import {
   localApplyPatch, localCalendar, localCommit, localDeletePlan, localLearnProfile, localPlan, localPlans,
   localSaveDraft, localSharedOps,
 } from '@/lib/local/domain';
+import { putPlan } from '@/lib/local/repo';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 
 beforeEach(() => __resetMemory());
@@ -50,11 +51,31 @@ describe('本地计划：commit / 读回 / 排程', () => {
     const cal = await localCalendar();
     expect(cal.blocks).toHaveLength(1);
     expect(cal.blocks[0].title).toBe('上班');
+    // 响应与落库都必须已是物化后的约束（否则日历会把 busy 画成灰色斜纹）
+    expect(res.constraints.some((c: any) => c.payload.type === 'busy_window')).toBe(false);
     const plan = await localPlan(res.plan.id);
     expect(plan.constraints.some((c) => c.payload.type === 'busy_window')).toBe(false);
     await localSharedOps({ ops: [{ op: 'remove_block', id: cal.blocks[0].id }] });
     expect((await localCalendar()).blocks).toHaveLength(0);
     expect((await localCalendar()).blocks).toHaveLength(0);
+  });
+});
+
+describe('历史计划读取', () => {
+  it('剥掉计划里残留的忙时约束，并补物化到共享日历', async () => {
+    await putPlan({
+      id: 'p-old', title: '上班计划', horizon_start: '2026-11-16', horizon_days: 7, timezone: 'Asia/Shanghai',
+      status: 'active', version: 3, created_at: '', updated_at: '',
+      task_defs: [], blocks: [],
+      constraints: [
+        { id: 'c1', payload: { type: 'busy_window', weekday: 1, start: '09:00', end: '17:30', label: '上班' }, source: 'user', enabled: true },
+        { id: 'c2', payload: { type: 'active_window', start: '07:00', end: '23:00' }, source: 'user', enabled: true },
+      ] as any,
+    });
+    const st = await localPlan('p-old');
+    expect(st.constraints.map((c) => c.payload.type)).toEqual(['active_window']);
+    const cal = await localCalendar();
+    expect(cal.blocks.map((b) => b.title)).toEqual(['上班']);
   });
 });
 

@@ -19,6 +19,10 @@ const MAX_DAYS = 92;
 
 const stateOf = (p: PlanRecord): PlanState => ({ plan: p, task_defs: p.task_defs, constraints: p.constraints, blocks: p.blocks });
 
+/** 忙时/固定日程已物化成共享块，计划自身不再持有这些约束；历史数据读取时同样剥掉。 */
+export const visibleConstraints = (constraints: Constraint[]): Constraint[] =>
+  constraints.filter((c) => !DROPPED_AT_COMMIT.has(String(c.payload?.type)));
+
 export async function localPlans(): Promise<{ items: PlanRecord[] }> {
   const items = (await listPlans()).sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
   return { items };
@@ -27,7 +31,9 @@ export async function localPlans(): Promise<{ items: PlanRecord[] }> {
 export async function localPlan(id: string): Promise<PlanState> {
   const p = await getPlan(id);
   if (!p) throw new ApiError('not_found', 404, '计划不存在');
-  return stateOf(p);
+  await materializeShared();
+  const fresh = (await getPlan(id)) ?? p;
+  return stateOf({ ...fresh, constraints: visibleConstraints(fresh.constraints) });
 }
 
 function tombstoneKey(parts: string[]): string {
@@ -85,9 +91,11 @@ export async function localCalendar(): Promise<{ blocks: SharedBlock[] }> {
   return { blocks: await listShared() };
 }
 
-async function savePlanRecord(rec: PlanRecord): Promise<void> {
+/** 落库后立刻物化忙时；返回物化后的记录（busy/fixed 约束已移除），与旧服务端响应一致。 */
+async function savePlanRecord(rec: PlanRecord): Promise<PlanRecord> {
   await putPlan(rec);
   await materializeShared();
+  return (await getPlan(rec.id)) ?? rec;
 }
 
 export async function localCommit(body: any): Promise<any> {
@@ -122,12 +130,12 @@ export async function localCommit(body: any): Promise<any> {
     constraints: input.constraints ?? [],
     blocks: solved.blocks,
   };
-  await savePlanRecord(rec);
+  const stored = await savePlanRecord(rec);
   if (body.conversation_id) {
     const conv = await getConversation(String(body.conversation_id));
-    if (conv && !conv.plan_id) await putConversation({ ...conv, plan_id: rec.id, updated_at: now });
+    if (conv && !conv.plan_id) await putConversation({ ...conv, plan_id: stored.id, updated_at: now });
   }
-  return { plan: rec, version: rec.version, task_defs: rec.task_defs, constraints: rec.constraints, blocks: rec.blocks, server_authoritative: false };
+  return { plan: stored, version: stored.version, task_defs: stored.task_defs, constraints: stored.constraints, blocks: stored.blocks, server_authoritative: false };
 }
 
 export async function localSaveDraft(body: any): Promise<any> {
@@ -150,12 +158,12 @@ export async function localSaveDraft(body: any): Promise<any> {
     constraints: input.constraints ?? [],
     blocks: input.blocks ?? [],
   };
-  await savePlanRecord(rec);
+  const stored = await savePlanRecord(rec);
   if (body.conversation_id) {
     const conv = await getConversation(String(body.conversation_id));
-    if (conv && !conv.plan_id) await putConversation({ ...conv, plan_id: rec.id, updated_at: now });
+    if (conv && !conv.plan_id) await putConversation({ ...conv, plan_id: stored.id, updated_at: now });
   }
-  return { plan: rec, version: rec.version, task_defs: rec.task_defs, constraints: rec.constraints, blocks: rec.blocks };
+  return { plan: stored, version: stored.version, task_defs: stored.task_defs, constraints: stored.constraints, blocks: stored.blocks };
 }
 
 const appliedPreviews = new Map<string, { planId: string; version: number }>();
@@ -173,7 +181,8 @@ export async function localApplyPatch(body: any): Promise<any> {
   if (Number(rec.version) !== Number(body.base_version)) {
     throw new ApiError('version_conflict', 409, '计划已在其他地方更新', undefined, { plan: rec, task_defs: rec.task_defs, constraints: rec.constraints, blocks: rec.blocks });
   }
-  const state = stateOf(rec);
+  // 与服务端 loadState 一致：忙时/固定日程只以共享块参与，不再出现在计划约束里。
+  const state: PlanState = { ...stateOf(rec), constraints: visibleConstraints(rec.constraints) };
   const patched = applyPatch(state, ops);
   if (patched.missing.length) throw new ApiError('patch_target_missing', 422, '调整目标已不存在', undefined, { targets: patched.missing });
   const shared = await listShared();
@@ -223,11 +232,11 @@ export async function localApplyPatch(body: any): Promise<any> {
     constraints: patched.state.constraints,
     blocks,
   };
-  await savePlanRecord(next);
-  appliedPreviews.set(String(body.preview_id), { planId, version: next.version });
-  const diff = diffBlocks(state.blocks, blocks);
+  const stored = await savePlanRecord(next);
+  appliedPreviews.set(String(body.preview_id), { planId, version: stored.version });
+  const diff = diffBlocks(state.blocks, stored.blocks);
   return {
-    plan: next, version: next.version, task_defs: next.task_defs, constraints: next.constraints, blocks: next.blocks,
+    plan: stored, version: stored.version, task_defs: stored.task_defs, constraints: stored.constraints, blocks: stored.blocks,
     inverse_ops: patched.inverse_ops ?? [], diff, compromises, server_authoritative: false,
   };
 }
@@ -403,7 +412,7 @@ export async function migrateFromCloudOnce(base: string, signal?: AbortSignal): 
         created_at: full.plan.created_at ?? nowIso(), updated_at: full.plan.updated_at ?? nowIso(),
         task_defs: full.task_defs ?? [], constraints: full.constraints ?? [], blocks: full.blocks ?? [],
       };
-      await putPlan(rec);
+      await putPlan({ ...rec, constraints: rec.constraints.filter((c: any) => !DROPPED_AT_COMMIT.has(String(c.payload?.type))) });
     }
     const cal = await req('/calendar');
     for (const b of cal.blocks ?? []) await putShared({ ...(b as SharedBlock), notes: (b as any).notes ?? undefined });
