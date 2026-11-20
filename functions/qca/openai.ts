@@ -161,7 +161,7 @@ export function createOpenAiQca(config: LocalLlmConfig, db?: Db): QcaAdapter {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${config.apiKey}` },
-        body: JSON.stringify({ model: config.model, stream: true, tools: TOOLS, tool_choice: 'auto', messages }),
+        body: JSON.stringify({ model: config.model, stream: true, max_tokens: 1800, tools: TOOLS, tool_choice: 'auto', messages }),
         signal,
       });
       if (!res.ok) throw new Error(`llm_http_${res.status}`);

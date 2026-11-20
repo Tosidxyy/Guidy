@@ -215,8 +215,8 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others, availability, sharedBlocks: sharedForPrompt, habits: profile.habits || undefined, learned: learned?.summary || undefined }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}${repairNote}` : ''), `${requestId}:${attempt}`);
           // 空闲超时：持续有帧就续期；静默超过阈值重试。另有回合总预算（赶在平台 ~60s 强切前主动收尾，避免孤儿派发）。
           const attemptAbort = new AbortController();
-          const idleMs = deps.config.attemptTimeoutMs ?? 20000;
-          const totalMs = deps.config.attemptTotalMs ?? 50000;
+          const idleMs = deps.config.attemptTimeoutMs ?? 15000;
+          const totalMs = deps.config.attemptTotalMs ?? 35000;
           let abortReason: 'idle' | 'total' | null = null;
           let idleTimer: ReturnType<typeof setTimeout> | undefined;
           const resetIdle = () => {
