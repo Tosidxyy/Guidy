@@ -246,6 +246,8 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           if (!projector.isTerminal()) { terminalState = 'failed'; break; }
           const expectsArtifact = /```json|^\s*\{/.test(finalText);
           const parsed = parseModelText(finalText, day);
+          // 口头承诺了提问/出计划却没给 JSON（如结尾停在冒号）：同样进修复重试，避免「说问三个问题却没有问题卡」。
+          const promised = !parsed && (/[:：]\s*$/.test(finalText.trim()) || /问[一二三四五六七八九十\d]+[个道]/.test(finalText) || /(答完|定了|给我).{0,16}(就|直接)/.test(finalText));
           if (parsed && parsed.kind === 'constraint_set') {
             // 预求解：不可行就把具体原因喂回修复重试，避免把排不下的方案直接当成成功。
             const pre = previewSolve(parsed.value);
@@ -287,7 +289,12 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
             await insertMessage(deps.db, conv, { seq: art.data.seq, role: 'assistant', kind: parsed.kind, content: bestText || finalText, payload: parsed.value });
             break;
           }
-          if (expectsArtifact && attempt < 2) continue;
+          if ((expectsArtifact || promised) && attempt < 2) {
+            if (promised && !expectsArtifact) {
+              repairNote = '\n上一轮你口头承诺了提问或出计划，但没有输出 JSON 产物。本轮请直接输出 ```json 围栏的 question_card 或 constraint_set，前言保持 1–2 句。';
+            }
+            continue;
+          }
           if (expectsArtifact) {
             const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'artifact_invalid', message: 'AI 返回的结构化结果无效，请重试', diagnostic_id: crypto.randomUUID() } };
             emit(err); collected.push(err); terminalState = 'failed';

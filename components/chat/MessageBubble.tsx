@@ -51,25 +51,24 @@ export function MessageBubble({ message, streaming, clarificationPending }: { me
         </div>
       );
     }
-  }
-  return (
-    <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
-      <div
-        className={cn(
-          'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
-          isUser ? 'bg-site-ink text-site-bg' : 'border border-site-line bg-site-surface text-site-ink',
-        )}
-      >
-        {isUser ? (
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
-        ) : (
+    if (!prose) return null;
+    return (
+      <div className="flex justify-start">
+        <div className="max-w-[85%] rounded-2xl border border-site-line bg-site-surface px-3.5 py-2.5 text-sm leading-relaxed text-site-ink">
           <div className="guidy-prose break-words">
             <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeSanitize, sanitizeSchema]]} skipHtml>
-              {message.content}
+              {prose}
             </ReactMarkdown>
             {streaming && <StreamingCursor />}
           </div>
-        )}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex justify-end">
+      <div className="max-w-[85%] rounded-2xl bg-site-ink px-3.5 py-2.5 text-sm leading-relaxed text-site-bg">
+        <p className="whitespace-pre-wrap break-words">{message.content}</p>
       </div>
     </div>
   );

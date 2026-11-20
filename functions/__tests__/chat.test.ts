@@ -393,6 +393,7 @@ describe('超容量最终取舍', () => {
   });
 });
 
+
 // 带 SSE id 的上游流：真实 QCA 每个事件有 event_id，readSSE 以 id: 行回传，驱动本地游标。
 function streamWithIds(frames: { id: string; ev: any }[]): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
@@ -542,5 +543,30 @@ describe('多回合续读与超时自愈', () => {
     expect((await ir.json()).status).toBe('interrupted');
     const res = await application(d)(ctx('POST', '/api/chat/send', { text: 'hi', conversation_id: conv.id }));
     expect(res.status).toBe(202);
+  });
+});
+
+
+describe('口头承诺补产物', () => {
+  it('只说「问三个问题」却没给 JSON 时，修复重试补出问题卡', async () => {
+    const card = { type: 'question_card', title: '先定方向', questions: [{ text: '想补基础还是练口语？', options: ['补基础', '练口语', '备考'] }] };
+    const prose = '方向不同安排差别很大。问三个问题，你答完我就直接排：';
+    let calls = 0;
+    const d = deps({
+      openStream: async () => {
+        calls += 1;
+        const text = calls === 1 ? prose : '先定方向。\n```json\n' + JSON.stringify(card) + '\n```';
+        return { body: upstreamStream([
+          { type: 'event_delta', event_id: 'e1', delta: { type: 'content_delta', content: { type: 'text', text } } },
+          { type: 'agent.message', id: 'e1', content: [{ type: 'text', text }] },
+          { type: 'session.status', status: 'idle' },
+        ]), close() {} };
+      },
+    });
+    const frames = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '三周学英语', request_id: 'req-promise' })));
+    const artifact = frames.find((f) => f.event === 'artifact');
+    expect(artifact).toBeTruthy();
+    expect(artifact.data.kind).toBe('question_card');
+    expect(calls).toBe(2);
   });
 });
