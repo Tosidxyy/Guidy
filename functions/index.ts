@@ -19,7 +19,7 @@ if (deepseekKey) {
     adapter: createOpenAiQca({
       baseUrl: Deno.env.get('DEEPSEEK_BASE_URL') ?? 'https://api.deepseek.com/v1',
       apiKey: deepseekKey,
-      model: Deno.env.get('DEEPSEEK_MODEL') ?? 'deepseek-chat',
+      model: Deno.env.get('DEEPSEEK_MODEL') ?? 'deepseek-flash',
     }, db),
   });
 }
@@ -28,9 +28,9 @@ if (bailianKey) {
   providers.push({
     name: 'bailian',
     adapter: createOpenAiQca({
-      baseUrl: Deno.env.get('BAILIAN_BASE_URL') ?? 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      baseUrl: Deno.env.get('BAILIAN_BASE_URL') ?? 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
       apiKey: bailianKey,
-      model: Deno.env.get('BAILIAN_MODEL') ?? 'qwen-plus',
+      model: Deno.env.get('BAILIAN_MODEL') ?? 'deepseek-v4.1-flash-1017',
     }, db),
   });
 }
