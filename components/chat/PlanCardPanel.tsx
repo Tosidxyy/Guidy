@@ -14,9 +14,40 @@ import { groupSchedules, isSchedule } from '@/lib/confirmDraft';
 import { cn } from '@/lib/utils';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useChatStore } from '@/store/useChatStore';
+import { useSharedCalendar } from '@/store/useSharedCalendar';
+import { applySharedOps } from '@/lib/sharedBlocks';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConstraintSetBody, ConstraintSetFooter } from './ConstraintSetBody';
+
+// 忙时/固定日程物化在共享日历而非计划任务里：方案卡必须可见可删，否则用户找不到「上班」这类块。
+function SharedBusySection() {
+  const busy = useSharedCalendar((s) => s.busyBlocks);
+  const tz = usePlanStore((s) => s.state.plan.timezone) || 'Asia/Shanghai';
+  if (!busy.length) return null;
+  const fmtDay = (iso: string) => new Date(iso).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short', timeZone: tz });
+  const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz });
+  const sorted = [...busy].sort((a, b) => a.start_utc.localeCompare(b.start_utc));
+  return (
+    <section className="mt-3 border-t border-site-line pt-2">
+      <h4 className="text-xs font-semibold text-site-ink">固定日程 / 公共忙时（{sorted.length}）</h4>
+      <p className="mt-0.5 text-[11px] text-site-ink-soft">来自共享日历（如「上班」），参与排程避让；可在此删除（例如某天请假）。</p>
+      <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto">
+        {sorted.slice(0, 60).map((b) => (
+          <li key={b.id} className="flex items-center justify-between gap-2 rounded border border-site-line bg-site-surface-2 px-2 py-1 text-[11px] text-site-ink">
+            <span className="truncate">{b.title} · {fmtDay(b.start_utc)} {fmtTime(b.start_utc)}–{fmtTime(b.end_utc)}</span>
+            <Button
+              variant="ghost" size="sm" className="h-6 px-1.5 text-[11px] text-site-danger"
+              onClick={() => { void applySharedOps([{ op: 'remove_block', id: b.id }]).then((r) => { if (!r.ok) toast.error(r.reason ?? '删除失败'); }); }}
+            >
+              删除
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 /**
  * 方案卡：制定计划与日常修改都只用这一张卡。
@@ -321,6 +352,7 @@ export function PlanCardPanel() {
                 </ConstraintSetFooter>
               )}
             />
+            <SharedBusySection />
           </div>
           </div>
           </div>

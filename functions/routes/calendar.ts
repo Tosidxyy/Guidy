@@ -68,6 +68,8 @@ export async function materializeSharedBusy(db: Db, visitor: string): Promise<vo
     const existing = rows(await db.from('blocks').select('*').eq('plan_id', SHARED_BLOCK_PLAN_ID).eq('owner_visitor_id', visitor));
     await ensureSharedPlan(db);
     const seen = new Set(existing.map((b: any) => `${b.title}|${b.start_utc}`));
+    // 时间窗重叠去重：标题略异/跨计划重复承诺同一时段时，不再叠加出「一天多个上班」横排。
+    const overlapsExisting = (s: string, e: string) => existing.some((b: any) => Math.min(Date.parse(b.end_utc), Date.parse(e)) - Math.max(Date.parse(b.start_utc), Date.parse(s)) > 0);
     for (const day of dayList(start, Math.min(days, MAX_DAYS), tz)) {
       const wd = weekdayOfDay(day, tz);
       for (const payload of recurring) {
@@ -77,9 +79,11 @@ export async function materializeSharedBusy(db: Db, visitor: string): Promise<vo
         const startUtc = utcAt(day, Math.round(hhmmToMs(payload.start) / 60000), tz);
         const endUtc = utcAt(day, Math.round(hhmmToMs(payload.end) / 60000), tz);
         const key = `${title}|${startUtc}`;
-        if (tombstones.has(key)) continue;
-        if (seen.has(key)) continue;
+        const windowKey = `${startUtc}|${endUtc}`;
+        if (tombstones.has(key) || tombstones.has(windowKey)) continue;
+        if (seen.has(key) || overlapsExisting(startUtc, endUtc)) continue;
         seen.add(key);
+        existing.push({ title, start_utc: startUtc, end_utc: endUtc });
         await db.from('blocks').insert({
           plan_id: SHARED_BLOCK_PLAN_ID,
           owner_visitor_id: visitor,
@@ -175,9 +179,10 @@ export async function applySharedBlocks(ctx: RouteCtx, deps: Deps): Promise<Resp
     if (after.has(id)) continue;
     const target = before.get(id);
     await deps.db.from('blocks').delete().eq('id', id).eq('plan_id', SHARED_BLOCK_PLAN_ID).eq('owner_visitor_id', visitor);
-    // 物化实例被用户删除：记录墓碑，后续读取不再重新生成这一天。
+    // 物化实例被用户删除：记录墓碑（标题|开始 与 时间窗 双键），后续读取不再重新生成这一天。
     if (target?.notes === MATERIALIZED_NOTE) {
       rows(await deps.db.from('shared_deletions').insertIfAbsent({ visitor_id: visitor, k: `${target.title}|${target.start_utc}` }, { onConflict: 'visitor_id,k' }));
+      rows(await deps.db.from('shared_deletions').insertIfAbsent({ visitor_id: visitor, k: `${target.start_utc}|${target.end_utc}` }, { onConflict: 'visitor_id,k' }));
     }
   }
   for (const b of patched.state.blocks) {

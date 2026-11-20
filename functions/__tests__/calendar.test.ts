@@ -183,3 +183,33 @@ describe('删除最后一个计划后共享日历清空', () => {
     expect(after.blocks).toHaveLength(0);
   });
 });
+
+describe('忙时重叠去重与删除墓碑', () => {
+  const busyAs = (label: string) => [1, 2, 3, 4, 5].map((weekday) => ({
+    id: crypto.randomUUID(), payload: { type: 'busy_window', weekday, start: '09:00', end: '17:30', label }, source: 'user', enabled: true,
+  }));
+  it('两计划同时段不同标题的忙时：每天只物化一个块（不横排叠加）', async () => {
+    const app = application(deps());
+    await app(ctx('POST', '/api/plans/save', { plan_id: null, input: { title: '甲', horizon_start: '2026-11-18', horizon_days: 7, timezone: tz, task_defs: [], constraints: busyAs('上班'), blocks: [] } }));
+    await app(ctx('POST', '/api/plans/save', { plan_id: null, input: { title: '乙', horizon_start: '2026-11-18', horizon_days: 7, timezone: tz, task_defs: [], constraints: busyAs('工作'), blocks: [] } }));
+    const cal = await (await app(ctx('GET', '/api/calendar'))).json();
+    const perDay: Record<string, number> = {};
+    for (const b of cal.blocks) {
+      const day = b.start_utc.slice(0, 10);
+      perDay[day] = (perDay[day] ?? 0) + 1;
+    }
+    for (const n of Object.values(perDay)) expect(n).toBe(1);
+  });
+  it('删除物化块后：即使另一计划仍有同时间段忙时，也不重新生成（时间窗墓碑）', async () => {
+    const app = application(deps());
+    await app(ctx('POST', '/api/plans/save', { plan_id: null, input: { title: '甲', horizon_start: '2026-11-18', horizon_days: 7, timezone: tz, task_defs: [], constraints: busyAs('上班'), blocks: [] } }));
+    const cal = await (await app(ctx('GET', '/api/calendar'))).json();
+    const target = cal.blocks[0];
+    const del = await app(ctx('POST', '/api/calendar/blocks', { ops: [{ op: 'remove_block', id: target.id }] }));
+    expect(del.status).toBe(200);
+    // 另一计划再承诺同时间段（标题不同）→ 墓碑按时间窗生效，不复活
+    await app(ctx('POST', '/api/plans/save', { plan_id: null, input: { title: '乙', horizon_start: '2026-11-18', horizon_days: 7, timezone: tz, task_defs: [], constraints: busyAs('工作'), blocks: [] } }));
+    const after = await (await app(ctx('GET', '/api/calendar'))).json();
+    expect(after.blocks.some((b: any) => b.start_utc === target.start_utc)).toBe(false);
+  });
+});
