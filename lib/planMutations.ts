@@ -46,7 +46,9 @@ export function previewIdFor(planId: string, baseVersion: number, ops: ApplyOp[]
 export function createPlanMutations(deps: PlanMutationDeps) {
   return async function applyPlanOps(req: PlanOpRequest): Promise<{ ok: boolean; reason?: string; resp?: any }> {
     const active = deps.getActivePlanId() === req.planId;
-    const previous = active ? deps.getActiveState() : deps.getLayer(req.planId);
+    // 本机模式：以 IndexedDB 里的计划为权威版本，避免层缓存过期导致 version_conflict。
+    let previous: PlanState | undefined;
+    try { previous = await deps.fetchPlan(req.planId); } catch { previous = active ? deps.getActiveState() : deps.getLayer(req.planId); }
     if (!previous) return { ok: false, reason: '计划数据未就绪' };
     const version = previous.plan.version;
     const applyState = (patch: Partial<PlanState>) => active
