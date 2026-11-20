@@ -213,8 +213,8 @@ export function PlanCardPanel() {
       : '改完点「保存修改」，改动会存到本机并可撤销。';
 
   return (
-    <div className="px-2 pb-2 pt-1">
-      <div className={cn('overflow-hidden rounded-xl border bg-site-surface shadow-sm transition-colors', attention && !open ? 'border-site-flow/40' : 'border-site-ink/12')}>
+    <div className="flex min-h-0 flex-col px-2 pb-2 pt-1">
+      <div className={cn('flex min-h-0 flex-col overflow-hidden rounded-xl border bg-site-surface shadow-sm transition-colors', attention && !open ? 'border-site-flow/40' : 'border-site-ink/12')}>
       <div className="flex items-center">
         <Button
           variant="ghost"
@@ -237,10 +237,10 @@ export function PlanCardPanel() {
       </div>
 
       {(
-        <div className={cn('grid transition-[grid-template-rows,margin-top] duration-300 ease-out', open ? 'mt-0 grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
-          <div className="overflow-hidden">
+        <div className={cn(open ? 'mt-0 flex min-h-0 flex-1 flex-col' : 'grid grid-rows-[0fr]')}>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {/* 整张卡一个滚动容器：预览、调整清单、任务与约束一起滚，滚轮不会被裁在外层。 */}
-            <div className="max-h-[45vh] overflow-y-auto overscroll-contain border-t border-site-line">
+            <div className="min-h-0 max-h-[45vh] flex-1 overflow-y-auto overscroll-contain border-t border-site-line">
           <div className="flex items-start justify-between gap-3 px-3.5 pt-3">
             <div>
               <h3 className="font-display text-sm font-semibold text-site-ink">{viewed.plan_title || '方案卡'}</h3>
