@@ -1,5 +1,6 @@
 import { ConstraintSetArtifactSchema, PatchArtifactSchema, QuestionCardArtifactSchema } from './shared/schemas.ts';
 import type { ConstraintSetArtifact, PatchArtifact, QuestionCardArtifact } from './shared/schemas.ts';
+import { splitArtifactText } from './shared/artifactText.ts';
 export type ParsedArtifact =
   | { kind: 'constraint_set'; value: ConstraintSetArtifact }
   | { kind: 'patch'; value: PatchArtifact }
@@ -20,7 +21,8 @@ function clampHorizonToDeadline(value: ConstraintSetArtifact, today: string): Co
 
 export function parseModelText(text: string, today?: string): ParsedArtifact | null {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const raw = (fenced ? fenced[1] : text).trim();
+  // 无闭合围栏/裸行内 JSON 也需可解析（与气泡剥离共用同一识别逻辑）。
+  const raw = (fenced ? fenced[1] : (splitArtifactText(text).artifactJson ?? text)).trim();
   let obj: unknown;
   try { obj = JSON.parse(raw); } catch { return null; }
   if (!obj || typeof obj !== 'object') return null;

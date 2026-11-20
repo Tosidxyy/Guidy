@@ -8,20 +8,22 @@ export interface SplitArtifactText {
 const FENCE = '```json';
 
 export function splitArtifactText(content: string): SplitArtifactText {
-  const fence = content.indexOf(FENCE);
+  // 兼容 ```json 与裸 ``` 围栏（后接 JSON 对象）。
+  const fenceMatch = content.match(/```(?:json)?[ \t]*(?=\{)/);
+  const fence = fenceMatch?.index ?? content.indexOf(FENCE);
   if (fence >= 0) {
     const before = content.slice(0, fence);
-    const body = content.slice(fence + FENCE.length);
+    const body = content.slice(fence).replace(/^```(?:json)?[ \t]*/, '');
     const close = body.indexOf('```');
     const json = (close >= 0 ? body.slice(0, close) : body).trim();
     const after = close >= 0 ? body.slice(close + 3) : '';
     const prose = [before.trim(), after.trim()].filter(Boolean).join('\n\n');
     return { prose, artifactJson: json };
   }
-  const bare = content.match(/(?:^|\n)[ \t]*\{[\s\S]*?"type"\s*:/);
+  // 行内/行首裸 JSON 对象（含 "type" 字段）都视为产物，不进气泡。
+  const bare = content.match(/\{[\s\S]*?"type"\s*:/);
   if (bare && bare.index !== undefined) {
-    const brace = content.indexOf('{', bare.index);
-    return { prose: content.slice(0, brace).trim(), artifactJson: content.slice(brace).trim() };
+    return { prose: content.slice(0, bare.index).trim(), artifactJson: content.slice(bare.index).trim() };
   }
   return { prose: content, artifactJson: null };
 }

@@ -205,11 +205,15 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         const assistantSeq = nextSeq();
         let finalText = '';
         let bestText = '';
+        let emittedProse = '';
         let repairNote = '';
         let pendingViolations: Violation[] = [];
         let terminalState: 'completed' | 'failed' | 'interrupted' = 'failed';
         for (let attempt = 0; attempt < 3; attempt++) {
-          if (attempt > 0) await deps.db.from('messages').delete().eq('conversation_id', conv.id).eq('seq', assistantSeq);
+          if (attempt > 0) {
+            await deps.db.from('messages').delete().eq('conversation_id', conv.id).eq('seq', assistantSeq);
+            emittedProse = '';
+          }
           const projector = createProjector(nextSeq, assistantSeq);
           // 先发消息再开流：新回合已存在，续读游标之后的事件必达；避免「先开流再发消息」时续读流静默挂起。
           await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others, availability, sharedBlocks: sharedForPrompt, habits: profile.habits || undefined, learned: learned?.summary || undefined }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}${repairNote}` : ''), `${requestId}:${attempt}`);
@@ -235,8 +239,18 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
               if (frame.id) lastEventId = frame.id;
               for (const p of projector.push(ev)) {
                 if (p.event === 'progress') { emit(p); continue; }
+                if (p.event === 'delta') {
+                  // 只下发剥离产物 JSON 后的 prose 增量：任何客户端（含旧缓存包）都不会看到原文 JSON。
+                  const prose = splitArtifactText(projector.text()).prose;
+                  if (prose.length > emittedProse.length) {
+                    const pd: AppEvent = { event: 'delta', data: { seq: p.data.seq, text: prose.slice(emittedProse.length) } };
+                    emittedProse = prose;
+                    emit(pd); collected.push(pd);
+                  }
+                  await appendAssistant(deps.db, conv, p.data.seq, p.data.text);
+                  continue;
+                }
                 emit(p); collected.push(p);
-                if (p.event === 'delta') await appendAssistant(deps.db, conv, p.data.seq, p.data.text);
                 if (p.event === 'status') { terminalState = p.data.state === 'completed' ? 'completed' : 'failed'; await insertMessage(deps.db, conv, { seq: p.data.seq, role: 'system', kind: 'status', content: p.data.state }); }
                 if (p.event === 'error') { terminalState = 'failed'; await insertMessage(deps.db, conv, { seq: p.data.seq, role: 'system', kind: 'error', content: p.data.code }); }
               }

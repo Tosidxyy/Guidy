@@ -625,7 +625,11 @@ describe('落库助手文本只存可读 prose', () => {
     const set = { type: 'constraint_set', plan_title: 't', horizon_days: 7, task_defs: [{ key: 'a', title: 'A', category: 'study', duration_min: 15, frequency: { type: 'daily' }, priority: 'mid', splittable: true, sort_order: 0 }], constraints: [], clarifications_needed: [] };
     const text = '前言说明。\n```json\n' + JSON.stringify(set) + '\n```';
     const d = deps({ openStream: async () => ({ body: upstreamStream([{ type: 'agent.message', id: 'e1', content: [{ type: 'text', text }] }, { type: 'session.status_idle' }]), close() {} }) });
-    await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '排一周' })));
+    const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '排一周' })));
+    const deltaText = out.filter((f) => f.event === 'delta').map((f) => f.data.text).join('');
+    expect(deltaText).toContain('前言说明');
+    expect(deltaText).not.toContain('```');
+    expect(deltaText).not.toContain('"type"');
     const assistantText = rows(await d.db.from('messages').select('*')).filter((m: any) => m.role === 'assistant' && m.kind === 'text');
     expect(assistantText.length).toBeGreaterThan(0);
     for (const m of assistantText) {
@@ -633,5 +637,15 @@ describe('落库助手文本只存可读 prose', () => {
       expect(String(m.content)).not.toContain('"type"');
       expect(String(m.content)).toContain('前言说明');
     }
+  });
+  it('裸 JSON（无围栏、行内）同样不进气泡与 delta 流', async () => {
+    const set = { type: 'constraint_set', plan_title: 't', horizon_days: 7, task_defs: [{ key: 'a', title: 'A', category: 'study', duration_min: 15, frequency: { type: 'daily' }, priority: 'mid', splittable: true, sort_order: 0 }], constraints: [], clarifications_needed: [] };
+    const text = '前言说明。' + JSON.stringify(set);
+    const d = deps({ openStream: async () => ({ body: upstreamStream([{ type: 'agent.message', id: 'e1', content: [{ type: 'text', text }] }, { type: 'session.status_idle' }]), close() {} }) });
+    const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '排一周' })));
+    const deltaText = out.filter((f) => f.event === 'delta').map((f) => f.data.text).join('');
+    expect(deltaText).toContain('前言说明');
+    expect(deltaText).not.toContain('"type"');
+    expect(out.some((f) => f.event === 'artifact' && f.data.kind === 'constraint_set')).toBe(true);
   });
 });
