@@ -107,6 +107,13 @@ describe('reduceFrame — progress 研究指示', () => {
     useChatStore.getState().startSend('hi');
     expect(useChatStore.getState().searching).toBe(false);
   });
+  it('上游终态 status 不提前结束 streaming（仅 done/error 结束）', () => {
+    const base = { ...initialChatState, streaming: true, connection: 'open' as const };
+    const afterStatus = reduceFrame(base, { event: 'status', data: { seq: 8, state: 'completed' } });
+    expect(afterStatus.streaming).toBe(true);
+    expect(reduceFrame(afterStatus, { event: 'done', data: { seq: 9 } }).streaming).toBe(false);
+    expect(reduceFrame(afterStatus, { event: 'error', data: { seq: 9, code: 'x', message: 'm', diagnostic_id: 'd' } }).streaming).toBe(false);
+  });
   it('progress/ModelSwitch 置 switching，delta/终态复位', () => {
     const s1 = reduceFrame(initialChatState, { event: 'progress', data: { seq: 2, tool: 'ModelSwitch' } });
     expect(s1.switching).toBe(true);

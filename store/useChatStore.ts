@@ -58,7 +58,9 @@ export function reduceFrame(state: ChatState, frame: AppFrame): ChatState {
         ? { ...state, switching: true, searching: false }
         : { ...state, searching: true, switching: false };
     case 'status':
-      return { ...state, streaming: !TERMINAL.includes(d.state), connection: TERMINAL.includes(d.state) ? 'idle' : state.connection, searching: TERMINAL.includes(d.state) ? false : state.searching, switching: TERMINAL.includes(d.state) ? false : state.switching };
+      // 上游终态 status 早于 artifact/done（服务端还要解析与落库）：不能据此结束回合，
+      // 否则输入提前变回「发送」，此时发送会撞 dispatch_busy。只有 done/error 结束。
+      return { ...state, searching: TERMINAL.includes(d.state) ? false : state.searching, switching: TERMINAL.includes(d.state) ? false : state.switching };
     case 'error':
       return { ...state, streaming: false, connection: 'error', error: { code: d.code, message: d.message, diagnosticId: d.diagnostic_id }, searching: false, switching: false };
     case 'done':
