@@ -37,9 +37,10 @@ export function useApplyPatch() {
       const shared = groups.find((g) => g.planId === SHARED_PLAN_ID)?.ops ?? [];
 
       let resp: any = null;
-      if (activeOps.length) {
+      const buildBodyFor = async (baseVersion: number) => {
         // result_hash 由本地引擎算：服务端重排后据此判断是否需要以服务端结果为准。
-        const local = applyPatch(store.state, activeOps);
+        const current = usePlanStore.getState().state;
+        const local = applyPatch(current, activeOps);
         let hashBlocks = local.state.blocks;
         if (local.requiresReschedule) {
           hashBlocks = solve({
@@ -52,14 +53,30 @@ export function useApplyPatch() {
             pinned_blocks: local.state.blocks.filter((b) => b.pinned || b.origin === 'manual'),
           }).blocks;
         }
-        const body = await buildPatchBody({
+        return buildPatchBody({
           patch: { ...patch, ops: activeOps },
           blocks: hashBlocks,
           previewId: crypto.randomUUID(),
           planId: activeId,
-          baseVersion: usePlanSync.getState().serverVersions[activeId] ?? store.state.plan.version,
+          baseVersion,
         });
-        resp = await api.applyPatch(body);
+      };
+      if (activeOps.length) {
+        try {
+          resp = await api.applyPatch(await buildBodyFor(usePlanSync.getState().serverVersions[activeId] ?? store.state.plan.version));
+        } catch (err) {
+          // 云端版本已被其他保存/AI 调整推进：先对齐服务端全量状态，再按最新版本自动重试一次。
+          const e = err instanceof ApiError ? err : null;
+          const d = e?.details as any;
+          if (e?.code === 'version_conflict' && d?.plan && Array.isArray(d.blocks)) {
+            const s = usePlanStore.getState();
+            s.applyServerState({ plan: d.plan, task_defs: d.task_defs, constraints: d.constraints, blocks: d.blocks });
+            usePlanSync.getState().setServerVersion(activeId, d.plan.version);
+            resp = await api.applyPatch(await buildBodyFor(d.plan.version));
+          } else {
+            throw err;
+          }
+        }
       }
 
       const foreignOps = foreign.reduce((n, g) => n + g.ops.length, 0) + shared.length;

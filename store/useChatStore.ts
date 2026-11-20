@@ -78,6 +78,8 @@ interface ChatStore extends ChatState {
   setConversation: (id: string | null, messages?: ChatMessage[]) => void;
   reset: () => void;
   enqueueQueue: (text: string) => void;
+  /** 本轮没有被服务端接受（如 dispatch_busy）：撤回乐观气泡并结束生成态，等待重发。 */
+  cancelPending: (text: string) => void;
   shiftQueue: () => QueuedMessage | undefined;
   removeQueued: (id: string) => void;
 }
@@ -88,6 +90,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   setConversation: (id, messages = []) => set({ ...initialChatState, conversationId: id, messages, restoreDone: true }),
   reset: () => set({ ...initialChatState, restoreDone: true }),
   enqueueQueue: (text) => set({ ...get(), queued: [...get().queued, { id: crypto.randomUUID(), text }] }),
+  cancelPending: (text) => {
+    const messages = [...get().messages];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].seq === -1 && messages[i].role === 'user' && messages[i].content === text) { messages.splice(i, 1); break; }
+    }
+    set({ ...get(), messages, streaming: false, connection: 'idle', searching: false, switching: false });
+  },
   shiftQueue: () => {
     const [next, ...rest] = get().queued;
     if (!next) return undefined;

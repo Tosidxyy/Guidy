@@ -103,7 +103,18 @@ export function renamePlanAction(title: string) {
 }
 
 /** 保存尚未落库的草稿：整份快照提交，不跑求解，保留手放块与备注。 */
-export async function saveDraftAction(): Promise<{ ok: boolean; planId?: string; reason?: string }> {
+const draftSaveInFlight: { current: Promise<{ ok: boolean; planId?: string; reason?: string }> | null } = { current: null };
+
+export function saveDraftAction(): Promise<{ ok: boolean; planId?: string; reason?: string }> {
+  // 自动保存与「应用调整/保存卡片」可能同时触发：并发调用共享同一次保存，
+  // 否则 plan_id=null 的两次请求会在云端各建一个草稿计划，后续提交必然版本冲突。
+  if (draftSaveInFlight.current) return draftSaveInFlight.current;
+  const run = doSaveDraftAction().finally(() => { draftSaveInFlight.current = null; });
+  draftSaveInFlight.current = run;
+  return run;
+}
+
+async function doSaveDraftAction(): Promise<{ ok: boolean; planId?: string; reason?: string }> {
   const store = usePlanStore.getState();
   const state = store.state;
   if (state.plan.id) return { ok: true, planId: state.plan.id };

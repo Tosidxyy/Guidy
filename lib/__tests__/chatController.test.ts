@@ -4,7 +4,13 @@ import { useChatStore } from '@/store/useChatStore';
 
 function fakeStream(): ChatStream & { opened: ((signal: AbortSignal) => Promise<Response>)[] } {
   const opened: ((signal: AbortSignal) => Promise<Response>)[] = [];
-  return { opened, cancel: vi.fn(), read: async (open) => { opened.push(open); await open(new AbortController().signal); } };
+  // 模拟真实 SSE：连接打开后保持不结束，直到被 cancel。
+  return { opened, cancel: vi.fn(), read: async (open) => { opened.push(open); await open(new AbortController().signal); await new Promise(() => {}); } };
+}
+
+/** 模拟「流在没有 done/error 的情况下结束」的断连。 */
+function silentEndStream(): ChatStream {
+  return { cancel: vi.fn(), read: async (open) => { await open(new AbortController().signal); } };
 }
 
 beforeEach(() => useChatStore.getState().reset());
@@ -95,6 +101,39 @@ describe('chatController.send', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
     const [, init] = fetchFn.mock.calls[0];
     expect(JSON.parse((init as RequestInit).body as string).text).toBe('排队消息');
+    vi.useRealTimers();
+  });
+});
+
+describe('chatController 卡死防护', () => {
+  it('流无 done/error 就结束：显式收尾 stream_incomplete，不永久停在生成中', async () => {
+    const stream = silentEndStream();
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 202 }) as Response);
+    const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-cut' });
+    c.send('三个月计划');
+    await new Promise((r) => setTimeout(r, 0));
+    const s = useChatStore.getState();
+    expect(s.streaming).toBe(false);
+    expect(s.error?.code).toBe('stream_incomplete');
+  });
+
+  it('dispatch_busy：不弹错、入队退避重试，锁释放后自动发出', async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const stream = fakeStream();
+    const fetchFn = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) return { ok: false, status: 409, json: async () => ({ error: { code: 'dispatch_busy', message: '当前有正在生成的回复，请等待或中断后再发送' } }) } as unknown as Response;
+      return { ok: true, status: 202 } as Response;
+    });
+    const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => `req-${calls}` });
+    c.send('hi');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useChatStore.getState().error).toBeNull();
+    expect(useChatStore.getState().queued.map((q) => q.text)).toEqual(['hi']);
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(useChatStore.getState().queued).toHaveLength(0);
     vi.useRealTimers();
   });
 });

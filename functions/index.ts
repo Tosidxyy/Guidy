@@ -8,6 +8,9 @@ const config = {
   cloudApiOrigin: 'https://api.qoder.com.cn',
   appScope: 'guidy-site-01a1f4a2-f7b0-7779-9562-7602d7dfac2c',
   modelId: '',
+  // 回合锁/派发的过期窗口：一次回合最多约 55s，平台强切后 75s 内必须可重发，
+  // 否则用户在「服务不可用」之后会持续收到 dispatch_busy。
+  dispatchStaleMs: Number(Deno.env.get('TURN_STALE_MS')) || 75000,
 };
 // 默认走用户环境变量注入的 OpenAI 兼容供应商（DeepSeek → Bailian），不再依赖 Qoder 云端 QCA。
 // 密钥只从平台 Secret 注入，缺失时该供应商自动跳过。
