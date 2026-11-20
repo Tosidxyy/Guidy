@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
@@ -57,6 +57,15 @@ function SharedBusySection() {
 export function PlanCardPanel() {
   const [open, setOpen] = useState(false);
   const [attention, setAttention] = useState(false);
+  // 新方案/新调整到达时整卡闪一下（展开状态也闪），4 秒后停；收起的卡另外保留常驻提示。
+  const [flash, setFlash] = useState(false);
+  const flashTimer = useRef<number | null>(null);
+  const pulseOnce = () => {
+    setFlash(true);
+    if (flashTimer.current) window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlash(false), 4000);
+  };
+  useEffect(() => () => { if (flashTimer.current) window.clearTimeout(flashTimer.current); }, []);
   const [draft, setDraft] = useState<ConstraintSetArtifact | null>(null);
   const [saving, setSaving] = useState(false);
   const state = usePlanStore((s) => s.state);
@@ -119,6 +128,7 @@ export function PlanCardPanel() {
   useEffect(() => {
     if (!proposal) return;
     setAttention(true);
+    pulseOnce();
   }, [proposal]);
 
   // 只改任务/约束的 AI patch：叠加在用户未保存的编辑草稿上，计数与内容同步更新，闪烁提示手动核对。
@@ -128,6 +138,7 @@ export function PlanCardPanel() {
     if (!current.plan.id || !patchFitsPlanCard(patch, current.plan.id)) return;
     setDraft(stagePatchOnDraft(current, draft, patch));
     setAttention(true);
+    pulseOnce();
     useChatStore.setState({ patch: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patch]);
@@ -145,6 +156,7 @@ export function PlanCardPanel() {
     if (!foreignPatch) return;
     if (patchAlreadyApplied) { useChatStore.setState({ patch: null }); return; }
     setAttention(true);
+    pulseOnce();
   }, [foreignPatch, patchAlreadyApplied]);
 
   // 打开时保留编辑草稿（AI patch 的结果暂存在草稿里，清掉会看到旧/空内容）。
@@ -214,7 +226,7 @@ export function PlanCardPanel() {
 
   return (
     <div className="shrink-0 px-2 pb-2 pt-1">
-      <div className={cn('overflow-hidden rounded-xl border bg-site-surface shadow-sm transition-colors', attention && !open ? 'border-site-flow/40' : 'border-site-ink/12')}>
+      <div className={cn('overflow-hidden rounded-xl border bg-site-surface shadow-sm transition-colors', flash ? 'border-site-flow/60 ring-2 ring-site-flow/35' : attention && !open ? 'border-site-flow/40' : 'border-site-ink/12')}>
       <div className="flex items-center">
         <Button
           variant="ghost"
@@ -223,7 +235,7 @@ export function PlanCardPanel() {
           aria-expanded={open}
           className="relative h-8 min-w-0 flex-1 justify-start gap-1.5 rounded-none px-2.5 text-[11px] font-normal text-site-ink-soft hover:bg-site-surface-2 hover:text-site-ink"
         >
-          {attention && !open && <span aria-hidden="true" className="guidy-card-pulse pointer-events-none absolute inset-0" />}
+          {(flash || (attention && !open)) && <span aria-hidden="true" className="guidy-card-pulse pointer-events-none absolute inset-0" />}
           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-site-ink" />
           <span className="shrink-0 font-medium text-site-ink">方案卡</span>
           <span className="min-w-0 truncate text-site-ink">{planTitle}</span>
