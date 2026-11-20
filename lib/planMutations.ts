@@ -94,7 +94,7 @@ export function createPlanMutations(deps: PlanMutationDeps) {
           deps.setServerVersion(req.planId, fresh.plan.version);
           if (err.code !== 'patch_target_missing' && !retried) return applyPlanOps(req, true, fresh.plan.version);
         }
-        return { ok: false, reason: err.code === 'patch_target_missing' ? '目标已在云端变化，已刷新到最新状态，请重试' : '已同步到云端最新版本，请再试一次' };
+        return { ok: false, reason: err.code === 'patch_target_missing' ? '目标已变化，已刷新到最新状态，请重试' : '已同步到最新版本，请再试一次' };
       }
       return { ok: false, reason: err instanceof ApiError ? err.message : '操作失败，已恢复原状态' };
     }

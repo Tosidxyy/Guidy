@@ -33,7 +33,13 @@ export async function localPlan(id: string): Promise<PlanState> {
   if (!p) throw new ApiError('not_found', 404, '计划不存在');
   await materializeShared();
   const fresh = (await getPlan(id)) ?? p;
-  return stateOf({ ...fresh, constraints: visibleConstraints(fresh.constraints) });
+  const sharedIds = new Set((await listShared()).map((b) => b.id));
+  return stateOf({
+    ...fresh,
+    constraints: visibleConstraints(fresh.constraints),
+    // 旧版本曾把共享块求解结果写回计划：读取时直接剥掉，避免与公共日历重复渲染。
+    blocks: fresh.blocks.filter((b) => !sharedIds.has(b.id)),
+  });
 }
 
 function tombstoneKey(parts: string[]): string {
@@ -113,6 +119,8 @@ export async function localCommit(body: any): Promise<any> {
     pinned_blocks: shared.map((b) => ({ ...b, pinned: true })),
   });
   if (solved.violations.length) throw new ApiError('engine_infeasible', 422, '当前约束下排不下全部任务', undefined, { violations: solved.violations, compromises: solved.compromises });
+  const busyIds = new Set(shared.map((b) => b.id));
+  const freshBlocks = solved.blocks.filter((b) => !busyIds.has(b.id));
   const existing = body.plan_id ? await getPlan(String(body.plan_id)) : undefined;
   if (body.plan_id && !existing) throw new ApiError('not_found', 404, '计划不存在');
   const now = nowIso();
@@ -128,7 +136,7 @@ export async function localCommit(body: any): Promise<any> {
     updated_at: now,
     task_defs: input.task_defs,
     constraints: input.constraints ?? [],
-    blocks: solved.blocks,
+    blocks: freshBlocks,
   };
   const stored = await savePlanRecord(rec);
   if (body.conversation_id) {
@@ -141,6 +149,7 @@ export async function localCommit(body: any): Promise<any> {
 export async function localSaveDraft(body: any): Promise<any> {
   const input = body?.input;
   if (!input) throw new ApiError('validation_failed', 422, '缺少计划内容');
+  const sharedIds = new Set((await listShared()).map((b) => b.id));
   const existing = body.plan_id ? await getPlan(String(body.plan_id)) : undefined;
   if (body.plan_id && !existing) throw new ApiError('not_found', 404, '计划不存在');
   const now = nowIso();
@@ -156,7 +165,7 @@ export async function localSaveDraft(body: any): Promise<any> {
     updated_at: now,
     task_defs: input.task_defs ?? [],
     constraints: input.constraints ?? [],
-    blocks: input.blocks ?? [],
+    blocks: (input.blocks ?? []).filter((b: Block) => !sharedIds.has(b.id)),
   };
   const stored = await savePlanRecord(rec);
   if (body.conversation_id) {
@@ -182,7 +191,10 @@ export async function localApplyPatch(body: any): Promise<any> {
     throw new ApiError('version_conflict', 409, '计划已在其他地方更新', undefined, { plan: rec, task_defs: rec.task_defs, constraints: rec.constraints, blocks: rec.blocks });
   }
   // 与服务端 loadState 一致：忙时/固定日程只以共享块参与，不再出现在计划约束里。
-  const state: PlanState = { ...stateOf(rec), constraints: visibleConstraints(rec.constraints) };
+  const sharedBefore = await listShared();
+  const sharedIdsBefore = new Set(sharedBefore.map((b) => b.id));
+  const baseBlocks = rec.blocks.filter((b) => !sharedIdsBefore.has(b.id));
+  const state: PlanState = { ...stateOf(rec), constraints: visibleConstraints(rec.constraints), blocks: baseBlocks };
   const patched = applyPatch(state, ops);
   if (patched.missing.length) throw new ApiError('patch_target_missing', 422, '调整目标已不存在', undefined, { targets: patched.missing });
   const shared = await listShared();
@@ -220,7 +232,9 @@ export async function localApplyPatch(body: any): Promise<any> {
       pinned_blocks: pinned,
     });
     if (out.violations.length) throw new ApiError('engine_infeasible', 422, '当前约束下排不下全部任务', undefined, { violations: out.violations, compromises: out.compromises });
-    blocks = out.blocks;
+    const sharedIds = new Set(shared.map((b) => b.id));
+    const inert = patched.state.blocks.filter((b) => b.status === 'cancelled' || b.status === 'skipped');
+    blocks = [...out.blocks.filter((b) => !sharedIds.has(b.id)), ...inert];
     compromises = out.compromises;
   }
   const now = nowIso();

@@ -12,7 +12,14 @@ import type { PlanState } from '@/shared/types';
 export function useSharedBusyLoader() {
   const global = useQuery({ queryKey: ['calendar'], queryFn: () => api.calendar(), retry: false });
   useEffect(() => {
-    useSharedCalendar.getState().setBusyBlocks((global.data?.blocks ?? []) as PlanState['blocks']);
+    const blocks = (global.data?.blocks ?? []) as PlanState['blocks'];
+    useSharedCalendar.getState().setBusyBlocks(blocks);
+    // 旧版本可能把共享块副本写进了计划：加载时从活动计划里剔除，避免同一天渲染成两块。
+    const ids = new Set(blocks.map((b) => b.id));
+    if (!ids.size) return;
+    const st = usePlanStore.getState().state;
+    const kept = st.blocks.filter((b) => !ids.has(b.id));
+    if (kept.length !== st.blocks.length) usePlanStore.getState().applyServerBlocks(kept);
   }, [global.data]);
 }
 

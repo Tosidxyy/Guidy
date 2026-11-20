@@ -79,7 +79,7 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
       qc.invalidateQueries({ queryKey: ['plans'] });
       qc.invalidateQueries({ queryKey: ['conversations'] });
       qc.invalidateQueries({ queryKey: ['calendar'] });
-      toast.success(serverPlan.server_authoritative ? '已按服务端结果保存计划' : '计划已保存到云端');
+      toast.success(serverPlan.server_authoritative ? '已按最新结果保存计划' : '计划已保存到本机');
       onSaved?.(serverPlan.plan.id);
     },
   });

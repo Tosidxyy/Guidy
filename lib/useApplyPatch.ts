@@ -131,7 +131,7 @@ export function useApplyPatch() {
       qc.invalidateQueries({ queryKey: ['plans'] });
       qc.invalidateQueries({ queryKey: ['calendar'] });
       const suffix = foreignOps ? `（含其他计划/公共日历 ${foreignOps} 项）` : '';
-      toast.success(resp?.server_authoritative ? `已按服务端结果保存调整${suffix}` : `调整已保存到云端${suffix}`);
+      toast.success(resp?.server_authoritative ? `已按最新结果保存调整${suffix}` : `调整已保存到本机${suffix}`);
       useChatStore.setState({ patch: null });
     },
   });

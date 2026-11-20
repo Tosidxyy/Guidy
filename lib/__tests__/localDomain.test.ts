@@ -4,7 +4,7 @@ import {
   localApplyPatch, localCalendar, localCommit, localDeletePlan, localLearnProfile, localPlan, localPlans,
   localSaveDraft, localSharedOps,
 } from '@/lib/local/domain';
-import { putPlan } from '@/lib/local/repo';
+import { getPlan, putPlan } from '@/lib/local/repo';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 
 beforeEach(() => __resetMemory());
@@ -76,6 +76,43 @@ describe('历史计划读取', () => {
     expect(st.constraints.map((c) => c.payload.type)).toEqual(['active_window']);
     const cal = await localCalendar();
     expect(cal.blocks.map((b) => b.title)).toEqual(['上班']);
+  });
+});
+
+describe('共享块不写回计划', () => {
+  const withBusy = (over: Partial<any> = {}) => commitPlan({
+    constraints: [
+      { id: 'c1', payload: { type: 'active_window', start: '07:00', end: '23:00' }, source: 'user', enabled: true },
+      { id: 'c2', payload: { type: 'busy_window', weekday: 1, start: '09:00', end: '17:30', label: '上班' }, source: 'user', enabled: true },
+    ],
+    ...over,
+  });
+
+  it('重排后计划里不包含共享块副本（同一天只有一块）', async () => {
+    const res = await withBusy();
+    const cal = await localCalendar();
+    const sharedId = cal.blocks[0].id;
+    const applied = await localApplyPatch({
+      preview_id: crypto.randomUUID(), plan_id: res.plan.id, base_version: 1,
+      ops: [{ op: 'update_task_def', key: 'vocab', patch: { duration_min: 18 } }, { op: 'reschedule', scope: 'affected_only', keep_pinned: true }],
+      engine_version: 1, result_hash: null,
+    });
+    const plan = await localPlan(res.plan.id);
+    expect(plan.blocks.some((b) => b.id === sharedId)).toBe(false);
+    expect(applied.blocks.some((b: any) => b.id === sharedId)).toBe(false);
+    const calAfter = await localCalendar();
+    expect(calAfter.blocks).toHaveLength(1);
+    expect(calAfter.blocks[0].title).toBe('上班');
+  });
+
+  it('历史脏数据：计划里残留的共享块在读取时被剔除', async () => {
+    const res = await withBusy();
+    const cal = await localCalendar();
+    const shared = cal.blocks[0];
+    const stored = (await getPlan(res.plan.id))!;
+    await putPlan({ ...stored, blocks: [...stored.blocks, { ...shared }] as any });
+    const plan = await localPlan(res.plan.id);
+    expect(plan.blocks.some((b) => b.id === shared.id)).toBe(false);
   });
 });
 
