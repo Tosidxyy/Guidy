@@ -4,8 +4,8 @@ import { createMemoryDb } from '../../dev/fake-db';
 import { createFakeQca, upstreamStream, persistentUpstreamStream } from '../../dev/fake-qca';
 import { readSSE, encodeSSE } from '../qca/sse.mjs';
 import type { Deps, RouteCtx } from '../types';
-function deps(qcaOverrides = {}, db = createMemoryDb()): Deps {
-  return { db, requireUser: (ctx) => { if (!ctx.user) throw { code: 'unauthorized', status: 401 }; return ctx.user; }, qca: createFakeQca(qcaOverrides), config: { cloudApiOrigin: 'x', appScope: 'scope', modelId: 'm' } };
+function deps(qcaOverrides = {}, db = createMemoryDb(), configExtra = {}): Deps {
+  return { db, requireUser: (ctx) => { if (!ctx.user) throw { code: 'unauthorized', status: 401 }; return ctx.user; }, qca: createFakeQca(qcaOverrides), config: { cloudApiOrigin: 'x', appScope: 'scope', modelId: 'm', ...configExtra } };
 }
 function ctx(method: string, path: string, body?: unknown, user: { id: string } | null = { id: 'v' }): RouteCtx {
   return { request: new Request('http://127.0.0.1:8000/functions/v1/app' + path, { method, body: body ? JSON.stringify(body) : undefined, headers: body ? { 'content-type': 'application/json' } : {} }), user };
@@ -498,5 +498,49 @@ describe('失败派发后重试自愈', () => {
     // seq 全局唯一。
     const seqs = msgs.map((m) => m.seq);
     expect(new Set(seqs).size).toBe(seqs.length);
+  });
+});
+
+describe('多回合续读与超时自愈', () => {
+  it('先 sendEvents 再开流；静默持久流超时后重试成功，不永久思考', async () => {
+    const order: string[] = [];
+    let opens = 0;
+    const good = '```json\n{"type":"patch","summary":"清空","ops":[{"op":"clear_plan"}]}\n```';
+    const d = deps({
+      sendEvents: async () => { order.push('send'); return { eventIds: ['evt'] }; },
+      openStream: async () => {
+        order.push('open'); opens += 1;
+        return { body: opens === 1 ? persistentUpstreamStream([]) : upstreamStream([{ type: 'agent.message', id: 'e1', content: [{ type: 'text', text: good }] }, { type: 'session.status_idle' }]), close() {} };
+      },
+    }, createMemoryDb(), { attemptTimeoutMs: 60 });
+    const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '清空计划' })));
+    expect(order.slice(0, 2)).toEqual(['send', 'open']);
+    expect(opens).toBe(2);
+    expect(out.some((f) => f.event === 'error')).toBe(false);
+    expect(out.some((f) => f.event === 'status' && f.data.state === 'completed')).toBe(true);
+  });
+
+  it('陈旧 pending 回收：超阈值的 pending 自动判失败，不再 409 锁死', async () => {
+    const { rows } = await import('../db');
+    const { beginDispatch } = await import('../qca/dispatch');
+    const d = deps({ openStream: async () => ({ body: upstreamStream(replyFrames), close() {} }) }, createMemoryDb(), { dispatchStaleMs: 1000 });
+    await beginDispatch(d.db, { request_id: 'req-stale', visitor_id: 'v', conversation_id: 'c-stale', payload_fingerprint: 'fp' });
+    rows(await d.db.from('dispatch_intents').update({ created_at: new Date(Date.now() - 60000).toISOString() }).eq('request_id', 'req-stale').select('request_id'));
+    const res = await application(d)(ctx('POST', '/api/chat/send', { text: 'hi' }));
+    expect(res.status).toBe(202);
+    const stale = ((d.db.tables.dispatch_intents ?? []) as any[]).find((i) => i.request_id === 'req-stale');
+    expect(stale.status).not.toBe('pending');
+  });
+
+  it('interrupt 以 DB 为准：无内存 registry 时取消仍清除 pending，可重发', async () => {
+    const { beginDispatch } = await import('../qca/dispatch');
+    const { ensureConversation } = await import('../qca/sessions');
+    const d = deps({ openStream: async () => ({ body: upstreamStream(replyFrames), close() {} }) });
+    const conv = await ensureConversation(d.db, 'v', null, 't');
+    await beginDispatch(d.db, { request_id: 'req-x', visitor_id: 'v', conversation_id: conv.id, payload_fingerprint: 'fp' });
+    const ir = await application(d)(ctx('POST', '/api/chat/interrupt', { conversation_id: conv.id }));
+    expect((await ir.json()).status).toBe('interrupted');
+    const res = await application(d)(ctx('POST', '/api/chat/send', { text: 'hi', conversation_id: conv.id }));
+    expect(res.status).toBe(202);
   });
 });

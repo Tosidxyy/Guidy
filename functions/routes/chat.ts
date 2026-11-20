@@ -130,7 +130,7 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
   }
   const day = todayStr(deps.now?.() ?? new Date());
   await incrementChatTurn(deps.db, visitor, day);
-  await assertNoPendingDispatch(deps.db, visitor);
+  await assertNoPendingDispatch(deps.db, visitor, { staleMs: deps.config.dispatchStaleMs, nowMs: (deps.now?.() ?? new Date()).getTime() });
   const fingerprint = await sha256Hex(`${visitor}:${text}`);
   const { replay, intent } = await beginDispatch(deps.db, { request_id: requestId, visitor_id: visitor, conversation_id: conv.id, payload_fingerprint: fingerprint });
   const planState = await loadPlanState(deps.db, visitor, body.plan_id ?? null);
@@ -210,10 +210,16 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         for (let attempt = 0; attempt < 3; attempt++) {
           if (attempt > 0) await deps.db.from('messages').delete().eq('conversation_id', conv.id).eq('seq', assistantSeq);
           const projector = createProjector(nextSeq, assistantSeq);
-          const upstream = await deps.qca.openStream(sessionId, { lastEventId: lastEventId ?? undefined, signal: abort.signal });
+          // 先发消息再开流：新回合已存在，续读游标之后的事件必达；避免「先开流再发消息」时续读流静默挂起。
+          await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others, availability, sharedBlocks: sharedForPrompt, habits: profile.habits || undefined, learned: learned?.summary || undefined }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}${repairNote}` : ''), `${requestId}:${attempt}`);
+          // 每回合超时上限：静默流不得永久「思考中」；超时按失败重试，用户中断则直接抛出走 interrupted。
+          const attemptAbort = new AbortController();
+          const timer = setTimeout(() => attemptAbort.abort(), deps.config.attemptTimeoutMs ?? 90000);
+          const onUserAbort = () => attemptAbort.abort();
+          abort.signal.addEventListener('abort', onUserAbort, { once: true });
+          const upstream = await deps.qca.openStream(sessionId, { lastEventId: lastEventId ?? undefined, signal: attemptAbort.signal });
           try {
-            await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others, availability, sharedBlocks: sharedForPrompt, habits: profile.habits || undefined, learned: learned?.summary || undefined }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}${repairNote}` : ''), `${requestId}:${attempt}`);
-            for await (const frame of readSSE(upstream.body, { signal: abort.signal })) {
+            for await (const frame of readSSE(upstream.body, { signal: attemptAbort.signal })) {
               const ev = JSON.parse(frame.data);
               if (frame.id) lastEventId = frame.id;
               for (const p of projector.push(ev)) {
@@ -225,7 +231,15 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
               }
               if (projector.isTerminal()) break;
             }
-          } finally { upstream.close(); }
+          } catch (readErr) {
+            if (abort.signal.aborted) throw readErr;
+            if (attempt < 2) continue;
+            throw readErr;
+          } finally {
+            clearTimeout(timer);
+            abort.signal.removeEventListener('abort', onUserAbort);
+            upstream.close();
+          }
           finalText = projector.text();
           if (finalText.length > bestText.length) bestText = finalText;
           if (abort.signal.aborted) { terminalState = 'interrupted'; break; }
