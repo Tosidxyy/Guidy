@@ -206,7 +206,15 @@ export function ChatPanel() {
         </p>
       )}
       <PlanCardPanel />
-      <ChatInput streaming={streaming} disabled={quotaExhausted} onSend={(t) => { chat.send(t); }} onInterrupt={() => chat.interrupt()} />
+      <ChatInput
+        streaming={streaming}
+        disabled={quotaExhausted}
+        queued={useChatStore((s) => s.queued)}
+        onSend={(t) => { chat.send(t); }}
+        onSendNow={(id) => { chat.sendNow(id); }}
+        onRemoveQueued={(id) => { useChatStore.getState().removeQueued(id); }}
+        onInterrupt={() => chat.interrupt()}
+      />
     </aside>
   );
 }

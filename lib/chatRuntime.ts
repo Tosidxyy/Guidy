@@ -9,3 +9,10 @@ export const chatController = createChatController({
   stream: createChatStream(),
   getPlanId: () => usePlanStore.getState().state.plan.id,
 });
+
+// 回合结束（done/error）后自动续发排队消息。
+useChatStore.subscribe((state, prev) => {
+  if (prev.streaming && !state.streaming && state.queued.length) {
+    setTimeout(() => chatController.pump(), 200);
+  }
+});

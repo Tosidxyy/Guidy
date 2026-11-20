@@ -69,6 +69,34 @@ describe('chatController.send', () => {
     expect(useChatStore.getState().error?.code).toBe('connection_failed');
     expect(useChatStore.getState().streaming).toBe(false);
   });
+  it('生成中发送 → 入队不打断；interrupt 显式结束流式态', async () => {
+    const stream = fakeStream();
+    const fetchFn = vi.fn(async () => ({ ok: true, status: 202 }) as Response);
+    const c = createChatController({ store: useChatStore, stream, fetchFn });
+    useChatStore.setState({ streaming: true, conversationId: null });
+    c.send('插一句');
+    expect(useChatStore.getState().queued.map((q) => q.text)).toEqual(['插一句']);
+    expect(fetchFn).not.toHaveBeenCalled();
+    c.interrupt();
+    expect(useChatStore.getState().streaming).toBe(false);
+  });
+  it('插队：移出队列并在中断后发送该条', async () => {
+    vi.useFakeTimers();
+    const stream = fakeStream();
+    const fetchFn = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => ({ ok: true, status: 202 }) as Response);
+    const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-jump' });
+    useChatStore.setState({ streaming: true, conversationId: null });
+    useChatStore.getState().enqueueQueue('排队消息');
+    const id = useChatStore.getState().queued[0].id;
+    c.sendNow(id);
+    expect(useChatStore.getState().queued).toHaveLength(0);
+    vi.advanceTimersByTime(350);
+    await Promise.resolve();
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    const [, init] = fetchFn.mock.calls[0];
+    expect(JSON.parse((init as RequestInit).body as string).text).toBe('排队消息');
+    vi.useRealTimers();
+  });
 });
 
 describe('chatController.interrupt / newConversation', () => {

@@ -598,6 +598,33 @@ describe('回合总预算超时', () => {
   });
 });
 
+describe('空回复处理', () => {
+  it('上游只回终态无内容 → 重试后正常完成', async () => {
+    let opens = 0;
+    const d = deps({
+      openStream: async () => {
+        opens += 1;
+        const frames = opens === 1
+          ? [{ type: 'session.status_idle' }]
+          : [{ type: 'agent.message', id: 'e1', content: [{ type: 'text', text: '好的，这是回答' }] }, { type: 'session.status_idle' }];
+        return { body: upstreamStream(frames), close() {} };
+      },
+    });
+    const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '你好' })));
+    expect(out.some((f) => f.event === 'error')).toBe(false);
+    expect(out.some((f) => f.event === 'delta' && String(f.data.text).includes('回答'))).toBe(true);
+    expect(opens).toBe(2);
+  });
+  it('连续空回复 → empty_response 错误而非静默 completed', async () => {
+    const d = deps({ openStream: async () => ({ body: upstreamStream([{ type: 'session.status_idle' }]), close() {} }) });
+    const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '你好' })));
+    expect(out.some((f) => f.event === 'error' && f.data.code === 'empty_response')).toBe(true);
+    // 以 error 为准：结束时不再以 completed 收尾。
+    const lastState = [...out].reverse().find((f) => f.event === 'status')?.data.state;
+    expect(lastState).toBe('failed');
+  });
+});
+
 describe('坏 JSON 修复重试', () => {
   it('首回合截断 JSON → 带修复引导重试 → 第二回合合法产物', async () => {
     const set = { type: 'constraint_set', plan_title: 't', horizon_days: 7, task_defs: [{ key: 'a', title: 'A', category: 'study', duration_min: 15, frequency: { type: 'daily' }, priority: 'mid', splittable: true, sort_order: 0 }], constraints: [], clarifications_needed: [] };

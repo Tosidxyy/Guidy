@@ -286,6 +286,15 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           if (finalText.length > bestText.length) bestText = finalText;
           if (abort.signal.aborted) { terminalState = 'interrupted'; break; }
           if (!projector.isTerminal()) { terminalState = 'failed'; break; }
+          // 空完成：上游只发了终态、没有任何正文/产物。不能静默 completed，否则气泡一片空白。
+          if (!finalText.trim()) {
+            if (attempt < 2) { repairNote = '\n上一轮没有任何输出。请正常回答用户，或直接输出一个 ```json 围栏产物。'; continue; }
+            terminalState = 'failed';
+            const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'empty_response', message: 'AI 没有返回内容，请重试', diagnostic_id: crypto.randomUUID() } };
+            emit(err); collected.push(err);
+            await insertMessage(deps.db, conv, { seq: err.data.seq, role: 'system', kind: 'error', content: 'empty_response' });
+            break;
+          }
           const expectsArtifact = /```json|^\s*\{/.test(finalText);
           const parsed = parseModelText(finalText, day);
           // 口头承诺了提问/出计划却没给 JSON（如结尾停在冒号）：同样进修复重试，避免「说问三个问题却没有问题卡」。

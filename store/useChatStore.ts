@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { ConstraintSetArtifact, PatchArtifact, QuestionCardArtifact } from '@/shared/schemas';
 export interface ChatMessage { seq: number; role: 'user' | 'assistant' | 'system'; kind: string; content: string; payload?: unknown }
+export interface QueuedMessage { id: string; text: string }
 export interface ChatState {
   conversationId: string | null;
   requestId: string | null;
@@ -18,10 +19,12 @@ export interface ChatState {
   searching: boolean;
   switching: boolean;
   restoreDone: boolean;
+  /** 生成中默认排队：结束后自动发送下一条；可插队立即发送。 */
+  queued: QueuedMessage[];
 }
 export interface AppFrame { event: string; data: any }
 const TERMINAL = ['completed', 'failed', 'interrupted'];
-export const initialChatState: ChatState = { conversationId: null, requestId: null, messages: [], streaming: false, connection: 'idle', cursor: '0:0', artifact: null, artifactPreview: null, patch: null, question: null, clarifications: [], error: null, searching: false, switching: false, restoreDone: false };
+export const initialChatState: ChatState = { conversationId: null, requestId: null, messages: [], streaming: false, connection: 'idle', cursor: '0:0', artifact: null, artifactPreview: null, patch: null, question: null, clarifications: [], error: null, searching: false, switching: false, restoreDone: false, queued: [] };
 // 恢复会话时历史已完整加载，cursor 须越过最大 seq，否则 resume 重放历史会把全文再追加一遍。
 export function cursorAfterMessages(messages: { seq: number }[]): string {
   const max = messages.reduce((mx, m) => Math.max(mx, m.seq), 0);
@@ -74,6 +77,9 @@ interface ChatStore extends ChatState {
   startSend: (text: string) => void;
   setConversation: (id: string | null, messages?: ChatMessage[]) => void;
   reset: () => void;
+  enqueueQueue: (text: string) => void;
+  shiftQueue: () => QueuedMessage | undefined;
+  removeQueued: (id: string) => void;
 }
 export const useChatStore = create<ChatStore>((set, get) => ({
   ...initialChatState,
@@ -81,4 +87,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   startSend: (text) => set({ ...get(), streaming: true, connection: 'connecting', error: null, artifact: null, artifactPreview: null, patch: null, question: null, clarifications: [], searching: false, switching: false, restoreDone: true, messages: [...get().messages, { seq: -1, role: 'user', kind: 'text', content: text }] }),
   setConversation: (id, messages = []) => set({ ...initialChatState, conversationId: id, messages, restoreDone: true }),
   reset: () => set({ ...initialChatState, restoreDone: true }),
+  enqueueQueue: (text) => set({ ...get(), queued: [...get().queued, { id: crypto.randomUUID(), text }] }),
+  shiftQueue: () => {
+    const [next, ...rest] = get().queued;
+    if (!next) return undefined;
+    set({ ...get(), queued: rest });
+    return next;
+  },
+  removeQueued: (id) => set({ ...get(), queued: get().queued.filter((q) => q.id !== id) }),
 }));

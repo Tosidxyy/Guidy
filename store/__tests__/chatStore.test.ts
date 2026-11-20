@@ -123,4 +123,13 @@ describe('reduceFrame — progress 研究指示', () => {
     const s3 = reduceFrame(s1, { event: 'status', data: { seq: 3, state: 'completed' } });
     expect(s3.switching).toBe(false);
   });
+  it('排队队列：入队/取队首/删除', () => {
+    useChatStore.setState({ queued: [] });
+    useChatStore.getState().enqueueQueue('一');
+    useChatStore.getState().enqueueQueue('二');
+    const id = useChatStore.getState().queued[1].id;
+    expect(useChatStore.getState().shiftQueue()?.text).toBe('一');
+    useChatStore.getState().removeQueued(id);
+    expect(useChatStore.getState().queued).toHaveLength(0);
+  });
 });
