@@ -33,6 +33,19 @@ export function horizonBounds(plan: { horizon_start: string; horizon_days: numbe
 
 export const MATERIALIZED_NOTE = '共享日历：固定日程，与普通任务一样可拖拽/编辑/删除';
 
+// 同一时刻的文本表示随来源不同：web 端 toISOString() 为 ...000Z，平台 timestamptz 读回 ...:00+00:00。
+// 墓碑键必须按时间戳规范化，否则删除后的物化块会在下一次读取时复活。
+const TS_PART_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+function tombstoneKey(parts: string[]): string {
+  return parts
+    .map((part) => {
+      if (!TS_PART_RE.test(part)) return part;
+      const ms = Date.parse(part);
+      return Number.isNaN(ms) ? part : new Date(ms).toISOString();
+    })
+    .join('|');
+}
+
 /** blocks.plan_id 外键引用 plans(id)：哨兵块必须挂在真实存在的计划行下。
  * 系统所有的哨兵计划对一切按 owner 过滤的查询不可见，幂等创建。 */
 export async function ensureSharedPlan(db: Db): Promise<void> {
@@ -55,7 +68,12 @@ export async function materializeSharedBusy(db: Db, visitor: string): Promise<vo
   const endMs = Math.max(...valid.map((p: any) => Date.parse(`${p.horizon_start}T00:00:00Z`) + p.horizon_days * DAY_MS));
   const days = Math.min(MAX_DAYS, Math.max(1, Math.round((endMs - Date.parse(`${start}T00:00:00Z`)) / DAY_MS)));
 
-  const tombstones = new Set(rows(await db.from('shared_deletions').select('k').eq('visitor_id', visitor)).map((r: any) => String(r.k)));
+  const tombstones = new Set<string>();
+  for (const r of rows(await db.from('shared_deletions').select('k').eq('visitor_id', visitor))) {
+    const k = String(r.k);
+    tombstones.add(k);
+    tombstones.add(tombstoneKey(k.split('|')));
+  }
   const recurring: any[] = [];
   for (const p of valid) {
     const cfg = readPlanConfig(p);
@@ -181,8 +199,8 @@ export async function applySharedBlocks(ctx: RouteCtx, deps: Deps): Promise<Resp
     await deps.db.from('blocks').delete().eq('id', id).eq('plan_id', SHARED_BLOCK_PLAN_ID).eq('owner_visitor_id', visitor);
     // 物化实例被用户删除：记录墓碑（标题|开始 与 时间窗 双键），后续读取不再重新生成这一天。
     if (target?.notes === MATERIALIZED_NOTE) {
-      rows(await deps.db.from('shared_deletions').insertIfAbsent({ visitor_id: visitor, k: `${target.title}|${target.start_utc}` }, { onConflict: 'visitor_id,k' }));
-      rows(await deps.db.from('shared_deletions').insertIfAbsent({ visitor_id: visitor, k: `${target.start_utc}|${target.end_utc}` }, { onConflict: 'visitor_id,k' }));
+      rows(await deps.db.from('shared_deletions').insertIfAbsent({ visitor_id: visitor, k: tombstoneKey([target.title, target.start_utc]) }, { onConflict: 'visitor_id,k' }));
+      rows(await deps.db.from('shared_deletions').insertIfAbsent({ visitor_id: visitor, k: tombstoneKey([target.start_utc, target.end_utc]) }, { onConflict: 'visitor_id,k' }));
     }
   }
   for (const b of patched.state.blocks) {

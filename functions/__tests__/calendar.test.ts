@@ -212,4 +212,22 @@ describe('忙时重叠去重与删除墓碑', () => {
     const after = await (await app(ctx('GET', '/api/calendar'))).json();
     expect(after.blocks.some((b: any) => b.start_utc === target.start_utc)).toBe(false);
   });
+  it('平台以 +00:00 返回 timestamptz 时，删除后的物化块同样不复活', async () => {
+    const d = deps();
+    const app = application(d);
+    await app(ctx('POST', '/api/plans/save', { plan_id: null, input: { title: '甲', horizon_start: '2026-11-18', horizon_days: 7, timezone: tz, task_defs: [], constraints: busyAs('上班'), blocks: [] } }));
+    const cal = await (await app(ctx('GET', '/api/calendar'))).json();
+    const target = cal.blocks[0];
+    // 模拟平台 Postgres 的 timestamptz 文本格式（读写路径字符串不一致）
+    await d.db.from('blocks').update({
+      start_utc: String(target.start_utc).replace('Z', '+00:00'),
+      end_utc: String(target.end_utc).replace('Z', '+00:00'),
+    }).eq('id', target.id);
+    const del = await app(ctx('POST', '/api/calendar/blocks', { ops: [{ op: 'remove_block', id: target.id }] }));
+    expect(del.status).toBe(200);
+    const after = await (await app(ctx('GET', '/api/calendar'))).json();
+    const sameWindow = after.blocks.filter((b: any) => Date.parse(b.start_utc) === Date.parse(target.start_utc));
+    expect(sameWindow).toHaveLength(0);
+    expect(after.blocks.length).toBe(cal.blocks.length - 1);
+  });
 });
