@@ -4,6 +4,7 @@ export function createProjector(seq: () => number, deltaSeq: number) {
   let streamed = false;
   let terminal = false;
   let failed = false;
+  let sawThinking = false;
   const fullText = () => [...drafts.values()].join('');
   return {
     push(ev: any): AppEvent[] {
@@ -27,6 +28,9 @@ export function createProjector(seq: () => number, deltaSeq: number) {
         if (name === 'WebSearch' || name === 'WebFetch') {
           out.push({ event: 'progress', data: { seq: deltaSeq, tool: name as 'WebSearch' | 'WebFetch' } });
         }
+      } else if (type === 'agent.thinking') {
+        sawThinking = true;
+        out.push({ event: 'progress', data: { seq: deltaSeq, tool: 'Thinking' } });
       } else if (type === 'provider.switch') {
         out.push({ event: 'progress', data: { seq: deltaSeq, tool: 'ModelSwitch' } });
       } else if (type.startsWith('session')) {
@@ -50,6 +54,7 @@ export function createProjector(seq: () => number, deltaSeq: number) {
       return out;
     },
     text: fullText,
+    sawThinking: () => sawThinking,
     isTerminal: () => terminal,
   };
 }

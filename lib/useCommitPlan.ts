@@ -4,10 +4,13 @@ import { api, ApiError } from '@/lib/api';
 import { buildCommitInput } from '@/lib/commitInput';
 import { stableHash, stableJson } from '@/lib/stableKey';
 import { solveArtifact } from '@/lib/preview';
+import { trimArtifactToFit } from '@/shared/engine/fit';
 import { relaxDraft } from '@/lib/relaxPlan';
 import { usePlanStore } from '@/store/usePlanStore';
 import { usePlanSync } from '@/store/usePlanSync';
 import { useChatStore } from '@/store/useChatStore';
+import { useBlockHistory } from '@/store/useBlockHistory';
+import { snapshotOps } from '@/lib/snapshotOps';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 import type { PlanState } from '@/shared/types';
 
@@ -38,11 +41,37 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
         conversationId: useChatStore.getState().conversationId,
         idempotencyKey,
       });
-      return api.commit(body);
+      const before = store.state;
+      const resp = await api.commit(body);
+      return { resp, before };
     },
     onError: (err, draft) => {
       const e = err instanceof ApiError ? err : new ApiError('service_unavailable', 503, '提交失败，请重试');
       const details = e.details as any;
+      // 排不下时优先给「自动放宽重试」，不能被缺口详情短路。
+      if (e.code === 'engine_infeasible' && draft) {
+        const store = usePlanStore.getState();
+        const meta = { horizon_start: store.state.plan.horizon_start, timezone: store.state.plan.timezone };
+        const blocks = store.state.blocks;
+        const relaxed = relaxDraft(draft, meta, blocks);
+        const trimmed = trimArtifactToFit(draft, meta, blocks);
+        const relaxedTrimmed = relaxed ? trimArtifactToFit(relaxed.draft, meta, blocks) : null;
+        const candidates: { draft: ConstraintSetArtifact; changes: string[] }[] = [];
+        if (relaxed) candidates.push({ draft: relaxed.draft, changes: relaxed.changes });
+        if (trimmed) candidates.push({ draft: trimmed.draft, changes: trimmed.changes });
+        if (relaxed && relaxedTrimmed) candidates.push({ draft: relaxedTrimmed.draft, changes: [...relaxed.changes, ...relaxedTrimmed.changes] });
+        const fit = candidates.find((c) => solveArtifact(c.draft, meta, blocks).output.violations.length === 0) ?? candidates[0];
+        const gap: string[] = [];
+        for (const u of (details?.unplaced ?? []).slice(0, 3)) gap.push(`「${u.title}」缺 ${u.missing_minutes} 分钟`);
+        if (fit) {
+          toast.error('当前约束下排不下全部任务', {
+            description: [`可自动放宽：${Array.from(new Set(fit.changes)).join('；')}`, ...gap].join(String.fromCharCode(10)),
+            duration: 12000,
+            action: { label: '自动放宽重试', onClick: () => mutation.mutate(fit.draft) },
+          });
+          return;
+        }
+      }
       const lines: string[] = [];
       if (details?.feasibility) lines.push(`可行性：${details.feasibility}`);
       for (const u of (details?.unplaced ?? []).slice(0, 4)) lines.push(`「${u.title}」目标 ${u.target_minutes} 分钟，只排了 ${u.placed_minutes}，缺 ${u.missing_minutes}${u.reason ? `：${u.reason}` : ''}`);
@@ -52,21 +81,9 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
         toast.error(e.message, { description: lines.join(String.fromCharCode(10)), duration: 12000 });
         return;
       }
-      if (e.code === 'engine_infeasible' && draft) {
-        const store = usePlanStore.getState();
-        const relaxed = relaxDraft(draft, { horizon_start: store.state.plan.horizon_start, timezone: store.state.plan.timezone }, store.state.blocks);
-        if (relaxed) {
-          toast.error('当前约束下排不下全部任务', {
-            description: `可自动放宽：${relaxed.changes.join('；')}`,
-            duration: 12000,
-            action: { label: '自动放宽重试', onClick: () => mutation.mutate(relaxed.draft) },
-          });
-          return;
-        }
-      }
       toast.error(e.message, { description: e.diagnosticId ? `诊断 ID：${e.diagnosticId}` : undefined });
     },
-    onSuccess: (serverPlan: any) => {
+    onSuccess: ({ resp: serverPlan, before }: any) => {
       const store = usePlanStore.getState();
       const next: PlanState = {
         plan: serverPlan.plan,
@@ -76,6 +93,13 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
       };
       store.importState(next);
       usePlanSync.getState().setServerVersion(serverPlan.plan.id, serverPlan.plan.version);
+      // 确认生成同样可撤销：撤销=恢复提交前的任务/约束/块，重做=再次应用这次结果。
+      useBlockHistory.getState().push(serverPlan.plan.id, {
+        at: Date.now(),
+        label: `确认生成：${serverPlan.plan.title}`.slice(0, 40),
+        forwardOps: snapshotOps(next),
+        inverseOps: snapshotOps(before),
+      });
       qc.invalidateQueries({ queryKey: ['plans'] });
       qc.invalidateQueries({ queryKey: ['conversations'] });
       qc.invalidateQueries({ queryKey: ['calendar'] });

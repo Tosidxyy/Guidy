@@ -3,10 +3,12 @@ import { readJson } from '../router.ts';
 import { fail } from '../errors.ts';
 import { createProjector } from '../qca/project.ts';
 import { parseModelText } from '../artifacts.ts';
+import { PERIOD_BOUNDS } from '../shared/constants.ts';
+import { localMinutes, localDay, minToHHmm } from '../shared/engine/time.ts';
 import { buildUserMessage, ARTIFACT_REPAIR, type OtherPlanContext } from '../prompt.ts';
 import { appFrame } from '../sse-app.ts';
 import { readSSE } from '../qca/sse.mjs';
-import { solve } from '../engine.ts';
+import { solve, applyPatch } from '../engine.ts';
 import { trimArtifactToFit } from '../shared/engine/fit.ts';
 import { formatAvailability, weeklyAvailability, type AvailabilitySource } from '../shared/engine/availability.ts';
 import { findConflicts, type ConflictPlan, type PlanConflict } from '../shared/engine/conflicts.ts';
@@ -149,6 +151,30 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
     learned: chat.learned,
   });
 
+  /** 偏好时段是否兑现：给出「任务实际落在何时、与偏好不符」的人话说明。 */
+  const preferenceNotes = (plan: any, blocks: any[]): string[] => {
+    const notes: string[] = [];
+    for (const t of plan.task_defs ?? []) {
+      if (!t.preferred_period || !PERIOD_BOUNDS[t.preferred_period]) continue;
+      const mine = blocks.filter((b: any) => b.task_key === t.key);
+      if (!mine.length) continue;
+      const [from, to] = PERIOD_BOUNDS[t.preferred_period];
+      let inside = 0;
+      let total = 0;
+      for (const b of mine) {
+        const sMin = localMinutes(b.start_utc, tz);
+        const eMin = localMinutes(b.end_utc, tz);
+        total += Math.max(0, eMin - sMin);
+        inside += Math.max(0, Math.min(eMin, to) - Math.max(sMin, from));
+      }
+      if (!total || inside / total >= 0.6) continue;
+      const first = [...mine].sort((a: any, b: any) => a.start_utc.localeCompare(b.start_utc))[0];
+      const when = `${localDay(first.start_utc, tz).slice(5)} ${minToHHmm(localMinutes(first.start_utc, tz))}–${minToHHmm(localMinutes(first.end_utc, tz))}`;
+      notes.push(`「${t.title}」实际主要在 ${when}，与你要求的时段不符（可在方案卡里调整可安排时段后重新生成）`);
+    }
+    return notes;
+  };
+
   let live = true;
   const stream = new ReadableStream<Uint8Array>({
     cancel() { live = false; },
@@ -170,18 +196,23 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
         const sessionId = session.id;
         let bestText = '';
         let emittedProse = '';
+        // 重试时客户端已收到上一轮文字：用 attempt 标记让它整段替换，不要在同一个气泡里叠加。
+        let replacedThisAttempt = false;
         const assistantSeq = nextSeq();
         let terminalState: 'completed' | 'failed' | 'interrupted' = 'failed';
+        let terminalAttempt = 0;
         let repairNote = '';
         const turnDeadline = Date.now() + (deps.config.turnBudgetMs ?? 55000);
         for (let attempt = 0; attempt < 3; attempt++) {
-          if (attempt > 0) emittedProse = '';
+          terminalAttempt = attempt;
+          if (attempt > 0) { emittedProse = ''; replacedThisAttempt = false; }
           const remaining = turnDeadline - Date.now();
           if (remaining < 5000) break;
           const projector = createProjector(nextSeq, assistantSeq);
           await deps.qca.sendEvents(sessionId, userMessage + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}${repairNote}` : ''), `${chat.request_id}:${attempt}`);
           aborter = new AbortController();
-          const idleMs = deps.config.attemptTimeoutMs ?? 15000;
+          // 推理模型思考阶段没有正文，适配器会持续发 thinking 帧保持活跃；仍留 25s 兜底。
+          const idleMs = deps.config.attemptTimeoutMs ?? 25000;
           const totalMs = Math.min(deps.config.attemptTotalMs ?? 40000, remaining);
           let idleTimer: ReturnType<typeof setTimeout> | undefined;
           const resetIdle = () => {
@@ -204,9 +235,11 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
                   const cut = Math.min(tick < 0 ? prose.length : tick, brace < 0 ? prose.length : brace);
                   const safe = prose.slice(0, cut);
                   if (safe.length > emittedProse.length) {
-                    const from = emittedProse.length;
+                    const replace = attempt > 0 && !replacedThisAttempt;
+                    const text = replace ? safe : safe.slice(emittedProse.length);
+                    replacedThisAttempt = true;
                     emittedProse = safe;
-                    emit({ event: 'delta', data: { seq: p.data.seq, text: safe.slice(from) } });
+                    emit({ event: 'delta', data: { seq: p.data.seq, text, attempt } as any });
                   }
                   continue;
                 }
@@ -240,12 +273,43 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
             let preview: unknown;
             if (parsed.kind === 'constraint_set') {
               const out = previewSolve(parsed.value);
+              if (out.violations.length && attempt < 2) {
+                repairNote = `
+预排程不可行：${out.violations.map((v: any) => v.reason).join('；')}。请只保留用户明确提到的任务、缩短单次时长或减少次数后重新输出完整 constraint_set。`;
+                continue;
+              }
               const base: any = { feasibility: out.feasibility, unplaced: out.unplaced, violations: out.violations, compromises: out.compromises };
               if (out.violations.length) {
                 const trimmed = trimArtifactToFit(parsed.value, { horizon_start: parsed.value.horizon_start ?? day, timezone: tz }, sharedBlocks.map((b) => ({ ...b, pinned: true })));
                 if (trimmed) base.proposal = { changes: trimmed.changes, suggested: { ...trimmed.draft, clarifications_needed: [...trimmed.draft.clarifications_needed ?? [], `容量不足，可接受的取舍：${trimmed.changes.join('；')}。`] } };
               }
               preview = base;
+            } else if (parsed.kind === 'patch' && planState?.plan?.id) {
+              const applied = applyPatch(planState as any, parsed.value.ops as any);
+              if (applied.missing.length && attempt < 2) {
+                repairNote = `
+调整目标已不存在：${applied.missing.slice(0, 5).join('、')}。请基于当前计划重新输出 patch，不要臆造 id/key。`;
+                continue;
+              }
+              const pinned = applied.state.blocks.filter((b: any) => b.pinned || b.origin === 'manual' || ['completed', 'in_progress', 'partial'].includes(String(b.status ?? '')));
+              const out = solve({
+                engine_version: ENGINE_VERSION,
+                horizon_start: planState.plan.horizon_start,
+                horizon_days: planState.plan.horizon_days,
+                timezone: tz,
+                task_defs: applied.state.task_defs,
+                constraints: applied.state.constraints,
+                pinned_blocks: [...pinned, ...sharedBlocks.map((b) => ({ ...b, pinned: true }))],
+              });
+              if (out.violations.length && attempt < 2) {
+                repairNote = `
+应用这条调整会排不下：${out.violations.map((v: any) => v.reason).join('；')}。请改用更小的改动（减少次数/时长或放宽时段），保留用户已钉住的块。`;
+                continue;
+              }
+              preview = {
+                feasibility: (out as any).feasibility, unplaced: (out as any).unplaced, violations: out.violations,
+                compromises: out.compromises, notes: preferenceNotes(applied.state, out.blocks),
+              };
             }
             emit({ event: 'artifact', data: { seq: nextSeq(), kind: parsed.kind, payload: parsed.value, ...(preview ? { preview } : {}) } });
             terminalState = 'completed';
@@ -264,7 +328,8 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
         }
         const finalProse = splitArtifactText(bestText).prose;
         if (finalProse.length > emittedProse.length) {
-          emit({ event: 'delta', data: { seq: nextSeq(), text: finalProse.slice(emittedProse.length) } });
+          const replace = emittedProse === '' && finalProse.length > 0;
+          emit({ event: 'delta', data: { seq: nextSeq(), text: replace ? finalProse : finalProse.slice(emittedProse.length), attempt: terminalAttempt } as any });
         }
         emit({ event: 'status', data: { seq: nextSeq(), state: terminalState } });
         emit({ event: 'done', data: { seq: nextSeq() } });

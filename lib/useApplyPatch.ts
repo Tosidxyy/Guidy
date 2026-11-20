@@ -11,6 +11,7 @@ import { resolvePatchTargets, SHARED_PLAN_ID } from '@/lib/patchTargets';
 import { applySharedOps } from '@/lib/sharedBlocks';
 import { appliedPatches } from '@/lib/appliedPatches';
 import { useChatStore } from '@/store/useChatStore';
+import { useBlockHistory } from '@/store/useBlockHistory';
 import { usePlanStore } from '@/store/usePlanStore';
 import { usePlanSync } from '@/store/usePlanSync';
 import { useSharedCalendar } from '@/store/useSharedCalendar';
@@ -126,7 +127,18 @@ export function useApplyPatch() {
         };
         store.replaceStateKeepUndo(next);
         const planId = store.state.plan.id;
-        if (planId) usePlanSync.getState().setServerVersion(planId, resp.version);
+        if (planId) {
+          usePlanSync.getState().setServerVersion(planId, resp.version);
+          // 进入撤销栈：顶栏撤销/重做与手动拖动一致，撤销走服务端逆操作。
+          if (Array.isArray(resp.inverse_ops) && resp.inverse_ops.length) {
+            useBlockHistory.getState().push(planId, {
+              at: Date.now(),
+              label: `AI 调整：${patch.summary.slice(0, 24)}`,
+              forwardOps: patch.ops,
+              inverseOps: resp.inverse_ops,
+            });
+          }
+        }
       }
       qc.invalidateQueries({ queryKey: ['plans'] });
       qc.invalidateQueries({ queryKey: ['calendar'] });

@@ -109,12 +109,32 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
         t.waiter = resolve;
         turns.set(wrapperId, t);
       });
+      // 关闭/取消必须真正中止内部读取并释放上游；关闭后的写入一律丢弃（否则日志刷 ERR_INVALID_STATE 并误判供应商失败）。
+      let closed = false;
+      const abort = new AbortController();
+      const signal = abort.signal;
+      const upstreamSignals: AbortController[] = [];
+      let upstreamRef: { close(): void } | null = null;
+      const stop = () => {
+        if (closed) return;
+        closed = true;
+        abort.abort();
+        for (const s of upstreamSignals) s.abort();
+        try { upstreamRef?.close(); } catch { /* 已关闭 */ }
+      };
+      const combinedSignal = (opts.signal ? AbortSignal.any([opts.signal, signal]) : signal) as AbortSignal;
+      const safeEnqueue = (controller: ReadableStreamDefaultController<Uint8Array>, chunk: Uint8Array) => {
+        if (closed) return false;
+        try { controller.enqueue(chunk); return true; } catch { closed = true; return false; }
+      };
       const body = new ReadableStream<Uint8Array>({
         async start(controller) {
           const { text, key } = await pending;
+          if (closed) { try { controller.close(); } catch { /* closed */ } return; }
           const ref = refOf(wrapperId);
           let lastErr: unknown;
           for (let i = ref.idx; i < providers.length; i++) {
+            if (closed || combinedSignal.aborted) break;
             let realId = i === ref.idx ? ref.realId : '';
             let failed = false;
             // 落到备用供应商时给用户可见提示（投影为 progress/ModelSwitch）。
@@ -125,38 +145,49 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
               // 幂等键必须每回合唯一且符合平台字符集（会话 id 是 JSON，不能直接进键）。
               const turnKey = `${key ?? 'resilient'}-p${i}`.replace(/[^A-Za-z0-9._:-]/g, '').slice(0, 200);
               await providers[i].adapter.sendEvents(realId, text, turnKey);
-              const upstream = await providers[i].adapter.openStream(realId, opts);
+              const upstream = await providers[i].adapter.openStream(realId, { ...opts, signal: combinedSignal });
+              upstreamRef = upstream;
               const decoder = new TextDecoder();
-              for await (const frame of readSSE(upstream.body, { signal: opts.signal })) {
+              for await (const frame of readSSE(upstream.body, { signal: combinedSignal })) {
+                if (closed) break;
                 const raw = new TextEncoder().encode(`id: ${frame.id ?? ''}\nevent: ${frame.event}\ndata: ${frame.data}\n\n`);
-                controller.enqueue(raw);
+                if (!safeEnqueue(controller, raw)) break;
                 const chunk = decoder.decode(raw);
                 if (chunk.includes('session.error') || /"status"\s*:\s*"failed"/.test(chunk)) failed = true;
                 // QCA 持久流不 EOF：遇到终态即结束本轮，否则流不释放、下一轮 send 撞 409。
                 if (/"type"\s*:\s*"session\.(status_idle|completed)"/.test(chunk) || /"type"\s*:\s*"session\.status"[^}]*"status"\s*:\s*"idle"/.test(chunk)) break;
               }
               upstream.close();
+              upstreamRef = null;
               ref.idx = i;
               ref.realId = realId;
               idx = i;
+              if (closed || combinedSignal.aborted) return;
               if (!failed) {
-                controller.close();
+                try { controller.close(); } catch { /* closed */ }
                 return;
               }
               lastErr = new Error(`provider_${providers[i].name}_stream_failed`);
             } catch (e) {
+              // 主动关闭/取消不算供应商失败：不记 provider_failed、不切换。
+              if (closed || combinedSignal.aborted) return;
               console.error('provider_failed', providers[i].name, (e as any)?.code ?? '', String((e as any)?.message ?? e).slice(0, 200));
               lastErr = e;
               if (!isFailoverError(e)) break;
             }
-            if (opts.signal?.aborted) break;
+            if (closed || combinedSignal.aborted) break;
           }
+          if (closed || combinedSignal.aborted) return;
           const msg = String((lastErr as Error)?.message ?? 'upstream_error');
-          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'session.error', status: 'failed', message: msg })}\n\n`));
-          controller.close();
+          if (safeEnqueue(controller, new TextEncoder().encode(`data: ${JSON.stringify({ type: 'session.error', status: 'failed', message: msg })}
+
+`))) {
+            try { controller.close(); } catch { /* closed */ }
+          }
         },
+        cancel() { stop(); },
       });
-      return { body, close() {} };
+      return { body, close: stop };
     },
     async listEvents(wrapperId, opts) {
       const ref = refOf(wrapperId);

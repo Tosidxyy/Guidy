@@ -5,6 +5,7 @@ import {
   localSaveDraft, localSharedOps,
 } from '@/lib/local/domain';
 import { getPlan, putPlan } from '@/lib/local/repo';
+import { relaxDraft } from '@/lib/relaxPlan';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 
 beforeEach(() => __resetMemory());
@@ -76,6 +77,36 @@ describe('历史计划读取', () => {
     expect(st.constraints.map((c) => c.payload.type)).toEqual(['active_window']);
     const cal = await localCalendar();
     expect(cal.blocks.map((b) => b.title)).toEqual(['上班']);
+  });
+});
+
+describe('排不下 → 自动放宽', () => {
+  const impossible = () => ({
+    type: 'constraint_set', plan_title: '容量不足', horizon_days: 7, clarifications_needed: [],
+    task_defs: [{ key: 'big', title: '大任务', category: 'study', duration_min: 480, frequency: { type: 'daily' }, priority: 'high', splittable: false, sort_order: 0 }],
+    constraints: [{ type: 'active_window', start: '07:00', end: '08:00' }],
+  }) as any;
+
+  it('提交失败时带 feasibility/unplaced，供「自动放宽重试」使用', async () => {
+    const draft = impossible();
+    const err = await localCommit({ preview_id: crypto.randomUUID(), plan_id: null, result_hash: 'h', engine_version: 1, conversation_id: null, input: { title: draft.plan_title, horizon_start: '2026-11-20', horizon_days: 7, timezone: 'Asia/Shanghai', task_defs: draft.task_defs, constraints: [{ id: 'c1', payload: draft.constraints[0], source: 'user', enabled: true }] } }).catch((e) => e);
+    expect(err.code).toBe('engine_infeasible');
+    expect(Array.isArray(err.details?.violations)).toBe(true);
+    expect(Array.isArray(err.details?.unplaced)).toBe(true);
+  });
+
+  it('放宽后的草稿可以成功提交', async () => {
+    const draft = impossible();
+    const relaxed = relaxDraft(draft, { horizon_start: '2026-11-20', timezone: 'Asia/Shanghai' }, []);
+    expect(relaxed).toBeTruthy();
+    const res = await localCommit({
+      preview_id: crypto.randomUUID(), plan_id: null, result_hash: 'h2', engine_version: 1, conversation_id: null,
+      input: {
+        title: draft.plan_title, horizon_start: '2026-11-20', horizon_days: 7, timezone: 'Asia/Shanghai',
+        task_defs: relaxed!.draft.task_defs, constraints: [{ id: 'c1', payload: relaxed!.draft.constraints[0], source: 'user', enabled: true }],
+      },
+    });
+    expect(res.blocks.length).toBeGreaterThan(0);
   });
 });
 

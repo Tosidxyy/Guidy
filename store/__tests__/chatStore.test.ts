@@ -133,3 +133,20 @@ describe('reduceFrame — progress 研究指示', () => {
     expect(useChatStore.getState().queued).toHaveLength(0);
   });
 });
+
+describe('chatStore 重试与思考', () => {
+  it('delta 的 attempt 变大时整段替换，同一气泡不叠加两轮文字', async () => {
+    const { reduceFrame, initialChatState } = await import('@/store/useChatStore');
+    const before = { ...initialChatState, messages: [{ seq: 5, role: 'assistant' as const, kind: 'text', content: '第一轮半截', attempt: 0 }] };
+    const next = reduceFrame(before as any, { event: 'delta', data: { seq: 5, text: '第二轮完整', attempt: 1 } });
+    expect(next.messages[0].content).toBe('第二轮完整');
+    expect(next.messages[0].attempt).toBe(1);
+  });
+  it('Thinking 进度设置思考态，delta 到达后清除', async () => {
+    const { reduceFrame, initialChatState } = await import('@/store/useChatStore');
+    const t = reduceFrame({ ...initialChatState }, { event: 'progress', data: { seq: 0, tool: 'Thinking' } });
+    expect(t.thinking).toBe(true);
+    const d = reduceFrame({ ...t, streaming: true }, { event: 'delta', data: { seq: 2, text: '正文' } });
+    expect(d.thinking).toBe(false);
+  });
+});

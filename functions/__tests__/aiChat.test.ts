@@ -68,6 +68,28 @@ describe('aiChat 无状态代理', () => {
     expect(frames.filter((f) => f.event !== 'accepted').every((f) => f.data.seq > 10)).toBe(true);
   });
 
+  it('patch 预排程：偏好时段未兑现时 artifact.preview.notes 给出人话说明', async () => {
+    const NL = String.fromCharCode(10);
+    const patchText = ['```json', JSON.stringify({ type: 'patch', summary: '重排', ops: [{ op: 'reschedule', scope: 'all', keep_pinned: true }] }), '```'].join(NL);
+    const d = deps({ openStream: async () => ({ body: upstreamStream([
+      { type: 'agent.message', id: 'e1', content: [{ type: 'text', text: patchText }] },
+      { type: 'session.status', status: 'idle' },
+    ]), close() {} }) });
+    const plan = {
+      plan: { id: 'p1', title: '论文', horizon_start: '2026-11-16', horizon_days: 7, timezone: 'Asia/Shanghai', status: 'active', version: 1, created_at: '', updated_at: '' },
+      task_defs: [{ key: 'paper', title: '论文写作', category: 'study', duration_min: 60, frequency: { type: 'daily' }, preferred_period: 'morning' }],
+      constraints: [{ id: 'c1', payload: { type: 'active_window', start: '18:00', end: '23:00' }, source: 'user', enabled: true }],
+      blocks: [{ id: 'b1', task_key: 'paper', title: '论文写作', category: 'study', start_utc: '2026-11-16T10:00:00.000Z', end_utc: '2026-11-16T11:00:00.000Z', priority: 'high', pinned: false, origin: 'engine' }],
+    };
+    const frames = await collect(await application(d)(ctx({ ...body, text: '重新排一下', plan })));
+    const art = frames.find((f) => f.event === 'artifact');
+    if (!art) console.log('FRAMES', JSON.stringify(frames));
+    expect(art?.data.kind).toBe('patch');
+    expect(Array.isArray(art?.data.preview?.notes)).toBe(true);
+    expect(art?.data.preview?.notes[0]).toContain('论文写作');
+    expect(art?.data.preview?.notes[0]).toContain('不符');
+  });
+
   it('客户端上下文进入 prompt：计划块/历史/画像都随请求携带', async () => {
     let sent = '';
     const d = deps({

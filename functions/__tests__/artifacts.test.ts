@@ -193,6 +193,24 @@ describe('question_card 产物', () => {
     expect(parseModelText(JSON.stringify({ type: 'question_card', questions: [{ text: 'x', options: ['只有一个'] }] }))).toBeNull();
   });
 });
+describe('prompt 排程一致性与追问', () => {
+  it('用户作息视为明确要求，要落成约束而不是逐块挪', () => {
+    const p = buildSystemPrompt();
+    expect(p).toContain('视为明确要求');
+    expect(p).toContain('不要用 move_block 逐块硬挪');
+  });
+  it('追问统一 question_card，clarifications_needed 固定空数组', () => {
+    const p = buildSystemPrompt();
+    expect(p).toContain('clarifications_needed 固定输出空数组');
+    expect(p).toContain('不要把问题写进 clarifications_needed');
+  });
+  it('第一版只建用户提到的任务且必须可行', () => {
+    const p = buildSystemPrompt();
+    expect(p).toContain('第一版只建用户明确提到的任务');
+    expect(p).toContain('第一版必须本身可行');
+  });
+});
+
 describe('prompt 联网检索 — 默认不搜，先判断必要性', () => {
   it('要求先判断是否需要检索，排程请求不搜', () => {
     const p = buildSystemPrompt();

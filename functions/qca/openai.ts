@@ -159,6 +159,7 @@ export function createOpenAiQca(config: LocalLlmConfig, db?: Db): QcaAdapter {
     signal: AbortSignal | undefined,
     onDelta: (text: string) => void,
     onTool: (name: string) => void,
+    onActivity?: () => void,
   ): Promise<string> {
     const history = db ? await dbHistory(sessionId) : [...(histories.get(sessionId) ?? [])];
     const last = history.at(-1);
@@ -183,8 +184,9 @@ export function createOpenAiQca(config: LocalLlmConfig, db?: Db): QcaAdapter {
       const isStream = (res.headers.get('content-type') ?? '').includes('text/event-stream');
       if (!isStream) {
         const json = (await res.json()) as CompletionChunk;
-        const msg = json.choices?.[0]?.message;
+        const msg = json.choices?.[0]?.message as any;
         content = msg?.content ?? '';
+        if (msg?.reasoning_content) onActivity?.();
         for (const c of msg?.tool_calls ?? []) calls.push({ id: c.id, name: c.function.name, arguments: c.function.arguments });
         if (content) onDelta(content);
       } else {
@@ -206,7 +208,9 @@ export function createOpenAiQca(config: LocalLlmConfig, db?: Db): QcaAdapter {
               if (!data || data === '[DONE]') continue;
               let json: CompletionChunk;
               try { json = JSON.parse(data) as CompletionChunk; } catch { continue; }
-              const delta = json.choices?.[0]?.delta;
+              const delta = json.choices?.[0]?.delta as any;
+              // 推理模型的思考阶段没有正文：保持活跃并通知界面「正在思考」，避免被空闲超时误杀。
+              if (delta?.reasoning_content) onActivity?.();
               if (delta?.content) { content += delta.content; onDelta(delta.content); }
               for (const tc of delta?.tool_calls ?? []) {
                 const i = tc.index ?? calls.length;
@@ -277,12 +281,19 @@ export function createOpenAiQca(config: LocalLlmConfig, db?: Db): QcaAdapter {
           try {
             const message = await pending;
             if (opts.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+            let lastPing = 0;
             const full = await complete(
               sessionId,
               message,
               opts.signal,
               (text) => controller.enqueue(encodeSSE('event_delta', { type: 'event_delta', event_id: 'local', delta: { type: 'content_delta', content: { type: 'text', text } } })),
               (name) => controller.enqueue(encodeSSE('agent.tool_use', { type: 'agent.tool_use', name })),
+              () => {
+                const now = Date.now();
+                if (now - lastPing < 1000) return;
+                lastPing = now;
+                controller.enqueue(encodeSSE('agent.thinking', { type: 'agent.thinking' }));
+              },
             );
             controller.enqueue(encodeSSE('agent.message', { type: 'agent.message', id: 'local', content: [{ type: 'text', text: full }] }));
             controller.enqueue(encodeSSE('session.status', { type: 'session.status', status: 'idle' }));

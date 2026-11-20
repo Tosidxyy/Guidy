@@ -72,6 +72,7 @@ export function PlanCardPanel() {
   const proposal = useChatStore((s) => s.artifact);
   const serverPreview = useChatStore((s) => s.artifactPreview);
   const patch = useChatStore((s) => s.patch);
+  const patchPreview = useChatStore((s) => s.patchPreview);
   const conversationId = useChatStore((s) => s.conversationId);
   const autoSave = useAutoSaveDraft();
   const { apply: applyPatchOps, isPending: patchPending } = useApplyPatch();
@@ -270,6 +271,13 @@ export function PlanCardPanel() {
                 </li>
               ))}
             </ul>
+            {Array.isArray(patchPreview?.notes) && patchPreview.notes.length > 0 && (
+              <ul className="mt-1.5 space-y-1">
+                {(patchPreview.notes as string[]).slice(0, 4).map((n, i) => (
+                  <li key={i} className="rounded border border-site-warning/50 bg-site-warning/5 px-2 py-1 text-[11px] leading-snug text-site-ink">{n}</li>
+                ))}
+              </ul>
+            )}
             <div className="mt-2 flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => useChatStore.setState({ patch: null })}>放弃</Button>
               <Button size="sm" disabled={patchPending || saving} onClick={() => { void applyForeign(); }}>
@@ -292,6 +300,13 @@ export function PlanCardPanel() {
                 )}
                 {preview._local && <span className="text-[10px] text-site-ink-soft">本地预估</span>}
               </div>
+              {Array.isArray((preview as any)?.notes) && (preview as any).notes.length > 0 && (
+                <ul className="space-y-1">
+                  {((preview as any).notes as string[]).slice(0, 4).map((n, i) => (
+                    <li key={i} className="rounded border border-site-warning/50 bg-site-warning/5 px-2 py-1 text-[11px] leading-snug text-site-ink">{n}</li>
+                  ))}
+                </ul>
+              )}
               {unplacedList.length > 0 && (
                 <ul className="space-y-1">
                   {unplacedList.slice(0, 5).map((u) => (

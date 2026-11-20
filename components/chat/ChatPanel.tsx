@@ -61,6 +61,7 @@ export function ChatPanel() {
     });
   }, [streaming]);
   const searching = useChatStore((s) => s.searching);
+  const thinking = useChatStore((s) => s.thinking);
   const switching = useChatStore((s) => s.switching);
   const connection = useChatStore((s) => s.connection);
   const artifact = useChatStore((s) => s.artifact);
@@ -155,18 +156,8 @@ export function ChatPanel() {
             key={`${m.seq}-${m.role}-${m.kind}`}
             message={m}
             streaming={streaming && m.seq === lastAssistant?.seq}
-            clarificationPending={clarifications.length > 0 && m.kind === 'constraint_set' && m.seq === lastConstraintSeq}
           />
         ))}
-        {clarifications.length > 0 && (
-          <div className="rounded-lg border border-site-line bg-site-surface p-3">
-            <p className="text-xs font-semibold text-site-ink">还需要确认：</p>
-            <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-site-ink-soft">
-              {clarifications.map((q, i) => <li key={i}>{q}</li>)}
-            </ul>
-            <p className="mt-1.5 text-[11px] text-site-ink-soft">问题会收进上方的方案卡，回答后在那里确认生成。</p>
-          </div>
-        )}
         {question && (
           <QuestionCard
             artifact={question}
@@ -195,6 +186,7 @@ export function ChatPanel() {
         {streaming && lastMessage?.role !== 'user' && splitArtifactText(lastMessage?.content ?? '').artifactJson !== null && (
           <p className="animate-pulse px-1 text-[11px] text-site-ink-soft">正在生成方案…</p>
         )}
+        {thinking && streaming && <p className="animate-pulse px-1 text-[11px] text-site-ink-soft">正在思考…</p>}
         {searching && streaming && <p className="px-1 text-[11px] text-site-ink-soft">正在联网检索…</p>}
         {switching && streaming && <p className="animate-pulse px-1 text-[11px] text-site-ink-soft">主模型暂不可用，正在切换备用模型重试…</p>}
       </div>
