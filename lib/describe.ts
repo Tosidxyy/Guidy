@@ -71,29 +71,53 @@ function localStamp(iso: string, tz?: string): string {
   return `${day} ${minToHHmm(localMinutes(iso, tz))}`;
 }
 
-export function patchOpText(op: ApplyOp, taskTitle?: (key: string) => string, timezone?: string): string {
+const FIELD_LABELS: Record<string, string> = {
+  title: '标题', duration_min: '时长', frequency: '频次', priority: '优先级', splittable: '可拆分',
+  preferred_period: '时段偏好', notes: '备注', sort_order: '排序', deadline: '截止日',
+  earliest_start: '最早开始', depends_on: '依赖', category: '分类',
+};
+const VALUE_LABELS: Record<string, string> = {
+  morning: '早晨', afternoon: '下午', evening: '傍晚', night: '夜间',
+  high: '高', mid: '中', low: '低', daily: '每天', once: '一次', per_week: '每周',
+};
+function fieldLabel(key: string): string { return FIELD_LABELS[key] ?? key; }
+function valueLabel(v: unknown): string {
+  if (v === null) return '取消';
+  if (typeof v === 'boolean') return v ? '是' : '否';
+  if (typeof v === 'string') return VALUE_LABELS[v] ?? v;
+  if (typeof v === 'object' && v && 'type' in (v as any)) {
+    const f = v as any;
+    if (f.type === 'per_week') return `每周 ${f.count} 次`;
+    if (f.type === 'daily') return '每天';
+    if (f.type === 'once') return '一次';
+  }
+  return JSON.stringify(v);
+}
+
+export function patchOpText(op: ApplyOp, taskTitle?: (key: string) => string, timezone?: string, blockLabel?: (id: string) => string): string {
   const title = (key: string) => taskTitle?.(key) ?? key;
+  const block = (id: string) => blockLabel?.(id) ?? '这个日程';
   switch (op.op) {
     case 'add_task_def':
       return `新增任务「${op.value.title}」（${taskSummary(op.value)}）`;
     case 'update_task_def':
-      return `调整任务「${title(op.key)}」：${Object.entries(op.patch).map(([k, v]) => `${k}→${typeof v === 'object' ? JSON.stringify(v) : v}`).join('，')}`;
+      return `调整任务「${title(op.key)}」：${Object.entries(op.patch).map(([k, v]) => `${fieldLabel(k)}改为${valueLabel(v)}`).join('，')}`;
     case 'remove_task_def':
       return `删除任务「${title(op.key)}」`;
     case 'add_constraint':
       return `新增约束：${constraintText(op.value)}`;
     case 'update_constraint':
-      return `调整约束 ${op.id}`;
+      return '调整一条约束';
     case 'remove_constraint':
-      return `删除约束 ${op.id}`;
+      return '删除一条约束';
     case 'add_block':
       return `新增日程「${op.value.title}」${localStamp(op.value.start_utc, timezone)}`;
     case 'update_block':
-      return `调整日程 ${op.id}`;
+      return `调整「${block(op.id)}」`;
     case 'move_block':
-      return `移动日程到 ${localStamp(op.start_utc, timezone)}`;
+      return `「${block(op.id)}」挪到 ${localStamp(op.start_utc, timezone)}`;
     case 'remove_block':
-      return `删除日程 ${op.id}`;
+      return `删除「${block(op.id)}」`;
     case 'reschedule':
       return `重新排程（${op.scope === 'all' ? '全部' : '受影响部分'}）`;
     case 'clear_plan':

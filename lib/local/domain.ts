@@ -246,7 +246,8 @@ export async function localApplyPatch(body: any): Promise<any> {
     if (!check.ok) throw new ApiError('placement_invalid', 422, check.hard?.reason ?? '时间块位置不合法');
   }
   const explicitReschedule = ops.some((op) => op.op === 'reschedule');
-  const explicitLayout = ops.some((op) => op.op === 'add_block' || op.op === 'remove_block');
+  // 含显式块操作（增/删/挪/改）时以布局为准：同批的 reschedule 一律忽略，否则重排会把刚删/刚挪的块生成回来。
+  const explicitLayout = ops.some((op) => ['add_block', 'remove_block', 'move_block', 'update_block'].includes(op.op));
   const shouldReschedule = patched.requiresReschedule && (state.blocks.length > 0 || explicitReschedule) && !explicitLayout;
   let blocks = patched.state.blocks;
   let compromises: any[] = [];

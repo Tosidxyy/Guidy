@@ -65,6 +65,9 @@ export function buildSystemPrompt(): string {
     '- 作息与时段：上下文里没有「可安排时段」或公共日历块时，说明用户还没提供作息。此时不要假设用户白天要上班/上课，也不要凭推测设置 preferred_period 或把任务排到晚上；需要时段偏好时用 question_card 问「工作日一般几点后方便」「周末全天可以吗」，或者干脆不写 preferred_period，让任务在 07:00–23:00 里均匀铺开。',
     '- 用户已提供忙时/固定日程（上下文里的公共日历块或计划约束）时，按这些时段避让；不要重复问用户什么时候有空。',
     '- 用户给出作息或效率信息（「6 点起床」「晚上 10 点后别排」「早上脑子最清醒」「饭后继续」）时，视为明确要求：新增/修改 active_window（可安排时段）或 preferred_period（任务时段偏好），让排程真的遵守；不要只在 patch 里挪几个块。',
+    '- 约束优先级：用户本轮明确说出的时段/时长/作息 > 用户既有计划里的块 > 系统默认。共享日历的可用时段只是参考（其他计划可能与新计划冲突，冲突由用户在日历上合并），不得因为参考占用就压缩用户明确要求的时段或时长。',
+    '- 用户已把某类任务（如学习/写作）明确放在某个时段时，其他未指定时段的任务不要挤进同一段：优先放到其他可用时段（例如下班后、周末），除非用户说「都放早上」。',
+    '- 不得擅自缩水：用户明确给出「论文每天 90 分钟」「每天健身」这类要求时，保持其时长与频次；容量确实不足时，不要偷偷改成 35 分钟，而是给出缺口/取舍（方案卡会显示），或用 question_card 让用户在「缩时长 / 减频次 / 放宽时段」中选择。',
     '- 用户要求修改已有计划：「当前计划」已有时间块时输出 patch；还没有时间块（草稿）时也用 patch 补齐任务与约束（不要 reschedule），由用户点「生成排程」；只有当前对话还没有计划时才输出 constraint_set。',
     '- 如果方案还只是未确认的 constraint_set（上下文显示「当前还没有计划」），用户的修改要求仍输出更新后的完整 constraint_set，不要输出 patch；已解决的 clarifications 要清空。',
     '- 结构化产物一旦输出，字段名、类型、枚举必须与下方契约逐字一致，不要自创字段、不要改用近义词或把对象写成字符串。',
@@ -115,6 +118,7 @@ export function buildSystemPrompt(): string {
     'ManualBlock = {title:≤60 字, category, start_utc:"YYYY-MM-DDTHH:mm:ss.sssZ"(UTC), end_utc:同上, priority?:"high"|"mid"|"low", pinned?:boolean, notes?≤500}。时间必须写成 UTC ISO，且严格按上下文给出的【计划时区】换算：Asia/Shanghai=UTC+8（14:00 本地=06:00Z）；America/Denver 冬季=UTC-7（14:00 本地=21:00Z，夏令时 UTC-6）。绝不默认套用 UTC+8；换算前先确认 timezone 字段。',
     '取消任务的时段偏好：update_task_def 的 patch 里写 "preferred_period": null；用户说「不要固定在晚上/重新按空闲排」时这样清除并 reschedule。',
     '- 用户改作息/时段（例如「我说了早上写」「我可以 6 点起床」）：优先 update_constraint（active_window）或 update_task_def 的 preferred_period，再 reschedule；不要用 move_block 逐块硬挪，那样换个任务或加任务就会被打回。正文描述的时段必须等于约束实际会排出的时段。',
+    '- 只做局部挪动（remove_block / move_block / update_block / add_block）时，不要在同一批 ops 里再输出 reschedule：显式块操作优先，重排会被忽略或把刚删的块生成回来。要整体重排就只给 reschedule，并在正文说明。',
     '',
     '【patch 输出格式，必须逐字遵守】',
     '{"type":"patch","summary":"≤200 字","ops":[{"op":"...", ...}]}',
@@ -214,8 +218,8 @@ export function buildUserMessage(input: {
   const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date(`${today}T12:00:00Z`).getUTCDay()];
   lines.push(`今天是 ${today}（${weekday}，${timezone}）。`);
   if (input.availability) {
-    lines.push(`【可安排时段（按共享日历计算，已扣除忙时与既有安排）】${input.availability}`);
-    lines.push('追问的选项必须落在这些可安排时段内；生成计划时如无其他依据，active_window 要与之一致，不要排进忙时或既有块。');
+    lines.push(`【参考可用时段（按共享日历估算；其他计划的块只是参考，可能与新计划冲突）】${input.availability}`);
+    lines.push('用户本轮明确说出的作息/时段/时长优先于这里的估算；不要因为这里看起来没空就压缩用户的要求。确实排不下时按【约束优先级】处理：保留用户明确的要求，给出缺口/取舍或追问；不同计划之间的重叠允许存在，会在日历上提示冲突。');
   } else {
     lines.push('【作息未知】用户还没有提供忙时、固定日程或空闲偏好。不要假设用户白天在上班/上课，也不要凭推测设置 preferred_period、把任务默认排到晚上；需要时段偏好时在追问里问（例如工作日几点后方便、周末是否全天可以）。');
   }

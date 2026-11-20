@@ -53,13 +53,13 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
               <div className="flex items-center gap-2">
               <Input
                 value={t.title}
-                aria-label={`任务标题 ${t.key}`}
+                aria-label={`任务标题 ${t.title}`}
                 onChange={(e) => set(updateTaskTitle(draft, t.key, e.target.value.slice(0, 60)))}
                 className="h-7 flex-1 text-xs"
               />
               <Input
                 type="number" min={15} max={480} value={t.duration_min}
-                aria-label={`任务时长 ${t.key}`}
+                aria-label={`任务时长 ${t.title}`}
                 onChange={(e) => set(updateTaskDuration(draft, t.key, Math.max(15, Math.min(480, Number(e.target.value) || 15))))}
                 className="tabular h-7 w-20 text-xs"
               />
@@ -70,7 +70,7 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
               </div>
               <Input
                 value={t.notes ?? ''}
-                aria-label={`任务备注 ${t.key}`}
+                aria-label={`任务备注 ${t.title}`}
                 placeholder="备注：动作、组数或资料要点"
                 onChange={(e) => set(updateTaskNotes(draft, t.key, e.target.value))}
                 className="mt-1 h-7 text-xs"
@@ -113,7 +113,7 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
           {rules.map(({ payload: c, i }) => (
             <li key={i} className="rounded-lg border border-site-line bg-site-bg px-2.5 py-2">
               <div className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 text-xs leading-snug text-site-ink">{constraintText(c)}</span>
+                <span className="min-w-0 flex-1 text-xs leading-snug text-site-ink">{constraintText(c, (key) => draft.task_defs.find((t) => t.key === key)?.title ?? key)}</span>
                 {c.type === 'mutex' && (
                   <button
                     type="button"

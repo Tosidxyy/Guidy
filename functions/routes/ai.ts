@@ -151,6 +151,24 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
     learned: chat.learned,
   });
 
+  /** 正文对某个任务的时段承诺（任务名与「早上/下午/下班后」在同一小句内）→ 产物是否写了对应偏好。 */
+  const periodOf = (word: string): string => (word === '早上' || word === '上午' ? 'morning' : word === '下午' ? 'afternoon' : 'evening');
+  const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const missingClaimedPrefs = (prose: string, tasks: any[]): { title: string; period: string }[] => {
+    const out: { title: string; period: string }[] = [];
+    for (const t of tasks) {
+      const name = escRe(String(t.title ?? ''));
+      if (!name) continue;
+      const after = new RegExp(`${name}[^。；\n]{0,24}?(早上|上午|下午|傍晚|晚上|下班后)`).exec(prose);
+      const before = new RegExp(`(早上|上午|下午|傍晚|晚上|下班后)[^。；\n]{0,24}?${name}`).exec(prose);
+      const m = after ?? before;
+      if (!m) continue;
+      const period = periodOf(m[1]);
+      if (t.preferred_period !== period) out.push({ title: t.title, period });
+    }
+    return out;
+  };
+
   /** 偏好时段是否兑现：给出「任务实际落在何时、与偏好不符」的人话说明。 */
   const preferenceNotes = (plan: any, blocks: any[]): string[] => {
     const notes: string[] = [];
@@ -271,7 +289,15 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
           const parsed = parseModelText(finalText, day);
           if (parsed) {
             let preview: unknown;
+            const proseNow = splitArtifactText(finalText).prose;
+            let missingPrefs: { title: string; period: string }[] = [];
             if (parsed.kind === 'constraint_set') {
+              missingPrefs = missingClaimedPrefs(proseNow, parsed.value.task_defs);
+              if (missingPrefs.length && attempt < 1) {
+                repairNote = `
+正文承诺了时段但产物没写偏好：${missingPrefs.map((m) => `「${m.title}」应在${m.period === 'morning' ? '早上' : m.period === 'afternoon' ? '下午' : '下班后/晚上'}`).join('；')}。请给对应任务补 preferred_period，或改正文不要承诺具体时段。`;
+                continue;
+              }
               const out = previewSolve(parsed.value);
               if (out.violations.length && attempt < 2) {
                 repairNote = `
@@ -286,11 +312,18 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
               preview = base;
             } else if (parsed.kind === 'patch' && planState?.plan?.id) {
               const applied = applyPatch(planState as any, parsed.value.ops as any);
+              missingPrefs = missingClaimedPrefs(proseNow, applied.state.task_defs);
+              if (missingPrefs.length && attempt < 1) {
+                repairNote = `
+正文承诺了时段但产物没写偏好：${missingPrefs.map((m) => `「${m.title}」应在${m.period === 'morning' ? '早上' : m.period === 'afternoon' ? '下午' : '下班后/晚上'}`).join('；')}。请补 preferred_period 或改正文。`;
+                continue;
+              }
               if (applied.missing.length && attempt < 2) {
                 repairNote = `
 调整目标已不存在：${applied.missing.slice(0, 5).join('、')}。请基于当前计划重新输出 patch，不要臆造 id/key。`;
                 continue;
               }
+              const explicitLayout = parsed.value.ops.some((op: any) => ['add_block', 'remove_block', 'move_block', 'update_block'].includes(op.op));
               const pinned = applied.state.blocks.filter((b: any) => b.pinned || b.origin === 'manual' || ['completed', 'in_progress', 'partial'].includes(String(b.status ?? '')));
               const out = solve({
                 engine_version: ENGINE_VERSION,
@@ -301,7 +334,7 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
                 constraints: applied.state.constraints,
                 pinned_blocks: [...pinned, ...sharedBlocks.map((b) => ({ ...b, pinned: true }))],
               });
-              if (out.violations.length && attempt < 2) {
+              if (!explicitLayout && out.violations.length && attempt < 2) {
                 repairNote = `
 应用这条调整会排不下：${out.violations.map((v: any) => v.reason).join('；')}。请改用更小的改动（减少次数/时长或放宽时段），保留用户已钉住的块。`;
                 continue;
@@ -310,6 +343,10 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
                 feasibility: (out as any).feasibility, unplaced: (out as any).unplaced, violations: out.violations,
                 compromises: out.compromises, notes: preferenceNotes(applied.state, out.blocks),
               };
+            }
+            if (missingPrefs.length) {
+              const base = (preview as any) ?? (preview = {});
+              base.notes = [...(base.notes ?? []), ...missingPrefs.map((m) => `正文说「${m.title}」放在${m.period === 'morning' ? '早上' : m.period === 'afternoon' ? '下午' : '下班后'}，但产物未设置时段偏好，实际排程可能不符；可在方案卡里调整后重新生成`)];
             }
             emit({ event: 'artifact', data: { seq: nextSeq(), kind: parsed.kind, payload: parsed.value, ...(preview ? { preview } : {}) } });
             terminalState = 'completed';

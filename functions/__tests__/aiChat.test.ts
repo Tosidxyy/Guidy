@@ -68,6 +68,24 @@ describe('aiChat 无状态代理', () => {
     expect(frames.filter((f) => f.event !== 'accepted').every((f) => f.data.seq > 10)).toBe(true);
   });
 
+  it('正文承诺时段但产物没写偏好 → 让模型修正一次', async () => {
+    const NL = String.fromCharCode(10);
+    const build = (withPref: boolean) => {
+      const set: any = { type: 'constraint_set', plan_title: '论文与健身', horizon_days: 7, constraints: [{ type: 'active_window', start: '06:00', end: '23:00' }], clarifications_needed: [],
+        task_defs: [{ key: 'fit', title: '健身', category: 'fitness', duration_min: 45, frequency: { type: 'daily' }, ...(withPref ? { preferred_period: 'evening' } : {}) }] };
+      return ['```json', JSON.stringify(set), '```'].join(NL);
+    };
+    let opens = 0;
+    const d = deps({ openStream: async () => { opens += 1; return { body: upstreamStream([
+      { type: 'agent.message', id: 'e1', content: [{ type: 'text', text: '健身默认安排在下班后。' + NL + build(opens > 1) }] },
+      { type: 'session.status', status: 'idle' },
+    ]), close() {} }; } });
+    const frames = await collect(await application(d)(ctx({ ...body, text: '每天早上写论文，健身默认安排在下班后，直接给方案' })));
+    expect(opens).toBe(2);
+    const art = frames.find((f) => f.event === 'artifact');
+    expect(art?.data.payload?.task_defs?.[0]?.preferred_period).toBe('evening');
+  });
+
   it('patch 预排程：偏好时段未兑现时 artifact.preview.notes 给出人话说明', async () => {
     const NL = String.fromCharCode(10);
     const patchText = ['```json', JSON.stringify({ type: 'patch', summary: '重排', ops: [{ op: 'reschedule', scope: 'all', keep_pinned: true }] }), '```'].join(NL);

@@ -122,9 +122,9 @@ describe('buildUserMessage — 跨计划上下文', () => {
   });
   it('注入可安排时段并约束追问选项', () => {
     const text = buildUserMessage({ message: '帮我排训练', plan, history: [], today: '2026-11-18', availability: '周一至周五：无可安排时段；周六、周日：09:00–22:00' });
-    expect(text).toContain('【可安排时段（按共享日历计算，已扣除忙时与既有安排）】');
+    expect(text).toContain('【参考可用时段（按共享日历估算；其他计划的块只是参考，可能与新计划冲突）】');
     expect(text).toContain('周六、周日：09:00–22:00');
-    expect(text).toContain('追问的选项必须落在这些可安排时段内');
+    expect(text).toContain('用户本轮明确说出的作息/时段/时长优先');
   });
   it('没有时间块时用 patch 补齐任务与约束，由方案卡生成排程', () => {
     const emptyPlan: PlanState = { ...plan, plan: { ...plan.plan, status: 'draft' }, blocks: [] };
