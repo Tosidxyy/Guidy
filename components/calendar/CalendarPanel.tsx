@@ -951,7 +951,7 @@ export function CalendarPanel() {
           <AlertDialogHeader>
             <AlertDialogTitle className="font-display">切换到「{pendingSwitch?.title}」？</AlertDialogTitle>
             <AlertDialogDescription>
-              当前计划有未保存的更改，切换会丢弃这些更改。已保存到云端的计划仍保留在计划列表中。
+              当前计划有未保存的更改，切换会丢弃这些更改。已保存的计划仍保留在计划列表中。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

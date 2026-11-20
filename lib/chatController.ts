@@ -1,5 +1,12 @@
-import { ApiError, EVENTS_URL, SEND_URL } from '@/lib/api';
+import { ApiError, SEND_URL } from '@/lib/api';
 import { useChatStore } from '@/store/useChatStore';
+import { usePlanStore } from '@/store/usePlanStore';
+import { useSharedCalendar } from '@/store/useSharedCalendar';
+import { queryClient } from '@/lib/queryClient';
+import {
+  localAppendMessage, localEnsureConversation, localGetProfile, localPlan, localPlans,
+  localRemoveMessages, localTouchConversation,
+} from '@/lib/local/domain';
 
 export interface ChatStream {
   cancel(): void;
@@ -46,7 +53,7 @@ export function createChatController(deps: {
   const pump = () => {
     if (store.getState().streaming) return;
     const next = store.getState().shiftQueue();
-    if (next) start(next.text);
+    if (next) void start(next.text);
   };
   // dispatch_busy 重试计数（按文本）：服务端回合锁未释放时静默退避，超过窗口再显式报错。
   const busyTries = new Map<string, number>();
@@ -58,7 +65,7 @@ export function createChatController(deps: {
       const tried = busyTries.get(text) ?? 0;
       if (tried >= MAX_BUSY_RETRIES) {
         busyTries.delete(text);
-        store.getState().applyFrame({ event: 'error', data: { seq: 0, code: 'dispatch_busy', message: '上一条回复仍在生成，请稍后重试', diagnostic_id: undefined } });
+        store.getState().applyFrame({ event: 'error', data: { seq: 0, code: 'dispatch_busy', message: '上一条回复仍在生成，请稍后重试' } });
         return;
       }
       busyTries.set(text, tried + 1);
@@ -77,27 +84,83 @@ export function createChatController(deps: {
     store.getState().applyFrame({ event: 'error', data: { seq: 0, code: 'stream_incomplete', message: '连接中断，请重试', diagnostic_id: crypto.randomUUID() } });
   };
 
-  function start(text: string) {
+  /** 本机对话落库：每次回合结束整份重写，恢复/刷新后与界面一致。 */
+  const syncConversation = async () => {
+    const st = store.getState();
+    const id = st.conversationId;
+    if (!id) return;
+    const rows = st.messages.filter((m) => !(m.role === 'user' && m.seq === -1) && !(m.role === 'assistant' && m.kind === 'text' && !m.content));
+    await localRemoveMessages(id);
+    let n = 0;
+    for (const m of rows) {
+      n += 1;
+      await localAppendMessage({ conversation_id: id, seq: n, role: m.role, kind: m.kind, content: m.content, ...(m.payload !== undefined ? { payload: m.payload } : {}) });
+    }
+    await localTouchConversation(id);
+    void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+  };
+
+  /** AI 请求上下文：计划、其他计划、公共日历块、画像、最近对话，全部来自本机。 */
+  const buildContext = async (planId: string | null) => {
+    let plan: any = null;
+    if (planId) { try { plan = await localPlan(planId); } catch { plan = null; } }
+    const plans: any[] = [];
+    try {
+      for (const p of (await localPlans()).items.slice(0, 6)) {
+        try { plans.push(await localPlan(p.id)); } catch { /* 跳过损坏计划 */ }
+      }
+    } catch { /* 本地库不可用时照常发请求 */ }
+    const profile = await localGetProfile().catch(() => null);
+    return {
+      plan,
+      plans,
+      sharedBlocks: useSharedCalendar.getState().busyBlocks,
+      habits: profile?.habits || undefined,
+      learned: profile?.learned?.summary || undefined,
+    };
+  };
+
+  async function start(text: string) {
     const st = store.getState();
     st.startSend(text);
+    const planId = deps.getPlanId?.() ?? null;
+    if (!store.getState().conversationId) {
+      const conv = await localEnsureConversation(null, text, planId);
+      store.setState({ conversationId: conv.id });
+    }
+    const conversationId = store.getState().conversationId;
+    const history = store.getState().messages
+      .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.kind === 'text' && m.content)
+      .slice(0, -1)
+      .slice(-12)
+      .map((m) => ({ role: m.role, content: m.content }));
+    const context = await buildContext(planId);
     const body = {
-      conversation_id: st.conversationId ?? undefined,
+      conversation_id: conversationId ?? undefined,
       text,
       request_id: newId(),
-      plan_id: deps.getPlanId?.() ?? undefined,
+      plan_id: planId ?? undefined,
       today: new Date().toLocaleDateString('sv-SE'),
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      ...context,
+      history,
     };
     stream.read((signal) => openChecked(fetchFn, SEND_URL, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body), signal, credentials: 'same-origin',
-    }, store)).then(finishIfSilent).catch((e) => onSendError(e, text));
+    }, store)).then(async () => {
+      finishIfSilent();
+      await syncConversation().catch(() => null);
+    }).catch(async (e) => {
+      onSendError(e, text);
+      await syncConversation().catch(() => null);
+    });
   }
 
   const controller: Record<string, any> = {
     send(text: string) {
       if (store.getState().streaming) { store.getState().enqueueQueue(text); return; }
-      start(text);
+      void start(text);
     },
     /** 插队：取消当前生成，然后把这条尽快发送（仍在跑则回队由 pump 续发）。 */
     sendNow(id: string) {
@@ -107,18 +170,12 @@ export function createChatController(deps: {
       controller.interrupt();
       setTimeout(() => {
         if (store.getState().streaming) store.getState().enqueueQueue(item.text);
-        else start(item.text);
+        else void start(item.text);
       }, 300);
     },
     pump,
     resume() {
-      const st = store.getState();
-      const id = st.conversationId;
-      if (!id) return;
-      store.setState({ streaming: true, connection: 'connecting', error: null });
-      stream.read((signal) => openChecked(fetchFn, EVENTS_URL(id, st.cursor), {
-        signal, credentials: 'same-origin',
-      }, store)).then(finishIfSilent).catch(onStreamError);
+      // 本机模式：历史已从 IndexedDB 恢复，服务端没有可尾随的流。
     },
     interrupt() {
       const st = store.getState();
@@ -126,12 +183,7 @@ export function createChatController(deps: {
       // interrupt 是有意终止：显式结束流式态（终态 status 不再隐式结束）。
       st.applyFrame({ event: 'status', data: { seq: 0, state: 'interrupted' } });
       store.setState({ streaming: false, connection: 'idle', searching: false, switching: false });
-      if (st.conversationId) {
-        fetchFn(`${API_BASE}/chat/interrupt`, {
-          method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ conversation_id: st.conversationId }), credentials: 'same-origin',
-        }).catch(() => {});
-      }
+      if (st.conversationId) void syncConversation().catch(() => null);
     },
     newConversation() {
       stream.cancel();

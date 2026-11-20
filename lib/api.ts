@@ -1,48 +1,37 @@
-export class ApiError extends Error {
-  code: string; status: number; diagnosticId?: string; details?: unknown;
-  constructor(code: string, status: number, message: string, diagnosticId?: string, details?: unknown) {
-    super(message); this.code = code; this.status = status; this.diagnosticId = diagnosticId; this.details = details;
-  }
-}
-import type { Profile } from '@/shared/profile';
+// 本机模式：计划/日历/会话/画像全部读写 IndexedDB；网络只用于 AI 代理与一次性迁移。
+import { ApiError } from '@/lib/apiError';
+import {
+  localApplyPatch, localCalendar, localCommit, localConversations, localDeleteAll, localDeletePlan,
+  localGetProfile, localHistory, localLearnProfile, localMarkProgress, localMe, localPlan, localPlans,
+  localSaveDraft, localSaveProfile, localSharedOps,
+} from '@/lib/local/domain';
+
+export { ApiError };
 
 const BASE = '/functions/v1/app/api';
-export async function requestJson<T>(path: string, opts: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
-  const res = await fetch(BASE + path, {
-    method: opts.method ?? 'GET',
-    headers: opts.body ? { 'content-type': 'application/json' } : {},
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-    signal: opts.signal, credentials: 'same-origin',
-  });
-  const text = await res.text();
-  const json = text ? JSON.parse(text) : null;
-  if (!res.ok) {
-    const e = json?.error ?? {};
-    throw new ApiError(e.code ?? 'service_unavailable', res.status, e.message ?? '服务暂时不可用', e.diagnostic_id, e.details);
-  }
-  return json as T;
-}
-export const api = {
-  me: () => requestJson<{ visitor_id: string; quotas: { chat_remaining: number; publish_remaining: number }; has_recovery_code: boolean }>('/me'),
-  conversations: () => requestJson<{ items: any[] }>('/conversations'),
-  history: (id: string) => requestJson<{ conversation: any; messages: any[] }>(`/chat/history?conversation_id=${encodeURIComponent(id)}`),
-  plans: () => requestJson<{ items: any[] }>('/plans'),
-  calendar: () => requestJson<{ blocks: any[] }>('/calendar'),
-  sharedBlocks: (body: unknown) => requestJson<{ blocks: any[]; inverse_ops: any[] }>('/calendar/blocks', { method: 'POST', body }),
-  plan: (id: string) => requestJson<any>(`/plans/${encodeURIComponent(id)}`),
-  commit: (body: unknown) => requestJson<any>('/plans/commit', { method: 'POST', body }),
-  applyPatch: (body: unknown) => requestJson<any>('/patches/apply', { method: 'POST', body }),
-  deletePlan: (id: string) => requestJson<{ ok: boolean }>(`/plans/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  interrupt: (id: string) => requestJson<{ ok: boolean }>('/chat/interrupt', { method: 'POST', body: { conversation_id: id } }),
-  recoveryGenerate: () => requestJson<{ code: string }>('/recovery/generate', { method: 'POST' }),
-  recoveryClaim: (code: string) => requestJson<{ ok: boolean; plans_count: number; conversations_count: number }>('/recovery/claim', { method: 'POST', body: { code, strategy: 'overwrite' } }),
-  saveDraft: (body: unknown) => requestJson<any>('/plans/save', { method: 'POST', body }),
-  profile: () => requestJson<Profile>('/profile'),
-  saveProfile: (habits: string) => requestJson<Profile>('/profile', { method: 'PUT', body: { habits } }),
-  learnProfile: () => requestJson<Profile>('/profile/learn', { method: 'POST' }),
-  deleteAll: () => requestJson<{ ok: boolean; deleted: Record<string, number> }>('/data/delete-all', { method: 'POST', body: { confirm_token: 'DELETE' } }),
-  markProgress: (blockId: string, status: string, actualDurationMin?: number | null) =>
-    requestJson<{ block: any }>(`/blocks/${encodeURIComponent(blockId)}/progress`, { method: 'POST', body: { status, ...(actualDurationMin !== undefined ? { actual_duration_min: actualDurationMin } : {}) } }),
-};
-export const SEND_URL = BASE + '/chat/send';
+/** 无状态 AI 代理：密钥只在 Function 内使用，服务端不落库。 */
+export const SEND_URL = `${BASE}/ai/chat`;
 export const EVENTS_URL = (id: string, cursor: string) => `${BASE}/chat/events?conversation_id=${encodeURIComponent(id)}&cursor=${encodeURIComponent(cursor)}`;
+export const LEGACY_BASE = BASE;
+
+export const api = {
+  me: () => localMe(),
+  conversations: () => localConversations(),
+  history: (id: string) => localHistory(id),
+  plans: () => localPlans(),
+  calendar: () => localCalendar(),
+  sharedBlocks: (body: unknown) => localSharedOps(body),
+  plan: (id: string) => localPlan(id),
+  commit: (body: unknown) => localCommit(body),
+  applyPatch: (body: unknown) => localApplyPatch(body),
+  deletePlan: (id: string) => localDeletePlan(id),
+  interrupt: async () => ({ ok: true }),
+  recoveryGenerate: async (): Promise<{ code: string }> => { throw new ApiError('not_supported', 409, '本地模式不支持恢复码，换设备请使用数据导出'); },
+  recoveryClaim: async (_code: string): Promise<{ ok: boolean; plans_count: number; conversations_count: number }> => { throw new ApiError('not_supported', 409, '本地模式不支持恢复码，换设备请使用数据导出'); },
+  saveDraft: (body: unknown) => localSaveDraft(body),
+  profile: () => localGetProfile(),
+  saveProfile: (habits: string) => localSaveProfile(habits),
+  learnProfile: () => localLearnProfile(),
+  deleteAll: () => localDeleteAll(),
+  markProgress: (blockId: string, status: string, actualDurationMin?: number | null) => localMarkProgress(blockId, status, actualDurationMin),
+};

@@ -109,7 +109,7 @@ export function PlansDrawer() {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle className="font-display">{confirm?.kind === 'delete' ? `删除计划「${confirm.title}」？` : '放弃未保存的更改？'}</AlertDialogTitle>
-              <AlertDialogDescription>{confirm?.kind === 'delete' ? '此操作不可恢复，关联对话会从对话列表中移除。' : currentId === null ? '当前计划还没有保存到云端，新建对话会丢掉它。继续？' : '当前计划有未保存的更改，切换将丢弃。继续？'}</AlertDialogDescription>
+              <AlertDialogDescription>{confirm?.kind === 'delete' ? '此操作不可恢复，关联对话会从对话列表中移除。' : currentId === null ? '当前计划还没有保存，新建对话会丢掉它。继续？' : '当前计划有未保存的更改，切换将丢弃。继续？'}</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>取消</AlertDialogCancel>

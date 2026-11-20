@@ -229,7 +229,7 @@ export function SettingsDrawer() {
 
           <section className="space-y-2">
             <Label>删除数据</Label>
-            <p className="text-xs leading-relaxed text-site-ink-soft">永久删除当前身份下的全部计划、对话、共享日历与恢复码，不可恢复。建议先导出 JSON 备份。</p>
+            <p className="text-xs leading-relaxed text-site-ink-soft">永久删除本机浏览器里的全部计划、对话与共享日历，不可恢复。</p>
             <Button variant="destructive" className="w-full" disabled={streaming || isDeleting} onClick={() => setConfirmDelete(true)}>
               <Trash2 className="mr-1.5 h-4 w-4" /> {isDeleting ? '删除中…' : '删除我的全部数据'}
             </Button>
@@ -240,7 +240,7 @@ export function SettingsDrawer() {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle className="font-display">删除全部数据？</AlertDialogTitle>
-              <AlertDialogDescription>将永久删除你的所有计划、对话记录、共享日历块与恢复码，此操作不可恢复。确定继续？</AlertDialogDescription>
+              <AlertDialogDescription>将永久删除本机的所有计划、对话记录与共享日历块，此操作不可恢复。确定继续？</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>取消</AlertDialogCancel>

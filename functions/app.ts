@@ -13,6 +13,7 @@ import { recoveryGenerate, recoveryClaim } from './routes/recovery.ts';
 import { deleteAll } from './routes/data.ts';
 import { getProfile, updateProfile, learnProfile } from './routes/profile.ts';
 import { markBlockProgress } from './routes/progress.ts';
+import { aiChat } from './routes/ai.ts';
 export function application(deps: Deps) {
   // 写失败必须可见：所有查询经严格包装，错误直接抛出而不是随 200 响应被吞掉。
   const strict: Deps = { ...deps, db: strictDb(deps.db) };
@@ -20,6 +21,7 @@ export function application(deps: Deps) {
     { method: 'GET', pattern: /^\/api\/health$/, handler: health },
     { method: 'GET', pattern: /^\/api\/me$/, handler: me },
     { method: 'GET', pattern: /^\/api\/conversations$/, handler: conversations },
+    { method: 'POST', pattern: /^\/api\/ai\/chat$/, handler: aiChat },
     { method: 'POST', pattern: /^\/api\/chat\/send$/, handler: chatSend },
     { method: 'GET', pattern: /^\/api\/chat\/history$/, handler: chatHistory },
     { method: 'GET', pattern: /^\/api\/chat\/events$/, handler: chatEvents },
@@ -42,8 +44,8 @@ export function application(deps: Deps) {
   ];
   const router = createRouter(routes);
   return async (ctx: RouteCtx) => {
-    // health 是纯匿名探针，不签发身份 cookie。
-    if (/\/api\/health$/.test(new URL(ctx.request.url).pathname)) return router(ctx, strict);
+    // health 是匿名探针；ai/chat 是无状态代理，都不签发身份 cookie。
+    if (/\/api\/(health|ai\/chat)$/.test(new URL(ctx.request.url).pathname)) return router(ctx, strict);
     const identity = await resolveIdentity(ctx, deps.requireUser);
     // 不改写平台 ctx（可能冻结）：经依赖注入把本次请求的身份交给 requireVisitor。
     const scoped: Deps = { ...strict, requireUser: () => identity.user };

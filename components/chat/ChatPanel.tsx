@@ -143,7 +143,6 @@ export function ChatPanel() {
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-site-ink"><MessageCircle className="h-4 w-4 text-site-ink" /> AI 对话排程</h2>
       </div>
         <div className="flex items-center gap-1">
-          {me.data && <span className="tabular text-[10px] text-site-ink-soft">今日剩余 {me.data.quotas.chat_remaining}</span>}
         </div>
       </div>
 

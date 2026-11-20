@@ -14,6 +14,7 @@ function silentEndStream(): ChatStream {
 }
 
 beforeEach(() => useChatStore.getState().reset());
+const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe('chatController.send', () => {
   it('成功：POST body 含 text/request_id，stream 被打开', async () => {
@@ -21,10 +22,10 @@ describe('chatController.send', () => {
     const fetchFn = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => ({ ok: true, status: 202 }) as Response);
     const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-1' });
     c.send('周三晚兼职');
-    await Promise.resolve();
+    await tick();
     expect(fetchFn).toHaveBeenCalledTimes(1);
     const [url, init] = fetchFn.mock.calls[0];
-    expect(String(url)).toContain('/chat/send');
+    expect(String(url)).toContain('/ai/chat');
     expect(JSON.parse((init as RequestInit).body as string)).toMatchObject({ text: '周三晚兼职', request_id: 'req-1' });
     expect(useChatStore.getState().streaming).toBe(true);
   });
@@ -33,7 +34,7 @@ describe('chatController.send', () => {
     const fetchFn = vi.fn(async () => ({ ok: false, status: 429, json: async () => ({ error: { code: 'quota_exceeded', message: '额度用完' } }) }) as unknown as Response);
     const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-2' });
     c.send('hi');
-    await new Promise((r) => setTimeout(r, 0));
+    await tick();
     expect(useChatStore.getState().error?.code).toBe('quota_exceeded');
     expect(useChatStore.getState().streaming).toBe(false);
   });
@@ -43,7 +44,7 @@ describe('chatController.send', () => {
     const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-p', getPlanId: () => 'plan-1' });
     useChatStore.getState().setConversation('c1');
     c.send('把数学改成120分钟');
-    await Promise.resolve();
+    await tick();
     const [, init] = fetchFn.mock.calls[0];
     expect(JSON.parse((init as RequestInit).body as string)).toMatchObject({ text: '把数学改成120分钟', plan_id: 'plan-1' });
   });
@@ -52,7 +53,7 @@ describe('chatController.send', () => {
     const fetchFn = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => ({ ok: true, status: 202 }) as Response);
     const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-new', getPlanId: () => 'plan-1' });
     c.send('另做一个计划');
-    await Promise.resolve();
+    await tick();
     const [, init] = fetchFn.mock.calls[0];
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.plan_id).toBe('plan-1');
@@ -62,7 +63,7 @@ describe('chatController.send', () => {
     const fetchFn = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => ({ ok: true, status: 202 }) as Response);
     const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-draft', getPlanId: () => null });
     c.send('帮我排个计划');
-    await Promise.resolve();
+    await tick();
     const [, init] = fetchFn.mock.calls[0];
     expect(JSON.parse((init as RequestInit).body as string).plan_id).toBeUndefined();
   });
@@ -71,7 +72,7 @@ describe('chatController.send', () => {
     const fetchFn = vi.fn(async () => { throw new TypeError('Failed to fetch'); });
     const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-net' });
     c.send('三个月雅思计划');
-    await new Promise((r) => setTimeout(r, 0));
+    await tick();
     expect(useChatStore.getState().error?.code).toBe('connection_failed');
     expect(useChatStore.getState().streaming).toBe(false);
   });
@@ -96,8 +97,8 @@ describe('chatController.send', () => {
     const id = useChatStore.getState().queued[0].id;
     c.sendNow(id);
     expect(useChatStore.getState().queued).toHaveLength(0);
-    vi.advanceTimersByTime(350);
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(350);
+    await vi.advanceTimersByTimeAsync(0);
     expect(fetchFn).toHaveBeenCalledTimes(1);
     const [, init] = fetchFn.mock.calls[0];
     expect(JSON.parse((init as RequestInit).body as string).text).toBe('排队消息');
@@ -111,7 +112,7 @@ describe('chatController 卡死防护', () => {
     const fetchFn = vi.fn(async () => ({ ok: true, status: 202 }) as Response);
     const c = createChatController({ store: useChatStore, stream, fetchFn, newId: () => 'req-cut' });
     c.send('三个月计划');
-    await new Promise((r) => setTimeout(r, 0));
+    await tick();
     const s = useChatStore.getState();
     expect(s.streaming).toBe(false);
     expect(s.error?.code).toBe('stream_incomplete');
