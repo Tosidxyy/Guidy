@@ -293,6 +293,8 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
           if ((expectsArtifact || promised) && attempt < 2) {
             if (promised && !expectsArtifact) {
               repairNote = '\n上一轮你口头承诺了提问或出计划，但没有输出 JSON 产物。本轮请直接输出 ```json 围栏的 question_card 或 constraint_set，前言保持 1–2 句。';
+            } else if (expectsArtifact && !parsed) {
+              repairNote = '\n上一轮输出的 JSON 无法解析（可能被截断或含注释/尾逗号）。本轮请只输出一个完整、合法的 ```json 围栏对象（constraint_set / patch / question_card），不要省略字段、不要截断，前言保持 1–2 句。';
             }
             continue;
           }

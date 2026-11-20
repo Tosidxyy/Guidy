@@ -571,6 +571,27 @@ describe('口头承诺补产物', () => {
   });
 });
 
+describe('坏 JSON 修复重试', () => {
+  it('首回合截断 JSON → 带修复引导重试 → 第二回合合法产物', async () => {
+    const set = { type: 'constraint_set', plan_title: 't', horizon_days: 7, task_defs: [{ key: 'a', title: 'A', category: 'study', duration_min: 15, frequency: { type: 'daily' }, priority: 'mid', splittable: true, sort_order: 0 }], constraints: [], clarifications_needed: [] };
+    const sends: string[] = [];
+    let opens = 0;
+    const d = deps({
+      sendEvents: async (_s: string, text: string) => { sends.push(text); return { eventIds: ['evt'] }; },
+      openStream: async () => {
+        opens += 1;
+        const text = opens === 1 ? '```json\n{"type":"constraint_set","task_defs":[{"key":"a"' : '```json\n' + JSON.stringify(set) + '\n```';
+        return { body: upstreamStream([{ type: 'agent.message', id: 'e1', content: [{ type: 'text', text }] }, { type: 'session.status_idle' }]), close() {} };
+      },
+    });
+    const out = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '排一周' })));
+    expect(out.some((f) => f.event === 'artifact' && f.data.kind === 'constraint_set')).toBe(true);
+    expect(out.some((f) => f.event === 'error')).toBe(false);
+    expect(sends.length).toBe(2);
+    expect(sends[1]).toContain('无法解析');
+  });
+});
+
 describe('落库助手文本只存可读 prose', () => {
   it('回合结束后助手 text 行不含产物原文 JSON（任何客户端/恢复路径不漏 JSON）', async () => {
     const { rows } = await import('../db');
