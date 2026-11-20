@@ -29,7 +29,7 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
   let scope = 'resilient';
   const sessions = new Map<string, SessionRef>();
   const bindings = new Map<number, QcaBinding>();
-  const turns = new Map<string, { text?: string; waiter?: (text: string) => void }>();
+  const turns = new Map<string, { text?: string; key?: string; waiter?: (v: { text: string; key?: string }) => void }>();
 
   async function bindingAt(i: number): Promise<QcaBinding> {
     let b = bindings.get(i);
@@ -86,24 +86,24 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
       sessions.set(id, { idx, realId });
       return { id };
     },
-    async sendEvents(wrapperId, text) {
-      // 只把本轮文本交给 openStream 的泵；真正发往供应商在泵里按 failover 顺序执行，避免双发。
+    async sendEvents(wrapperId, text, idempotencyKey) {
+      // 只把本轮文本+幂等键交给 openStream 的泵；真正发往供应商在泵里按 failover 顺序执行，避免双发。
       const t = turns.get(wrapperId) ?? {};
       if (t.waiter) {
         const waiter = t.waiter;
         turns.delete(wrapperId);
-        waiter(text);
+        waiter({ text, key: idempotencyKey });
       } else {
-        turns.set(wrapperId, { text });
+        turns.set(wrapperId, { text, key: idempotencyKey });
       }
       return { eventIds: ['resilient'] };
     },
     async openStream(wrapperId, opts) {
-      const pending = new Promise<string>((resolve) => {
+      const pending = new Promise<{ text: string; key?: string }>((resolve) => {
         const t = turns.get(wrapperId) ?? {};
         if (t.text !== undefined) {
           turns.delete(wrapperId);
-          resolve(t.text);
+          resolve({ text: t.text, key: t.key });
           return;
         }
         t.waiter = resolve;
@@ -111,7 +111,7 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
       });
       const body = new ReadableStream<Uint8Array>({
         async start(controller) {
-          const text = await pending;
+          const { text, key } = await pending;
           const ref = refOf(wrapperId);
           let lastErr: unknown;
           for (let i = ref.idx; i < providers.length; i++) {
@@ -122,7 +122,9 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
             try {
               if (!realId) realId = await sessionAt(i, 'resume', {});
               // 先 send 再 open：带续读游标时 QCA 只推送开流之后已存在的新回合事件，先开后发会静默挂起。
-              await providers[i].adapter.sendEvents(realId, text, `resilient-${wrapperId}-${i}`);
+              // 幂等键必须每回合唯一且符合平台字符集（会话 id 是 JSON，不能直接进键）。
+              const turnKey = `${key ?? 'resilient'}-p${i}`.replace(/[^A-Za-z0-9._:-]/g, '').slice(0, 200);
+              await providers[i].adapter.sendEvents(realId, text, turnKey);
               const upstream = await providers[i].adapter.openStream(realId, opts);
               const decoder = new TextDecoder();
               for await (const frame of readSSE(upstream.body, { signal: opts.signal })) {

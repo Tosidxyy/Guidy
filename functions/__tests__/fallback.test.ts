@@ -83,6 +83,22 @@ describe('createResilientQca', () => {
     void b;
   });
 
+  it('幂等键符合平台字符集且每回合唯一（会话 JSON id 不进键）', async () => {
+    const keys: string[] = [];
+    const primary: QcaAdapter = { ...fakeAdapter({}), async sendEvents(_id: string, _text: string, key: string) { keys.push(key); return { eventIds: ['x'] }; } };
+    const qca = createResilientQca([{ name: 'qca', adapter: primary }]);
+    const binding = await qca.ensureBinding('scope');
+    const session = await qca.createSession(binding, 't', {});
+    for (const [n, k] of [['1', 'req-aaa:0'], ['2', 'req-bbb:0']] as const) {
+      const st = await qca.openStream(session.id, {});
+      await qca.sendEvents(session.id, `问${n}`, k);
+      for await (const _ of readSSE(st.body)) { /* drain */ }
+    }
+    expect(keys.length).toBe(2);
+    for (const key of keys) expect(key).toMatch(/^[A-Za-z0-9._:-]{1,200}$/);
+    expect(keys[0]).not.toBe(keys[1]);
+  });
+
   it('落备用供应商时下发 provider.switch 提示帧（用户可见切换重试）', async () => {
     const primary = fakeAdapter({ failOpen: { code: 'quota_exceeded', status: 429 } });
     const backup = fakeAdapter({ text: '兜底回复' });
