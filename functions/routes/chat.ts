@@ -175,8 +175,13 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
   const stream = new ReadableStream<Uint8Array>({
     cancel() { live = false; },
     async start(controller) {
-      let seq = conv.last_seq;
+      // 发送序号以「库内最大 seq」为基线：失败回合可能留下孤儿行而未推进游标，
+      // 若仍从 conv.last_seq 续号，重发会撞 UNIQUE(conversation_id, seq)。
+      const maxRow = rows(await deps.db.from('messages').select('seq').eq('conversation_id', conv.id).order('seq', { ascending: false }).limit(1))[0];
+      let seq = Math.max(conv.last_seq, maxRow?.seq ?? 0);
       const nextSeq = () => ++seq;
+      // 事件游标随本回合每次开流推进；重试与失败收尾都必须从最新事件续读，而非停留在回合开始前的旧值。
+      let lastEventId: string | null = conv.last_event_id;
       // 客户端断开（如切换对话）不终止规划：停止推送但继续落库，切回由 chatEvents 尾随回放。
       const emit = (e: AppEvent) => {
         if (!live) return;
@@ -201,12 +206,11 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         let bestText = '';
         let repairNote = '';
         let pendingViolations: Violation[] = [];
-        let lastEventId: string | null = conv.last_event_id;
         let terminalState: 'completed' | 'failed' | 'interrupted' = 'failed';
         for (let attempt = 0; attempt < 3; attempt++) {
           if (attempt > 0) await deps.db.from('messages').delete().eq('conversation_id', conv.id).eq('seq', assistantSeq);
           const projector = createProjector(nextSeq, assistantSeq);
-          const upstream = await deps.qca.openStream(sessionId, { lastEventId: conv.last_event_id ?? undefined, signal: abort.signal });
+          const upstream = await deps.qca.openStream(sessionId, { lastEventId: lastEventId ?? undefined, signal: abort.signal });
           try {
             await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others, availability, sharedBlocks: sharedForPrompt, habits: profile.habits || undefined, learned: learned?.summary || undefined }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}${repairNote}` : ''), `${requestId}:${attempt}`);
             for await (const frame of readSSE(upstream.body, { signal: abort.signal })) {
@@ -292,6 +296,8 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         const err: AppEvent = { event: 'error', data: { seq: nextSeq(), code: 'upstream_error', message: 'AI 服务暂时不可用', diagnostic_id: crypto.randomUUID() } };
         emit(err);
         emit({ event: 'done', data: { seq: nextSeq() } });
+        // 失败也要推进游标：否则下一回合从旧事件重放、且序号停留在孤儿行之前，导致重发再次失败。
+        await advanceCursor(deps.db, conv, seq, lastEventId).catch(() => {});
         await markDispatch(deps.db, requestId, { status: 'failed' }).catch(() => {});
       } finally {
         interruptRegistry.delete(conv.id);

@@ -20,6 +20,10 @@ interface MutexRule {
   strength: 'soft' | 'hard';
 }
 
+// 最小可落位长度：碎片不得小于 MIN_FRAGMENT_MIN，但整块（或收尾整块）不受此限——
+// 否则时长 <25min 的可拆分任务会被碎片门槛整体误杀。
+const minPlacement = (duration: number) => Math.min(MIN_FRAGMENT_MIN, duration);
+
 function matchesSubject(rule: MutexRule, side: 'a' | 'b', block: { task_key?: string; category: string }): boolean {
   const value = side === 'a' ? rule.a : rule.b;
   return rule.kind === 'task' ? block.task_key === value : block.category === value;
@@ -224,12 +228,12 @@ export function solve(input: SolveInput): SolveOutput {
     return null;
   };
 
-  const freeSlots = (ctx: DayContext): Interval[] => {
+  const freeSlots = (ctx: DayContext, minSize = MIN_FRAGMENT_MIN): Interval[] => {
     const cuts = [...ctx.busy];
     for (const occ of ctx.occupied) {
       cuts.push({ start: occ.start - bufferMin, end: occ.end + bufferMin });
     }
-    return subtractIntervals(ctx.active, cuts).filter((s) => s.end - s.start >= MIN_FRAGMENT_MIN);
+    return subtractIntervals(ctx.active, cuts).filter((s) => s.end - s.start >= minSize);
   };
 
   const periodScore = (period: string | undefined, interval: Interval): number => {
@@ -263,11 +267,11 @@ export function solve(input: SolveInput): SolveOutput {
     for (const s of [...starts].sort((a, b) => a - b)) {
       const avail = slot.end - s;
       if (!task.splittable && avail < task.duration_min) continue;
-      if (task.splittable && avail < MIN_FRAGMENT_MIN) continue;
+      if (task.splittable && avail < minPlacement(task.duration_min)) continue;
       // 每日上限是硬约束：单个块不得超过当天剩余额度（拆分任务按剩余额度切片）。
       const capLeft = capFor(ctx.day, task.category);
       const length = task.splittable ? Math.min(avail, task.duration_min, capLeft) : Math.min(avail, task.duration_min);
-      if (task.splittable && length < MIN_FRAGMENT_MIN) continue;
+      if (task.splittable && length < MIN_FRAGMENT_MIN && length < task.duration_min) continue;
       out.push({ start: s, end: s + length });
     }
     return out;
@@ -411,8 +415,8 @@ export function solve(input: SolveInput): SolveOutput {
         if (allowed && !allowed.has(ctx.day)) continue;
         if (!dayAllowed(ctx.day)) continue;
         if (usedDays.has(ctx.day)) continue;
-        if (capFor(ctx.day, task.category) < (task.splittable ? MIN_FRAGMENT_MIN : task.duration_min)) continue;
-        for (const slot of freeSlots(ctx)) {
+        if (capFor(ctx.day, task.category) < (task.splittable ? minPlacement(task.duration_min) : task.duration_min)) continue;
+        for (const slot of freeSlots(ctx, minPlacement(task.duration_min))) {
           for (const interval of candidateIntervals(ctx, slot, task, candidate, period)) {
             if (!startAllowed(ctx.day, interval.start)) continue;
             const conflict = mutexConflict(ctx, candidate, interval);
@@ -437,17 +441,17 @@ export function solve(input: SolveInput): SolveOutput {
       recordSoft(task, block, ctx, interval);
       if (task.splittable && minutes < task.duration_min) {
         let splitMinutesLeft = task.duration_min - minutes;
-        while (splitMinutesLeft >= MIN_FRAGMENT_MIN) {
+        while (splitMinutesLeft > 0) {
           let frag: { ctx: DayContext; interval: Interval } | null = null;
           let fallback: { ctx: DayContext; interval: Interval } | null = null;
           const fragTask = { ...task, duration_min: splitMinutesLeft };
           for (const fctx of ctxByDay.values()) {
             if (allowed && !allowed.has(fctx.day)) continue;
             if (!dayAllowed(fctx.day)) continue;
-            if (capFor(fctx.day, task.category) < MIN_FRAGMENT_MIN) continue;
-            for (const slot of freeSlots(fctx)) {
+            if (capFor(fctx.day, task.category) < minPlacement(splitMinutesLeft)) continue;
+            for (const slot of freeSlots(fctx, minPlacement(splitMinutesLeft))) {
               for (const fi of candidateIntervals(fctx, slot, fragTask, candidate, period)) {
-                if (fi.end - fi.start < MIN_FRAGMENT_MIN) continue;
+                if (fi.end - fi.start < MIN_FRAGMENT_MIN && fi.end - fi.start < splitMinutesLeft) continue;
                 if (!startAllowed(fctx.day, fi.start)) continue;
                 const conflict = mutexConflict(fctx, candidate, fi);
                 if (conflict && conflict.strength === 'hard') continue;

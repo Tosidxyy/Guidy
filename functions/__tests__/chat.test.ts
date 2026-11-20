@@ -392,3 +392,111 @@ describe('超容量最终取舍', () => {
     expect(preview.proposal.suggested.task_defs[0].frequency.count).toBeLessThan(9);
   });
 });
+
+// 带 SSE id 的上游流：真实 QCA 每个事件有 event_id，readSSE 以 id: 行回传，驱动本地游标。
+function streamWithIds(frames: { id: string; ev: any }[]): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(c) {
+      for (const f of frames) c.enqueue(new TextEncoder().encode(`id: ${f.id}\nevent: ${f.ev.type ?? 'message'}\ndata: ${JSON.stringify(f.ev)}\n\n`));
+      c.close();
+    },
+  });
+}
+
+describe('重试事件游标', () => {
+  it('attempt>0 用本回合最新事件 ID 开流，而不是上一回合的旧游标（避免回放旧输出）', async () => {
+    const { ensureConversation } = await import('../qca/sessions');
+    const { rows } = await import('../db');
+    const d = deps({ sendEvents: async () => ({ eventIds: ['evt'] }) });
+    const conv = await ensureConversation(d.db, 'v', null, '英语');
+    rows(await d.db.from('conversations').update({ last_event_id: 'evt_prev_turn', qca_session_id: 'sess_fake' }).eq('id', conv.id).select('id'));
+    const opens: (string | undefined)[] = [];
+    let calls = 0;
+    const invalid = '```json\n{"type":"patch","summary":"x","ops":"nope"}\n```';
+    const valid = '```json\n{"type":"patch","summary":"清空","ops":[{"op":"clear_plan"}]}\n```';
+    const withStream = {
+      ...d,
+      qca: {
+        ...d.qca,
+        openStream: async (_s: string, opts: any) => {
+          opens.push(opts.lastEventId);
+          calls += 1;
+          const text = calls === 1 ? invalid : valid;
+          return {
+            body: streamWithIds([
+              { id: `evt_a${calls}_msg`, ev: { type: 'agent.message', id: `evt_a${calls}_msg`, content: [{ type: 'text', text }] } },
+              { id: `evt_a${calls}_idle`, ev: { type: 'session.status_idle' } },
+            ]), close() {},
+          };
+        },
+      },
+    } as Deps;
+    const out = await collect(await application(withStream)(ctx('POST', '/api/chat/send', { text: '清空计划', conversation_id: conv.id })));
+    expect(opens.length).toBe(2);
+    expect(opens[0]).toBe('evt_prev_turn');
+    // 关键：第二次开流必须带上第一次尝试的最后事件，而非停留在 evt_prev_turn。
+    expect(opens[1]).toBe('evt_a1_idle');
+    expect(out.some((f) => f.event === 'artifact' && f.data.kind === 'patch')).toBe(true);
+  });
+});
+
+describe('失败派发后重试自愈', () => {
+  // 复现线上故障：首轮在重试中 sendEvents 抛错（409），留下 status 行但游标未推进；
+  // 用户重发不得撞唯一约束、不得把助手文本追加进 status 行。
+  async function failedFirstTurn(d: Deps, convId: string) {
+    const set = {
+      type: 'constraint_set', plan_title: '超容量', horizon_days: 7,
+      task_defs: [{ key: 'en', title: '学英语', category: 'study', duration_min: 60, frequency: { type: 'per_week', count: 9 }, priority: 'mid', splittable: false, sort_order: 0 }],
+      constraints: [{ type: 'active_window', start: '07:00', end: '08:00' }], clarifications_needed: [],
+    };
+    const text = '先核算容量。\n```json\n' + JSON.stringify(set) + '\n```';
+    let sends = 0;
+    const withFail = {
+      ...d,
+      qca: {
+        ...d.qca,
+        openStream: async () => ({ body: upstreamStream([
+          { type: 'agent.message', id: 'e1', content: [{ type: 'text', text }] },
+          { type: 'session.status_idle' },
+        ]), close() {} }),
+        sendEvents: async () => { sends += 1; if (sends >= 3) throw { code: 'ai_conflict', status: 409 }; return { eventIds: ['evt'] }; },
+      },
+    } as Deps;
+    return collect(await application(withFail)(ctx('POST', '/api/chat/send', { text: '排一下', conversation_id: convId, request_id: 'req-fail-first' })));
+  }
+
+  it('失败留下孤儿 status 行后，重发从最大 seq 之后开始，成功且不污染 status 行', async () => {
+    const { ensureConversation } = await import('../qca/sessions');
+    const { rows } = await import('../db');
+    const d = deps({ openStream: async () => ({ body: upstreamStream(replyFrames), close() {} }), sendEvents: async () => ({ eventIds: ['evt'] }) });
+    const conv = await ensureConversation(d.db, 'v', null, '英语');
+    rows(await d.db.from('conversations').update({ qca_session_id: 'sess_fake' }).eq('id', conv.id).select('id'));
+
+    const first = await failedFirstTurn(d, conv.id);
+    expect(first.some((f) => f.event === 'error' && f.data.code === 'upstream_error')).toBe(true);
+    const intent1 = ((d.db.tables.dispatch_intents ?? []) as any[]).find((i) => i.request_id === 'req-fail-first');
+    expect(intent1.status).toBe('failed');
+    // 孤儿 status 行确实留下了（seq 高于 user 消息）。
+    const statusRows = ((d.db.tables.messages ?? []) as any[]).filter((m) => m.conversation_id === conv.id && m.kind === 'status');
+    expect(statusRows.length).toBeGreaterThan(0);
+
+    // 用户重发（新 request_id）：必须成功，不得再报 upstream_error。
+    const second = await collect(await application(d)(ctx('POST', '/api/chat/send', { text: '再排一次', conversation_id: conv.id, request_id: 'req-retry-ok' })));
+    expect(second.some((f) => f.event === 'error')).toBe(false);
+    expect(second.some((f) => f.event === 'status' && f.data.state === 'completed')).toBe(true);
+    expect(second.at(-1).event).toBe('done');
+    const intent2 = ((d.db.tables.dispatch_intents ?? []) as any[]).find((i) => i.request_id === 'req-retry-ok');
+    expect(intent2.status).toBe('done');
+
+    // 防污染：任何 status 行的 content 都只能是状态词，不得混入助手正文。
+    const msgs = ((d.db.tables.messages ?? []) as any[]).filter((m) => m.conversation_id === conv.id);
+    for (const m of msgs.filter((x) => x.kind === 'status')) {
+      expect(['completed', 'failed', 'interrupted']).toContain(m.content);
+    }
+    // 助手文本独立成行。
+    expect(msgs.some((m) => m.role === 'assistant' && m.kind === 'text' && String(m.content).includes('好的'))).toBe(true);
+    // seq 全局唯一。
+    const seqs = msgs.map((m) => m.seq);
+    expect(new Set(seqs).size).toBe(seqs.length);
+  });
+});

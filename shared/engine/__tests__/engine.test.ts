@@ -456,3 +456,74 @@ describe('硬互斥与每日任务的结构矛盾', () => {
     expect(out.violations).toHaveLength(0);
   });
 });
+
+describe('短任务整块落位（duration < MIN_FRAGMENT 不得被碎片门槛误杀）', () => {
+  it('每日 15min splittable 任务在宽裕窗口内逐日整块落位', () => {
+    const out = solve(input({
+      task_defs: [task({ key: 'words', title: '背词', duration_min: 15, splittable: true })],
+      constraints: [active()],
+    }));
+    expect(out.blocks).toHaveLength(7);
+    expect(out.violations).toHaveLength(0);
+    expect(out.feasibility).toBe('FEASIBLE');
+    for (const b of out.blocks) expect(mins(b)).toBe(15);
+  });
+
+  it('每日 15min splittable + daily_cap 35：两个每日任务同日均放下', () => {
+    const out = solve(input({
+      task_defs: [
+        task({ key: 'vocab', title: '背词', duration_min: 15, splittable: true, priority: 'high' }),
+        task({ key: 'listen', title: '精听', duration_min: 15, splittable: true, priority: 'high' }),
+      ],
+      constraints: [active(), cons({ type: 'daily_cap', category: 'study', max_minutes: 35 })],
+    }));
+    const vocab = out.blocks.filter((b) => b.task_key === 'vocab');
+    const listen = out.blocks.filter((b) => b.task_key === 'listen');
+    expect(vocab).toHaveLength(7);
+    expect(listen).toHaveLength(7);
+    expect(out.violations).toHaveLength(0);
+  });
+
+  it('短任务能落进 <25min 的整段空槽（15min 任务 × 20min 槽）', () => {
+    const out = solve(input({
+      task_defs: [task({ key: 'words', duration_min: 15, splittable: true, frequency: { type: 'once' } })],
+      constraints: [cons({ type: 'active_window', start: '08:00', end: '08:20' })],
+    }));
+    expect(out.blocks).toHaveLength(1);
+    expect(mins(out.blocks[0])).toBe(15);
+    expect(out.violations).toHaveLength(0);
+  });
+
+  it('daily_cap 剩余额度足够整块时不因 <25 门槛跳过当天', () => {
+    const out = solve(input({
+      task_defs: [
+        task({ key: 'big', title: '大块', duration_min: 20, splittable: false, priority: 'high' }),
+        task({ key: 'small', title: '小块', duration_min: 15, splittable: true, priority: 'mid' }),
+      ],
+      constraints: [active(), cons({ type: 'daily_cap', category: 'study', max_minutes: 35 })],
+    }));
+    // big 20 + small 15 = 35 ≤ cap，两个任务都应逐日整块落位
+    expect(out.blocks.filter((b) => b.task_key === 'big')).toHaveLength(7);
+    expect(out.blocks.filter((b) => b.task_key === 'small')).toHaveLength(7);
+    expect(out.violations).toHaveLength(0);
+  });
+
+  it('长任务拆分后的收尾整块（<25min）也能落位完成总量', () => {
+    const out = solve(input({
+      task_defs: [task({ key: 'math', duration_min: 40, splittable: true, frequency: { type: 'once' } })],
+      constraints: [
+        cons({ type: 'active_window', start: '08:00', end: '08:30' }),
+        cons({ type: 'busy_window', weekday: 1, start: '08:30', end: '23:00' }),
+        cons({ type: 'busy_window', weekday: 2, start: '08:30', end: '23:00' }),
+        cons({ type: 'busy_window', weekday: 3, start: '08:30', end: '23:00' }),
+        cons({ type: 'busy_window', weekday: 4, start: '08:30', end: '23:00' }),
+        cons({ type: 'busy_window', weekday: 5, start: '08:30', end: '23:00' }),
+        cons({ type: 'busy_window', weekday: 6, start: '08:30', end: '23:00' }),
+        cons({ type: 'busy_window', weekday: 0, start: '08:30', end: '23:00' }),
+      ],
+    }));
+    const total = out.blocks.filter((b) => b.task_key === 'math').reduce((s, b) => s + mins(b), 0);
+    expect(total).toBe(40);
+    expect(out.violations).toHaveLength(0);
+  });
+});

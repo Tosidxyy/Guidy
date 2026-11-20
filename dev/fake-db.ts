@@ -47,6 +47,10 @@ export function createMemoryDb(seed: Record<string, any[]> = {}): MemoryDb {
                 if (ID_TABLES.has(table) && row.id !== undefined && rowsRef.some((r) => r.id === row.id)) {
                   return { data: null, error: { code: 'database_constraint_violation', status: 409 } };
                 }
+                // 与云端一致：messages 有 UNIQUE(conversation_id, seq)。
+                if (table === 'messages' && rowsRef.some((r) => r.conversation_id === v.conversation_id && r.seq === v.seq)) {
+                  return { data: null, error: { code: 'database_constraint_violation', status: 409 } };
+                }
                 if (TS_TABLES.has(table)) { row.created_at ??= new Date().toISOString(); if ('updated_at' in row || table === 'plans' || table === 'conversations') row.updated_at ??= new Date().toISOString(); }
                 rowsRef.push(row); result.push(row);
               }
