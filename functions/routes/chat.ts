@@ -209,18 +209,22 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
         let repairNote = '';
         let pendingViolations: Violation[] = [];
         let terminalState: 'completed' | 'failed' | 'interrupted' = 'failed';
+        // 整请求总预算（跨重试）：平台约 60s 强切，必须在强切前主动收尾，避免孤儿派发与断流。
+        const turnDeadline = Date.now() + (deps.config.turnBudgetMs ?? 50000);
         for (let attempt = 0; attempt < 3; attempt++) {
           if (attempt > 0) {
             await deps.db.from('messages').delete().eq('conversation_id', conv.id).eq('seq', assistantSeq);
             emittedProse = '';
           }
+          const remaining = turnDeadline - Date.now();
+          if (remaining < 5000) { terminalState = 'failed'; break; }
           const projector = createProjector(nextSeq, assistantSeq);
           // 先发消息再开流：新回合已存在，续读游标之后的事件必达；避免「先开流再发消息」时续读流静默挂起。
           await deps.qca.sendEvents(sessionId, buildUserMessage({ message: text, plan: planState, history: [], today, timezone, conflicts: related.conflicts, others: related.others, availability, sharedBlocks: sharedForPrompt, habits: profile.habits || undefined, learned: learned?.summary || undefined }) + (attempt > 0 ? `\n\n${ARTIFACT_REPAIR}${repairNote}` : ''), `${requestId}:${attempt}`);
           // 空闲超时：持续有帧就续期；静默超过阈值重试。另有回合总预算（赶在平台 ~60s 强切前主动收尾，避免孤儿派发）。
           const attemptAbort = new AbortController();
           const idleMs = deps.config.attemptTimeoutMs ?? 15000;
-          const totalMs = deps.config.attemptTotalMs ?? 35000;
+          const totalMs = Math.min(deps.config.attemptTotalMs ?? 35000, remaining);
           let abortReason: 'idle' | 'total' | null = null;
           let idleTimer: ReturnType<typeof setTimeout> | undefined;
           const resetIdle = () => {
@@ -240,11 +244,16 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
               for (const p of projector.push(ev)) {
                 if (p.event === 'progress') { emit(p); continue; }
                 if (p.event === 'delta') {
-                  // 只下发剥离产物 JSON 后的 prose 增量：任何客户端（含旧缓存包）都不会看到原文 JSON。
+                  // 只下发剥离产物 JSON 后的 prose 增量；并 holdback 尾部可能是围栏/JSON 起始的字符，
+                  // 避免「半个 ``` / 半个 {」先推给客户端、识别后回缩留下脏字符。
                   const prose = splitArtifactText(projector.text()).prose;
-                  if (prose.length > emittedProse.length) {
-                    const pd: AppEvent = { event: 'delta', data: { seq: p.data.seq, text: prose.slice(emittedProse.length) } };
-                    emittedProse = prose;
+                  const tick = prose.lastIndexOf('`');
+                  const brace = prose.lastIndexOf('{');
+                  const cut = Math.min(tick < 0 ? prose.length : tick, brace < 0 ? prose.length : brace);
+                  const safe = prose.slice(0, cut);
+                  if (safe.length > emittedProse.length) {
+                    const pd: AppEvent = { event: 'delta', data: { seq: p.data.seq, text: safe.slice(emittedProse.length) } };
+                    emittedProse = safe;
                     emit(pd); collected.push(pd);
                   }
                   await appendAssistant(deps.db, conv, p.data.seq, p.data.text);
@@ -332,6 +341,12 @@ export async function chatSend(ctx: RouteCtx, deps: Deps): Promise<Response> {
             await insertMessage(deps.db, conv, { seq: err.data.seq, role: 'system', kind: 'error', content: 'artifact_invalid' });
           }
           break;
+        }
+        // 回合结束 flush：纯 prose 尾部（holdback 保留的合法字符）补发；产物 JSON 永不补发。
+        const finalProse = splitArtifactText(finalText).prose;
+        if (finalProse.length > emittedProse.length) {
+          const pd: AppEvent = { event: 'delta', data: { seq: assistantSeq, text: finalProse.slice(emittedProse.length) } };
+          emit(pd); collected.push(pd);
         }
         await advanceCursor(deps.db, conv, seq, lastEventId);
         // 重试会删除上一轮的流式文本；若最终没有落任何助手内容，补存最长的那份解释，历史不再丢失。

@@ -12,7 +12,7 @@ export interface Deps {
   db: Db;
   requireUser: (ctx: RouteCtx) => { id: string };
   qca: QcaAdapter;
-  config: { cloudApiOrigin: string; appScope: string; modelId: string; claimTtlMs?: number; attemptTimeoutMs?: number; attemptTotalMs?: number; dispatchStaleMs?: number };
+  config: { cloudApiOrigin: string; appScope: string; modelId: string; claimTtlMs?: number; attemptTimeoutMs?: number; attemptTotalMs?: number; turnBudgetMs?: number; dispatchStaleMs?: number };
   now?: () => Date;
 }
 export type AppEvent =
