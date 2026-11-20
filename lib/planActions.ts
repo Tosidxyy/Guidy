@@ -230,5 +230,7 @@ export async function generateScheduleAction(): Promise<ActionResult> {
     label: '生成排程',
     optimistic: {},
   });
+  const warnings: string[] = Array.isArray(r.resp?.warnings) ? r.resp.warnings : [];
+  if (warnings.length) toast.info(warnings[0], { duration: 8000 });
   return r.ok ? { ok: true, planId } : { ok: false, planId, reason: r.reason };
 }

@@ -17,6 +17,34 @@ export const MATERIALIZED_NOTE = '共享日历：固定日程，与普通任务�
 const DROPPED_AT_COMMIT = new Set(['busy_window', 'fixed_block']);
 const MAX_DAYS = 92;
 
+/**
+ * AI 常写出矛盾的任务日期（如「最早开始」晚于「截止日」，或日期落在计划跨度外），
+ * 直接求解会得到「日期范围为空」。落库前按「截止日优先」收敛：越界日期丢弃/夹紧，
+ * 两者矛盾时放弃最早开始、保留截止日，任务本身始终可排。
+ */
+export function sanitizeTaskDates(tasks: TaskDef[], horizon_start: string, horizon_days: number, warnings: string[] = []): TaskDef[] {
+  const day = 86400000;
+  const start = Date.parse(`${horizon_start}T00:00:00Z`);
+  const end = start + Math.max(1, horizon_days) * day;
+  return tasks.map((t) => {
+    let earliest = t.earliest_start;
+    let deadline = t.deadline;
+    if (earliest) {
+      const ms = Date.parse(`${earliest}T00:00:00Z`);
+      if (!Number.isFinite(ms) || ms < start || ms >= end) { earliest = undefined; warnings.push(`「${t.title}」的最早开始日期不在计划跨度内，已忽略`); }
+    }
+    if (deadline) {
+      const ms = Date.parse(`${deadline}T00:00:00Z`);
+      if (!Number.isFinite(ms) || ms < start || ms >= end) { deadline = undefined; warnings.push(`「${t.title}」的截止日不在计划跨度内，已忽略`); }
+    }
+    if (earliest && deadline && Date.parse(`${earliest}T00:00:00Z`) > Date.parse(`${deadline}T00:00:00Z`)) {
+      earliest = undefined;
+      warnings.push(`「${t.title}」的最早开始晚于截止日，已按截止日安排`);
+    }
+    return earliest === t.earliest_start && deadline === t.deadline ? t : { ...t, earliest_start: earliest, deadline };
+  });
+}
+
 const stateOf = (p: PlanRecord): PlanState => ({ plan: p, task_defs: p.task_defs, constraints: p.constraints, blocks: p.blocks });
 
 /** 忙时/固定日程已物化成共享块，计划自身不再持有这些约束；历史数据读取时同样剥掉。 */
@@ -109,12 +137,14 @@ export async function localCommit(body: any): Promise<any> {
   const input = body?.input;
   if (!input || !Array.isArray(input.task_defs) || !input.task_defs.length) throw new ApiError('validation_failed', 422, '至少需要一个任务');
   const shared = await listShared();
+  const warnings: string[] = [];
+  const sanitizedTasks = sanitizeTaskDates(input.task_defs as TaskDef[], input.horizon_start, input.horizon_days, warnings);
   const solved = solve({
     engine_version: ENGINE_VERSION,
     horizon_start: input.horizon_start,
     horizon_days: input.horizon_days,
     timezone: input.timezone,
-    task_defs: input.task_defs as TaskDef[],
+    task_defs: sanitizedTasks,
     constraints: (input.constraints ?? []).map((c: Constraint) => ({ ...c })),
     pinned_blocks: shared.map((b) => ({ ...b, pinned: true })),
   });
@@ -134,7 +164,7 @@ export async function localCommit(body: any): Promise<any> {
     version: (existing?.version ?? 0) + 1,
     created_at: existing?.created_at ?? now,
     updated_at: now,
-    task_defs: input.task_defs,
+    task_defs: sanitizeTaskDates(input.task_defs, input.horizon_start, input.horizon_days),
     constraints: input.constraints ?? [],
     blocks: freshBlocks,
   };
@@ -143,7 +173,7 @@ export async function localCommit(body: any): Promise<any> {
     const conv = await getConversation(String(body.conversation_id));
     if (conv && !conv.plan_id) await putConversation({ ...conv, plan_id: stored.id, updated_at: now });
   }
-  return { plan: stored, version: stored.version, task_defs: stored.task_defs, constraints: stored.constraints, blocks: stored.blocks, server_authoritative: false };
+  return { plan: stored, version: stored.version, task_defs: stored.task_defs, constraints: stored.constraints, blocks: stored.blocks, server_authoritative: false, warnings };
 }
 
 export async function localSaveDraft(body: any): Promise<any> {
@@ -152,6 +182,7 @@ export async function localSaveDraft(body: any): Promise<any> {
   const sharedIds = new Set((await listShared()).map((b) => b.id));
   const existing = body.plan_id ? await getPlan(String(body.plan_id)) : undefined;
   if (body.plan_id && !existing) throw new ApiError('not_found', 404, '计划不存在');
+  const warnings: string[] = [];
   const now = nowIso();
   const rec: PlanRecord = {
     id: existing?.id ?? uuid(),
@@ -163,7 +194,7 @@ export async function localSaveDraft(body: any): Promise<any> {
     version: (existing?.version ?? 0) + 1,
     created_at: existing?.created_at ?? now,
     updated_at: now,
-    task_defs: input.task_defs ?? [],
+    task_defs: sanitizeTaskDates(input.task_defs ?? [], input.horizon_start, input.horizon_days, warnings),
     constraints: input.constraints ?? [],
     blocks: (input.blocks ?? []).filter((b: Block) => !sharedIds.has(b.id)),
   };
@@ -172,7 +203,7 @@ export async function localSaveDraft(body: any): Promise<any> {
     const conv = await getConversation(String(body.conversation_id));
     if (conv && !conv.plan_id) await putConversation({ ...conv, plan_id: stored.id, updated_at: now });
   }
-  return { plan: stored, version: stored.version, task_defs: stored.task_defs, constraints: stored.constraints, blocks: stored.blocks };
+  return { plan: stored, version: stored.version, task_defs: stored.task_defs, constraints: stored.constraints, blocks: stored.blocks, warnings };
 }
 
 const appliedPreviews = new Map<string, { planId: string; version: number }>();
@@ -195,7 +226,9 @@ export async function localApplyPatch(body: any): Promise<any> {
   const sharedIdsBefore = new Set(sharedBefore.map((b) => b.id));
   const baseBlocks = rec.blocks.filter((b) => !sharedIdsBefore.has(b.id));
   const state: PlanState = { ...stateOf(rec), constraints: visibleConstraints(rec.constraints), blocks: baseBlocks };
+  const warnings: string[] = [];
   const patched = applyPatch(state, ops);
+  patched.state = { ...patched.state, task_defs: sanitizeTaskDates(patched.state.task_defs, rec.horizon_start, rec.horizon_days, warnings) };
   if (patched.missing.length) throw new ApiError('patch_target_missing', 422, '调整目标已不存在', undefined, { targets: patched.missing });
   const shared = await listShared();
   const pctx = {
@@ -251,7 +284,7 @@ export async function localApplyPatch(body: any): Promise<any> {
   const diff = diffBlocks(state.blocks, stored.blocks);
   return {
     plan: stored, version: stored.version, task_defs: stored.task_defs, constraints: stored.constraints, blocks: stored.blocks,
-    inverse_ops: patched.inverse_ops ?? [], diff, compromises, server_authoritative: false,
+    inverse_ops: patched.inverse_ops ?? [], diff, compromises, server_authoritative: false, warnings,
   };
 }
 

@@ -116,6 +116,42 @@ describe('共享块不写回计划', () => {
   });
 });
 
+describe('AI 日期自检', () => {
+  const withDates = (dates: any) => commitPlan({
+    task_defs: [{ key: 'mock', title: '模拟卷限时做完+复盘', category: 'study', duration_min: 120, frequency: { type: 'per_week', count: 2 }, priority: 'high', splittable: false, sort_order: 0, ...dates }],
+    constraints: [{ id: 'c1', payload: { type: 'active_window', start: '07:00', end: '23:00' }, source: 'user', enabled: true }],
+  });
+
+  it('最早开始晚于截止日：保留截止日、放弃最早开始，提交成功', async () => {
+    const res = await withDates({ earliest_start: '2026-11-25', deadline: '2026-11-21' });
+    const plan = await localPlan(res.plan.id);
+    const t = plan.task_defs[0];
+    expect(t.deadline).toBe('2026-11-21');
+    expect(t.earliest_start).toBeUndefined();
+    expect(plan.blocks.length).toBeGreaterThan(0);
+  });
+
+  it('日期越出计划跨度：丢弃越界日期，任务仍可排', async () => {
+    const res = await withDates({ earliest_start: '2027-03-01', deadline: '2027-03-10' });
+    const plan = await localPlan(res.plan.id);
+    expect(plan.task_defs[0].earliest_start).toBeUndefined();
+    expect(plan.task_defs[0].deadline).toBeUndefined();
+    expect(plan.blocks.length).toBeGreaterThan(0);
+  });
+
+  it('历史脏任务参与重排时同样被收敛，不再报「日期范围为空」', async () => {
+    const res = await withDates({ earliest_start: '2026-11-25', deadline: '2026-11-21' });
+    const applied = await localApplyPatch({
+      preview_id: crypto.randomUUID(), plan_id: res.plan.id, base_version: res.version,
+      ops: [{ op: 'reschedule', scope: 'affected_only', keep_pinned: true }],
+      engine_version: 1, result_hash: null,
+    });
+    expect(applied.version).toBe(res.version + 1);
+    const plan = await localPlan(res.plan.id);
+    expect(plan.task_defs[0].earliest_start).toBeUndefined();
+  });
+});
+
 describe('本地 patch：版本与幂等', () => {
   it('base_version 不符 → version_conflict；正确版本 → 版本+1', async () => {
     const res = await commitPlan();
