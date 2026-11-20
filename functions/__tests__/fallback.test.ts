@@ -83,6 +83,32 @@ describe('createResilientQca', () => {
     void b;
   });
 
+  it('落备用供应商时下发 provider.switch 提示帧（用户可见切换重试）', async () => {
+    const primary = fakeAdapter({ failOpen: { code: 'quota_exceeded', status: 429 } });
+    const backup = fakeAdapter({ text: '兜底回复' });
+    const qca = createResilientQca([{ name: 'qca', adapter: primary }, { name: 'deepseek', adapter: backup }]);
+    const events = await turn(qca, '问');
+    const switchIdx = events.findIndex((e) => e.type === 'provider.switch');
+    const msgIdx = events.findIndex((e) => e.type === 'agent.message' && e.content[0].text === '兜底回复');
+    expect(switchIdx).toBeGreaterThanOrEqual(0);
+    expect(msgIdx).toBeGreaterThan(switchIdx);
+  });
+
+  it('绑定 scope 透传：ensureBinding 与 createSession 使用同一 scope', async () => {
+    const seen: string[] = [];
+    const primary: QcaAdapter = {
+      ...fakeAdapter({}),
+      async ensureBinding(scope: string) { seen.push(scope); return { agent: { type: 'agent', id: 'a', version: 1 }, environment_id: 'e' }; },
+      async createSession(binding: any) { seen.push('session:' + binding.environment_id); return { id: 'sess_real1' }; },
+    };
+    const qca = createResilientQca([{ name: 'qca', adapter: primary }]);
+    await qca.ensureBinding('app-scope');
+    const binding = await qca.ensureBinding('app-scope');
+    await qca.createSession(binding, 't', {});
+    expect(seen.filter((s) => s === 'app-scope').length).toBeGreaterThanOrEqual(1);
+    expect(seen).not.toContain('resilient');
+  });
+
   it('跨 isolate：会话映射持久化，冷启动复用真实会话不重建（避免 409）', async () => {
     let creates = 0;
     const primary: QcaAdapter = { ...fakeAdapter({}), async createSession() { creates += 1; return { id: 'sess_real1' }; } };

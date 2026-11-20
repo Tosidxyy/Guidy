@@ -16,11 +16,12 @@ export interface ChatState {
   clarifications: string[];
   error: { code: string; message: string; diagnosticId?: string } | null;
   searching: boolean;
+  switching: boolean;
   restoreDone: boolean;
 }
 export interface AppFrame { event: string; data: any }
 const TERMINAL = ['completed', 'failed', 'interrupted'];
-export const initialChatState: ChatState = { conversationId: null, requestId: null, messages: [], streaming: false, connection: 'idle', cursor: '0:0', artifact: null, artifactPreview: null, patch: null, question: null, clarifications: [], error: null, searching: false, restoreDone: false };
+export const initialChatState: ChatState = { conversationId: null, requestId: null, messages: [], streaming: false, connection: 'idle', cursor: '0:0', artifact: null, artifactPreview: null, patch: null, question: null, clarifications: [], error: null, searching: false, switching: false, restoreDone: false };
 // 恢复会话时历史已完整加载，cursor 须越过最大 seq，否则 resume 重放历史会把全文再追加一遍。
 export function cursorAfterMessages(messages: { seq: number }[]): string {
   const max = messages.reduce((mx, m) => Math.max(mx, m.seq), 0);
@@ -35,7 +36,7 @@ export function reduceFrame(state: ChatState, frame: AppFrame): ChatState {
   switch (frame.event) {
     case 'accepted': {
       const messages = state.messages.map((m) => (m.seq === -1 && m.role === 'user' ? { ...m, seq: d.seq } : m));
-      return { ...state, conversationId: d.conversation_id, requestId: d.request_id, connection: 'open', streaming: true, messages, cursor: `${d.seq}:0`, error: null, searching: false };
+      return { ...state, conversationId: d.conversation_id, requestId: d.request_id, connection: 'open', streaming: true, messages, cursor: `${d.seq}:0`, error: null, searching: false, switching: false };
     }
     case 'delta': {
       const idx = state.messages.findIndex((m) => m.seq === d.seq && m.role === 'assistant' && m.kind === 'text');
@@ -43,7 +44,7 @@ export function reduceFrame(state: ChatState, frame: AppFrame): ChatState {
       if (idx >= 0) messages[idx] = { ...messages[idx], content: messages[idx].content + d.text };
       else messages.push({ seq: d.seq, role: 'assistant', kind: 'text', content: d.text });
       const content = idx >= 0 ? messages[idx].content : d.text;
-      return { ...state, messages, cursor: `${d.seq}:${content.length}`, searching: false };
+      return { ...state, messages, cursor: `${d.seq}:${content.length}`, searching: false, switching: false };
     }
     case 'artifact': {
       const artifact = d.kind === 'constraint_set' ? (d.payload as ConstraintSetArtifact) : state.artifact;
@@ -53,13 +54,15 @@ export function reduceFrame(state: ChatState, frame: AppFrame): ChatState {
       return { ...state, artifact, artifactPreview: d.kind === 'constraint_set' ? ((d as any).preview ?? null) : state.artifactPreview, clarifications, patch, question, messages: [...state.messages, { seq: d.seq, role: 'assistant', kind: d.kind, content: '', payload: d.payload }], cursor: `${d.seq}:0` };
     }
     case 'progress':
-      return { ...state, searching: true };
+      return d.tool === 'ModelSwitch'
+        ? { ...state, switching: true, searching: false }
+        : { ...state, searching: true, switching: false };
     case 'status':
-      return { ...state, streaming: !TERMINAL.includes(d.state), connection: TERMINAL.includes(d.state) ? 'idle' : state.connection, searching: TERMINAL.includes(d.state) ? false : state.searching };
+      return { ...state, streaming: !TERMINAL.includes(d.state), connection: TERMINAL.includes(d.state) ? 'idle' : state.connection, searching: TERMINAL.includes(d.state) ? false : state.searching, switching: TERMINAL.includes(d.state) ? false : state.switching };
     case 'error':
-      return { ...state, streaming: false, connection: 'error', error: { code: d.code, message: d.message, diagnosticId: d.diagnostic_id }, searching: false };
+      return { ...state, streaming: false, connection: 'error', error: { code: d.code, message: d.message, diagnosticId: d.diagnostic_id }, searching: false, switching: false };
     case 'done':
-      return { ...state, streaming: false, connection: 'idle', searching: false };
+      return { ...state, streaming: false, connection: 'idle', searching: false, switching: false };
     default:
       return state;
   }
@@ -73,7 +76,7 @@ interface ChatStore extends ChatState {
 export const useChatStore = create<ChatStore>((set, get) => ({
   ...initialChatState,
   applyFrame: (frame) => set(reduceFrame(get(), frame)),
-  startSend: (text) => set({ ...get(), streaming: true, connection: 'connecting', error: null, artifact: null, artifactPreview: null, patch: null, question: null, clarifications: [], searching: false, restoreDone: true, messages: [...get().messages, { seq: -1, role: 'user', kind: 'text', content: text }] }),
+  startSend: (text) => set({ ...get(), streaming: true, connection: 'connecting', error: null, artifact: null, artifactPreview: null, patch: null, question: null, clarifications: [], searching: false, switching: false, restoreDone: true, messages: [...get().messages, { seq: -1, role: 'user', kind: 'text', content: text }] }),
   setConversation: (id, messages = []) => set({ ...initialChatState, conversationId: id, messages, restoreDone: true }),
   reset: () => set({ ...initialChatState, restoreDone: true }),
 }));

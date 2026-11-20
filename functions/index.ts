@@ -2,7 +2,7 @@ import { createDatabaseClient, createSiteContext, requireUser, errorResponse } f
 import { application } from './app.ts';
 import { createLiveQca } from './qca/live.ts';
 import { createOpenAiQca } from './qca/openai.ts';
-import type { QcaProvider } from './qca/fallback.ts';
+import { createResilientQca, type QcaProvider } from './qca/fallback.ts';
 const db = createDatabaseClient();
 const config = {
   cloudApiOrigin: 'https://api.qoder.com.cn',
@@ -18,7 +18,7 @@ if (deepseekKey) {
     adapter: createOpenAiQca({
       baseUrl: Deno.env.get('DEEPSEEK_BASE_URL') ?? 'https://api.deepseek.com/v1',
       apiKey: deepseekKey,
-      model: Deno.env.get('DEEPSEEK_MODEL') ?? 'deepseek-v4.1flash-1017',
+      model: Deno.env.get('DEEPSEEK_MODEL') ?? 'deepseek-chat',
     }),
   });
 }
@@ -29,15 +29,13 @@ if (bailianKey) {
     adapter: createOpenAiQca({
       baseUrl: Deno.env.get('BAILIAN_BASE_URL') ?? 'https://dashscope.aliyuncs.com/compatible-mode/v1',
       apiKey: bailianKey,
-      model: Deno.env.get('BAILIAN_MODEL') ?? 'deepseek-v4.1flash-1017',
+      model: Deno.env.get('BAILIAN_MODEL') ?? 'qwen-plus',
     }),
   });
 }
 const primary = createLiveQca({ db, config });
-// failover 包装暂不启用：其泵/会话映射与真实 QCA 持久流 + 多 isolate 不兼容（多回合 409/静默），
-// 待 redesign 后再启用；密钥已配置保留。当前直接用主供应商，保证多回合可用。
-const qca = primary;
-void fallbacks;
+// 按轮 failover：主 QCA 配额/鉴权/上游错误自动落备用供应商，并下发「切换备用模型重试」提示。
+const qca = fallbacks.length ? createResilientQca([{ name: 'qca', adapter: primary }, ...fallbacks]) : primary;
 const handle = application({ db, requireUser, qca, config });
 Deno.serve(async (request) => {
   let context;

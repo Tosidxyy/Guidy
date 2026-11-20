@@ -27,6 +27,8 @@ export function createProjector(seq: () => number, deltaSeq: number) {
         if (name === 'WebSearch' || name === 'WebFetch') {
           out.push({ event: 'progress', data: { seq: deltaSeq, tool: name as 'WebSearch' | 'WebFetch' } });
         }
+      } else if (type === 'provider.switch') {
+        out.push({ event: 'progress', data: { seq: deltaSeq, tool: 'ModelSwitch' } });
       } else if (type.startsWith('session')) {
         // QCA 把生命周期状态编码在事件 type 名中（session.status_idle 等），无嵌套 status 字段。
         const state: string = ev.status ?? ev.state ?? '';

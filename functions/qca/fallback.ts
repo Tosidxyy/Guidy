@@ -26,11 +26,12 @@ interface SessionRef { idx: number; realId: string }
  */
 export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
   let idx = 0;
+  let scope = 'resilient';
   const sessions = new Map<string, SessionRef>();
   const bindings = new Map<number, QcaBinding>();
   const turns = new Map<string, { text?: string; waiter?: (text: string) => void }>();
 
-  async function bindingAt(i: number, scope: string): Promise<QcaBinding> {
+  async function bindingAt(i: number): Promise<QcaBinding> {
     let b = bindings.get(i);
     if (!b) {
       b = await providers[i].adapter.ensureBinding(scope);
@@ -39,7 +40,7 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
     return b;
   }
   async function sessionAt(i: number, title: string, metadata: Record<string, unknown>): Promise<string> {
-    const b = await bindingAt(i, 'resilient');
+    const b = await bindingAt(i);
     const s = await providers[i].adapter.createSession(b, title, metadata);
     return s.id;
   }
@@ -63,11 +64,12 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
   }
 
   return {
-    async ensureBinding(scope) {
+    async ensureBinding(scopeArg) {
+      scope = scopeArg;
       let lastErr: unknown;
       for (let i = idx; i < providers.length; i++) {
         try {
-          const b = await bindingAt(i, scope);
+          const b = await bindingAt(i);
           idx = i;
           return b;
         } catch (e) {
@@ -115,6 +117,8 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
           for (let i = ref.idx; i < providers.length; i++) {
             let realId = i === ref.idx ? ref.realId : '';
             let failed = false;
+            // 落到备用供应商时给用户可见提示（投影为 progress/ModelSwitch）。
+            if (i > ref.idx) controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'provider.switch', name: providers[i].name })}\n\n`));
             try {
               if (!realId) realId = await sessionAt(i, 'resume', {});
               // 先 send 再 open：带续读游标时 QCA 只推送开流之后已存在的新回合事件，先开后发会静默挂起。

@@ -47,6 +47,7 @@ export function ChatPanel() {
     });
   }, [streaming]);
   const searching = useChatStore((s) => s.searching);
+  const switching = useChatStore((s) => s.switching);
   const connection = useChatStore((s) => s.connection);
   const artifact = useChatStore((s) => s.artifact);
   const patch = useChatStore((s) => s.patch);
@@ -184,6 +185,7 @@ export function ChatPanel() {
           <p className="animate-pulse px-1 text-[11px] text-site-ink-soft">正在生成方案…</p>
         )}
         {searching && streaming && <p className="px-1 text-[11px] text-site-ink-soft">正在联网检索…</p>}
+        {switching && streaming && <p className="animate-pulse px-1 text-[11px] text-site-ink-soft">主模型暂不可用，正在切换备用模型重试…</p>}
       </div>
 
       {chatRemaining !== undefined && chatRemaining <= 10 && (

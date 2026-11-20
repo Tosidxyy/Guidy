@@ -20,6 +20,6 @@ export type AppEvent =
   | { event: 'delta'; data: { seq: number; text: string } }
   | { event: 'artifact'; data: { seq: number; kind: 'constraint_set' | 'patch' | 'question_card'; payload: unknown; preview?: unknown } }
   | { event: 'status'; data: { seq: number; state: 'running' | 'waiting_confirm' | 'completed' | 'interrupted' | 'failed' } }
-  | { event: 'progress'; data: { seq: number; tool: 'WebSearch' | 'WebFetch' } }
+  | { event: 'progress'; data: { seq: number; tool: 'WebSearch' | 'WebFetch' | 'ModelSwitch' } }
   | { event: 'error'; data: { seq: number; code: string; message: string; diagnostic_id: string } }
   | { event: 'done'; data: { seq: number } };
