@@ -15,17 +15,17 @@ export function MessageBubble({ message, streaming, clarificationPending, onRetr
       : message.kind === 'patch'
         ? '已生成调整建议'
         : clarificationPending
-          ? '已生成初版约束方案，请先回答下方问题'
-          : '已生成约束方案，请在上方方案卡核对';
+          ? '已生成初版约束方案，请先回答问题'
+          : '已生成约束方案，请在下方方案卡核对';
     return (
-      <div className="flex items-center gap-1.5 rounded-lg border border-site-line bg-site-surface-2 px-3 py-2 text-xs text-site-ink">
+      <div className="flex items-center gap-1.5 rounded-[var(--site-radius-card)] border border-site-line bg-site-surface-2 px-3 py-2 text-xs text-site-ink">
         <ClipboardCheck className="h-3.5 w-3.5 text-site-ink-soft" />
         {artifactLabel}
       </div>
     );
   }
   if (message.role === 'system' || message.kind === 'status' || message.kind === 'error') {
-    return <p className="px-1 text-center text-[11px] text-site-ink-soft">{message.content}</p>;
+    return <p className="px-1 text-center text-xs text-site-ink-soft">{message.content}</p>;
   }
   const isUser = message.role === 'user';
   if (!isUser) {
@@ -34,7 +34,7 @@ export function MessageBubble({ message, streaming, clarificationPending, onRetr
       if (!streaming && !prose) return null;
       return (
         <div className="flex justify-start">
-          <div className="max-w-[85%] rounded-2xl border border-site-line bg-site-surface px-3.5 py-2.5 text-sm leading-relaxed text-site-ink">
+          <div className="max-w-[85%] rounded-[var(--site-radius-card)] border border-site-line bg-site-surface px-3.5 py-2.5 text-sm leading-relaxed text-site-ink">
             {prose && (
               <div className="guidy-prose break-words">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeSanitize, sanitizeSchema]]} skipHtml>
@@ -54,7 +54,7 @@ export function MessageBubble({ message, streaming, clarificationPending, onRetr
     if (!prose) return null;
     return (
       <div className="flex justify-start">
-        <div className="max-w-[85%] rounded-2xl border border-site-line bg-site-surface px-3.5 py-2.5 text-sm leading-relaxed text-site-ink">
+        <div className="max-w-[85%] rounded-[var(--site-radius-card)] border border-site-line bg-site-surface px-3.5 py-2.5 text-sm leading-relaxed text-site-ink">
           <div className="guidy-prose break-words">
             <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeSanitize, sanitizeSchema]]} skipHtml>
               {prose}
@@ -67,11 +67,11 @@ export function MessageBubble({ message, streaming, clarificationPending, onRetr
   }
   return (
     <div className="flex flex-col items-end gap-1">
-      <div className={cn('max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed', message.failed ? 'border border-site-danger/40 bg-site-ink/90 text-site-bg' : 'bg-site-ink text-site-bg')}>
+      <div className={cn('max-w-[85%] rounded-[var(--site-radius-card)] px-3.5 py-2.5 text-sm leading-relaxed', message.failed ? 'border border-site-danger/40 bg-site-ink/90 text-site-bg' : 'bg-site-ink text-site-bg')}>
         <p className="whitespace-pre-wrap break-words">{message.content}</p>
       </div>
       {message.failed && (
-        <div className="flex items-center gap-2 text-[11px] text-site-danger">
+        <div className="flex items-center gap-2 text-xs text-site-danger">
           <span>发送失败</span>
           <button type="button" className="rounded border border-site-danger/40 px-2 py-0.5 text-site-danger hover:bg-site-danger/10" onClick={onRetry}>重试</button>
         </div>

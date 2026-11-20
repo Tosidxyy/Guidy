@@ -65,7 +65,7 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
         {artifact.questions.map((q, i) => {
           const showInput = custom[i] || !q.options?.length;
           return (
-            <li key={i} className="rounded-lg border border-site-line bg-site-bg px-3 py-2">
+            <li key={i} className="rounded-[var(--site-radius-card)] border border-site-line bg-site-bg px-3 py-2">
               <p className="text-xs leading-snug text-site-ink">{q.text}</p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {(q.options ?? []).map((option) => {
@@ -77,7 +77,7 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
                       aria-pressed={active}
                       onClick={() => pick(i, option)}
                       className={cn(
-                        'rounded-full border px-2.5 py-1 text-[11px] transition-colors',
+                        'rounded-full border px-2.5 py-1 text-xs transition-colors',
                         active
                           ? 'border-site-ink bg-site-ink/10 font-medium text-site-ink'
                           : 'border-site-line bg-site-surface text-site-ink-soft hover:border-site-ink/40 hover:text-site-ink',
@@ -92,7 +92,7 @@ export function QuestionCard({ artifact, onAnswer, onDismiss }: {
                   aria-pressed={!!custom[i]}
                   onClick={() => pick(i, CUSTOM_ANSWER_LABEL)}
                   className={cn(
-                    'rounded-full border border-dashed px-2.5 py-1 text-[11px] transition-colors',
+                    'rounded-full border border-dashed px-2.5 py-1 text-xs transition-colors',
                     custom[i]
                       ? 'border-site-ink bg-site-ink/10 font-medium text-site-ink'
                       : 'border-site-line bg-site-surface text-site-ink-soft hover:border-site-ink/40 hover:text-site-ink',

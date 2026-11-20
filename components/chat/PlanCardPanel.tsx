@@ -52,10 +52,10 @@ function SharedBusySection() {
   return (
     <section className="mt-3 border-t border-site-line pt-2">
       <h4 className="text-xs font-semibold text-site-ink">固定日程 / 公共忙时（{groups.size}）</h4>
-      <p className="mt-0.5 text-[11px] text-site-ink-soft">来自共享日历（如「上班」），参与排程避让；可展开管理某一天（例如请假删除）。</p>
+      <p className="mt-0.5 text-xs text-site-ink-soft">来自共享日历（如「上班」），参与排程避让；可展开管理某一天（例如请假删除）。</p>
       <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto">
         {[...groups.values()].map((g) => (
-          <li key={`${g.title}|${g.start}|${g.end}`} className="rounded border border-site-line bg-site-surface-2 px-2 py-1 text-[11px] text-site-ink">
+          <li key={`${g.title}|${g.start}|${g.end}`} className="rounded border border-site-line bg-site-surface-2 px-2 py-1 text-xs text-site-ink">
             <div className="flex items-center justify-between gap-2">
               <span className="truncate">{g.title} · {weekdayText(g.days)} {g.start}–{g.end}</span>
               <details className="shrink-0">
@@ -65,7 +65,7 @@ function SharedBusySection() {
                     <li key={day} className="flex items-center justify-between gap-2">
                       <span>{day}（{WD[new Date(`${day}T12:00:00Z`).getUTCDay()]}）</span>
                       <Button
-                        variant="ghost" size="sm" className="h-5 px-1 text-[10px] text-site-danger"
+                        variant="ghost" size="sm" className="h-5 px-1 text-xs text-site-danger"
                         onClick={() => {
                           const id = g.ids.find((x) => x.day === day)?.id;
                           if (id) void applySharedOps([{ op: 'remove_block', id }]).then((r) => { if (!r.ok) toast.error(r.reason ?? '删除失败'); });
@@ -270,23 +270,23 @@ export function PlanCardPanel() {
 
   return (
     <div className="shrink-0 px-2 pb-2 pt-1">
-      <div className={cn('overflow-hidden rounded-xl border bg-site-surface shadow-sm transition-colors', flash ? 'border-site-flow/60 ring-2 ring-site-flow/35' : attention && !open ? 'border-site-flow/40' : 'border-site-ink/12')}>
+      <div className={cn('overflow-hidden rounded-[var(--site-radius-card)] border bg-site-surface shadow-sm transition-colors', flash ? 'border-site-flow/60 ring-2 ring-site-flow/35' : attention && !open ? 'border-site-flow/40' : 'border-site-ink/12')}>
       <div className="flex items-center">
         <Button
           variant="ghost"
           size="sm"
           onClick={toggle}
           aria-expanded={open}
-          className="relative h-8 min-w-0 flex-1 justify-start gap-1.5 rounded-none px-2.5 text-[11px] font-normal text-site-ink-soft hover:bg-site-surface-2 hover:text-site-ink"
+          className="relative h-8 min-w-0 flex-1 justify-start gap-1.5 rounded-none px-2.5 text-xs font-normal text-site-ink-soft hover:bg-site-surface-2 hover:text-site-ink"
         >
           {(flash || (attention && !open)) && <span aria-hidden="true" className="guidy-card-pulse pointer-events-none absolute inset-0" />}
           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-site-ink" />
           <span className="shrink-0 font-medium text-site-ink">方案卡</span>
           <span className="min-w-0 truncate text-site-ink">{planTitle}</span>
           <span className="tabular shrink-0">任务 {taskCount + scheduleCount} · 约束 {ruleCount}</span>
-          <Badge variant="secondary" className="ml-0.5 shrink-0 px-1.5 py-0 text-[10px]">{statusText}</Badge>
+          <Badge variant="secondary" className="ml-0.5 shrink-0 px-1.5 py-0 text-xs">{statusText}</Badge>
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
-            {attention && !open && <span className="text-[10px] font-medium text-site-flow">请点击确认</span>}
+            {attention && !open && <span className="text-xs font-medium text-site-flow">请点击确认</span>}
             {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
           </span>
         </Button>
@@ -305,11 +305,11 @@ export function PlanCardPanel() {
           </div>
 
           {foreignPatch && !patchAlreadyApplied && (
-          <section ref={adjustRef} className="mx-3.5 mt-3 rounded-lg border border-site-line bg-site-bg p-2.5">
+          <section ref={adjustRef} className="mx-3.5 mt-3 rounded-[var(--site-radius-card)] border border-site-line bg-site-bg p-2.5">
             <p className="text-xs font-semibold text-site-ink">排程调整 · {foreignPatch.summary}</p>
             <ul className="mt-1.5 max-h-28 space-y-1 overflow-y-auto">
               {foreignPatch.ops.map((op, i) => (
-                <li key={i} className="rounded border border-site-line bg-site-surface px-2 py-1 text-[11px] leading-snug text-site-ink">
+                <li key={i} className="rounded border border-site-line bg-site-surface px-2 py-1 text-xs leading-snug text-site-ink">
                   {patchOpText(op, (key) => state.task_defs.find((t) => t.key === key)?.title ?? key, state.plan.timezone, (id) => state.blocks.find((b) => b.id === id)?.title ?? '这个日程')}
                 </li>
               ))}
@@ -317,7 +317,7 @@ export function PlanCardPanel() {
             {Array.isArray(patchPreview?.notes) && patchPreview.notes.length > 0 && (
               <ul className="mt-1.5 space-y-1">
                 {(patchPreview.notes as string[]).slice(0, 4).map((n, i) => (
-                  <li key={i} className="rounded border border-site-warning/50 bg-site-warning/5 px-2 py-1 text-[11px] leading-snug text-site-ink">{n}</li>
+                  <li key={i} className="rounded border border-site-warning/50 bg-site-warning/5 px-2 py-1 text-xs leading-snug text-site-ink">{n}</li>
                 ))}
               </ul>
             )}
@@ -331,29 +331,29 @@ export function PlanCardPanel() {
         )}
 
           {proposal && preview && (
-            <section className="mx-3.5 mt-3 space-y-2 rounded-lg border border-site-line bg-site-bg p-2.5">
+            <section className="mx-3.5 mt-3 space-y-2 rounded-[var(--site-radius-card)] border border-site-line bg-site-bg p-2.5">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', feasibilityCls[preview.feasibility] ?? feasibilityCls.UNKNOWN)}>
+                <span className={cn('rounded-full px-2 py-0.5 text-xs font-semibold', feasibilityCls[preview.feasibility] ?? feasibilityCls.UNKNOWN)}>
                   {feasibilityText[preview.feasibility] ?? preview.feasibility}
                 </span>
                 {unplacedList.length ? (
-                  <span className="tabular text-[11px] text-site-ink-soft">缺口任务目标 {targetMin} 分钟 · 已排 {placedMin} · 未排 {missingMin}</span>
+                  <span className="tabular text-xs text-site-ink-soft">缺口任务目标 {targetMin} 分钟 · 已排 {placedMin} · 未排 {missingMin}</span>
                 ) : (
-                  <span className="text-[11px] text-site-ink-soft">全部任务均可排入当前可安排时段</span>
+                  <span className="text-xs text-site-ink-soft">全部任务均可排入当前可安排时段</span>
                 )}
-                {preview._local && <span className="text-[10px] text-site-ink-soft">本地预估</span>}
+                {preview._local && <span className="text-xs text-site-ink-soft">本地预估</span>}
               </div>
               {Array.isArray((preview as any)?.notes) && (preview as any).notes.length > 0 && (
                 <ul className="space-y-1">
                   {((preview as any).notes as string[]).slice(0, 4).map((n, i) => (
-                    <li key={i} className="rounded border border-site-warning/50 bg-site-warning/5 px-2 py-1 text-[11px] leading-snug text-site-ink">{n}</li>
+                    <li key={i} className="rounded border border-site-warning/50 bg-site-warning/5 px-2 py-1 text-xs leading-snug text-site-ink">{n}</li>
                   ))}
                 </ul>
               )}
               {unplacedList.length > 0 && (
                 <ul className="space-y-1">
                   {unplacedList.slice(0, 5).map((u) => (
-                    <li key={u.task_key} className="rounded border border-site-line bg-site-surface px-2 py-1 text-[11px] leading-snug text-site-ink">
+                    <li key={u.task_key} className="rounded border border-site-line bg-site-surface px-2 py-1 text-xs leading-snug text-site-ink">
                       <span className="font-medium">{u.title}</span>：目标 {u.target_minutes} 分钟，已排 {u.placed_minutes} 分钟，缺 {u.missing_minutes} 分钟{u.reason ? ` · ${u.reason}` : ''}
                     </li>
                   ))}
@@ -364,7 +364,7 @@ export function PlanCardPanel() {
                   {violationsList.slice(0, 5).map((v, i) => {
                     const text = constraintForViolation(v.constraint_id);
                     return (
-                      <li key={i} className="rounded border border-site-danger/40 bg-site-danger/5 px-2 py-1 text-[11px] leading-snug text-site-danger">
+                      <li key={i} className="rounded border border-site-danger/40 bg-site-danger/5 px-2 py-1 text-xs leading-snug text-site-danger">
                         {v.reason}{text ? `（受影响约束：${text}）` : ''}{v.suggestion ? ` · 建议：${v.suggestion}` : ''}
                       </li>
                     );
@@ -372,7 +372,7 @@ export function PlanCardPanel() {
                 </ul>
               )}
               {compromisesList.length > 0 && (
-                <details className="text-[11px] text-site-ink-soft">
+                <details className="text-xs text-site-ink-soft">
                   <summary className="cursor-pointer select-none">软约束妥协 {compromisesList.length} 项</summary>
                   <ul className="mt-1 space-y-0.5">
                     {compromisesList.slice(0, 6).map((c, i) => <li key={i}>· {c.reason}</li>)}
@@ -381,9 +381,9 @@ export function PlanCardPanel() {
               )}
               {preview.proposal?.changes?.length > 0 && (
                 <div className="rounded border border-site-warning/50 bg-site-warning/5 px-2 py-1.5">
-                  <p className="text-[11px] leading-snug text-site-ink">可接受的取舍（需你确认，不会自动应用）：{preview.proposal.changes.join('；')}</p>
+                  <p className="text-xs leading-snug text-site-ink">可接受的取舍（需你确认，不会自动应用）：{preview.proposal.changes.join('；')}</p>
                   {preview.proposal.suggested && (
-                    <Button variant="outline" size="sm" className="mt-1.5 h-7 px-2 text-[11px]" onClick={() => { change(preview.proposal.suggested); }}>
+                    <Button variant="outline" size="sm" className="mt-1.5 h-7 px-2 text-xs" onClick={() => { change(preview.proposal.suggested); }}>
                       接受取舍建议
                     </Button>
                   )}

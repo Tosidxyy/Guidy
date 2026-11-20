@@ -45,6 +45,20 @@ export function sanitizeTaskDates(tasks: TaskDef[], horizon_start: string, horiz
   });
 }
 
+/** 今天已经过去的时间不排：跨当前时刻的块从当前时刻开始，完全在过去的块丢弃。 */
+function dropPastToday(blocks: Block[], tz: string, nowMs = Date.now()): Block[] {
+  const today = localDay(new Date(nowMs).toISOString(), tz);
+  const nowIso = new Date(Math.ceil(nowMs / 300000) * 300000).toISOString();
+  const out: Block[] = [];
+  for (const b of blocks) {
+    if (localDay(b.start_utc, tz) !== today) { out.push(b); continue; }
+    if (Date.parse(b.end_utc) <= nowMs) continue;
+    if (Date.parse(b.start_utc) < nowMs) out.push({ ...b, start_utc: nowIso });
+    else out.push(b);
+  }
+  return out;
+}
+
 /** 日常且不可拆分的任务，同一天最多一个块：AI 的块操作引用过期 id 时，防止旧块残留成两块。 */
 function enforceSinglePerDay(blocks: Block[], task_defs: TaskDef[], tz: string, keepFirst: Set<string>): Block[] {
   const single = new Set(task_defs.filter((t) => !t.splittable && (t.frequency.type === 'daily' || t.frequency.type === 'once')).map((t) => t.key));
@@ -167,7 +181,7 @@ export async function localCommit(body: any): Promise<any> {
   });
   if (solved.violations.length) throw new ApiError('engine_infeasible', 422, `当前约束下排不下全部任务：${solved.violations[0]?.reason ?? '无可安排时段'}`, undefined, { violations: solved.violations, compromises: solved.compromises, feasibility: solved.feasibility, unplaced: solved.unplaced });
   const busyIds = new Set(shared.map((b) => b.id));
-  const freshBlocks = solved.blocks.filter((b) => !busyIds.has(b.id));
+  const freshBlocks = dropPastToday(solved.blocks.filter((b) => !busyIds.has(b.id)), input.timezone);
   const existing = body.plan_id ? await getPlan(String(body.plan_id)) : undefined;
   if (body.plan_id && !existing) throw new ApiError('not_found', 404, '计划不存在');
   const now = nowIso();
@@ -294,7 +308,7 @@ export async function localApplyPatch(body: any): Promise<any> {
     if (op.op === 'move_block' || op.op === 'add_block') return [(op as any).id ?? (op as any).client_id].filter(Boolean);
     return [];
   }));
-  blocks = enforceSinglePerDay(blocks, patched.state.task_defs, rec.timezone, movedIds);
+  blocks = dropPastToday(enforceSinglePerDay(blocks, patched.state.task_defs, rec.timezone, movedIds), rec.timezone);
   const now = nowIso();
   const next: PlanRecord = {
     ...rec,

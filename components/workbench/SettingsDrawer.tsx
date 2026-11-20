@@ -115,13 +115,13 @@ export function SettingsDrawer() {
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) closeDrawer(); }}>
-      <DialogContent className="flex max-h-[85dvh] flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
+      <DialogContent className="flex max-h-[85dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="border-b border-site-line px-5 py-4">
           <DialogTitle className="font-display flex items-center gap-2"><Settings2 className="h-4 w-4 text-site-ink" /> 设置</DialogTitle>
           <DialogDescription>主题、日历显示时段与数据导入导出。</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-5 px-5 py-4">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
           <section className="space-y-2">
             <Label>主题</Label>
             <div className="grid grid-cols-2 gap-2">
@@ -130,7 +130,7 @@ export function SettingsDrawer() {
                   key={t} type="button"
                   onClick={() => setTheme(t)}
                   className={cn(
-                    'flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors',
+                    'flex items-center justify-center gap-2 rounded-[var(--site-radius-card)] border px-3 py-2.5 text-sm font-medium transition-colors',
                     theme === t ? 'border-site-ink bg-site-ink/10 text-site-ink' : 'border-site-line text-site-ink-soft hover:bg-site-surface-2',
                   )}
                 >
@@ -182,7 +182,7 @@ export function SettingsDrawer() {
               className="text-xs leading-relaxed"
             />
             <div className="flex items-center justify-between gap-2">
-              <span className="tabular text-[11px] text-site-ink-soft">{habits.length}/500 · 每轮对话都会带给 Agent</span>
+              <span className="tabular text-xs text-site-ink-soft">{habits.length}/500 · 每轮对话都会带给 Agent</span>
               <Button size="sm" disabled={savingHabits || habits === (profile.data?.habits ?? '')} onClick={() => { void saveHabits(); }}>
                 {savingHabits ? '保存中…' : '保存'}
               </Button>
@@ -192,16 +192,16 @@ export function SettingsDrawer() {
           <section className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label>Agent 学到的习惯</Label>
-              <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px]" disabled={learning} onClick={() => { void relearn(); }}>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={learning} onClick={() => { void relearn(); }}>
                 {learning ? '学习中…' : '重新学习'}
               </Button>
             </div>
             {profile.data?.learned?.summary ? (
-              <p className="rounded-lg border border-site-line bg-site-surface-2 px-3 py-2 text-xs leading-relaxed text-site-ink">{profile.data.learned.summary}</p>
+              <p className="rounded-[var(--site-radius-card)] border border-site-line bg-site-surface-2 px-3 py-2 text-xs leading-relaxed text-site-ink">{profile.data.learned.summary}</p>
             ) : (
               <p className="text-xs text-site-ink-soft">{profile.isLoading ? '正在读取…' : '积累更多日历安排后会自动总结。'}</p>
             )}
-            <p className="text-[11px] text-site-ink-soft">按近 8 周日历自动统计，仅作参考；与自述冲突时以自述为准。</p>
+            <p className="text-xs text-site-ink-soft">按近 8 周日历自动统计，仅作参考；与自述冲突时以自述为准。</p>
           </section>
 
           <Separator />

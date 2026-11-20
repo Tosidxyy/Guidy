@@ -13,6 +13,7 @@ import { applySharedOps, undoSharedOps } from '@/lib/sharedBlocks';
 import { mergeSharedWindows } from '@/lib/sharedCalendar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { TimeInput } from '@/components/ui/TimeInput';
 import { Label } from '@/components/ui/label';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -187,7 +188,7 @@ export function BlockDrawer() {
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) closeDrawer(); }}>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-md">
+      <SheetContent side="right" className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-md">
         <SheetHeader className="border-b border-site-line px-5 py-4">
           <SheetTitle className="font-display">编辑任务块</SheetTitle>
           <SheetDescription>
@@ -195,7 +196,7 @@ export function BlockDrawer() {
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex-1 space-y-4 px-5 py-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <div className="space-y-1.5">
             <Label htmlFor="b-title">名称</Label>
             <Input id="b-title" value={title} maxLength={60} onChange={(e) => setTitle(e.target.value)} />
@@ -227,7 +228,7 @@ export function BlockDrawer() {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="b-start">开始时间</Label>
-              <Input id="b-start" type="time" step={900} value={startTime} disabled={block.pinned} onChange={(e) => setStartTime(e.target.value)} />
+              <TimeInput id="b-start" value={startTime} disabled={block.pinned} onChange={(v) => setStartTime(v)} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="b-duration">时长（分钟）</Label>
@@ -235,10 +236,10 @@ export function BlockDrawer() {
             </div>
           </div>
           {!isShared && (
-            <div className="space-y-1.5 rounded-lg border border-site-line bg-site-surface px-3 py-2.5">
+            <div className="space-y-1.5 rounded-[var(--site-radius-card)] border border-site-line bg-site-surface px-3 py-2.5">
               <div className="flex items-center justify-between">
                 <Label>执行进度</Label>
-                <span className="text-[11px] text-site-ink-soft">{({ planned: '未开始', in_progress: '进行中', completed: '已完成', partial: '部分完成', cancelled: '已取消', skipped: '已跳过' } as Record<string, string>)[block.status ?? 'planned']}{block.actual_duration_min != null ? ` · 实际 ${block.actual_duration_min} 分钟` : ''}</span>
+                <span className="text-xs text-site-ink-soft">{({ planned: '未开始', in_progress: '进行中', completed: '已完成', partial: '部分完成', cancelled: '已取消', skipped: '已跳过' } as Record<string, string>)[block.status ?? 'planned']}{block.actual_duration_min != null ? ` · 实际 ${block.actual_duration_min} 分钟` : ''}</span>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 <Button size="sm" variant="outline" onClick={() => { void markProgress('completed'); }}>已完成</Button>
@@ -248,20 +249,20 @@ export function BlockDrawer() {
               </div>
               <div className="flex items-center gap-2">
                 <Input type="number" min={1} max={480} value={partialMin} onChange={(e) => setPartialMin(Number(e.target.value))} aria-label="部分完成分钟" className="h-8 w-24" />
-                <span className="text-[11px] text-site-ink-soft">分钟</span>
+                <span className="text-xs text-site-ink-soft">分钟</span>
                 <Button size="sm" onClick={() => { void markProgress('partial', Number(partialMin) || 0); }}>记录部分完成</Button>
               </div>
             </div>
           )}
           {block.pinned && (
-            <p className="text-[11px] leading-relaxed text-site-ink-soft">已钉住：日期与时间已锁定，手动拖动/调整会被禁止；取消钉住或让 AI 助手调整即可移动。</p>
+            <p className="text-xs leading-relaxed text-site-ink-soft">已钉住：日期与时间已锁定，手动拖动/调整会被禁止；取消钉住或让 AI 助手调整即可移动。</p>
           )}
           <div className="space-y-1.5">
             <Label htmlFor="b-notes">备注（可选）</Label>
             <Textarea id="b-notes" value={notes} maxLength={500} rows={3} placeholder="例如：先做 2023 年真题" onChange={(e) => setNotes(e.target.value)} />
           </div>
           {!isShared && (
-            <div className="flex items-center justify-between rounded-lg border border-site-line bg-site-surface px-3 py-2.5">
+            <div className="flex items-center justify-between rounded-[var(--site-radius-card)] border border-site-line bg-site-surface px-3 py-2.5">
               <div className="flex items-center gap-2 text-sm text-site-ink"><Pin className="h-4 w-4 text-site-ink" /> 钉住此任务块</div>
               <Switch checked={block.pinned} onCheckedChange={() => { void togglePinned(); }} aria-label="钉住此任务块" />
             </div>

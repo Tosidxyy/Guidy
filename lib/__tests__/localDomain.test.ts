@@ -284,3 +284,13 @@ describe('本地画像', () => {
 
 // 类型占位：避免 schema 类型未被引用时的 lint 噪音
 export type _Unused = ConstraintSetArtifact;
+describe('今天不排过去的时间', () => {
+  it('提交时丢弃/夹紧今天已过去的块', async () => {
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const res = await commitPlan({ horizon_start: today, horizon_days: 3 });
+    const plan = await localPlan(res.plan.id);
+    const past = plan.blocks.filter((b) => b.start_utc.slice(0, 10) === today && Date.parse(b.end_utc) <= Date.now());
+    expect(past).toHaveLength(0);
+  });
+});

@@ -12,9 +12,9 @@ export function FeedbackDialog() {
           <DialogDescription>扫码打开 Guidy Bug 反馈表，或分享给好友。</DialogDescription>
         </DialogHeader>
         <div className="flex items-center justify-center py-2">
-          <img src="/brand/feedback-qr.png" alt="Guidy Bug 反馈表二维码" className="w-64 rounded-lg" />
+          <img src="/brand/feedback-qr.png" alt="Guidy Bug 反馈表二维码" className="w-64 rounded-[var(--site-radius-card)]" />
         </div>
-        <p className="text-center text-[11px] text-site-ink-soft">腾讯文档 · 可多人实时在线编辑，权限安全可控</p>
+        <p className="text-center text-xs text-site-ink-soft">腾讯文档 · 可多人实时在线编辑，权限安全可控</p>
       </DialogContent>
     </Dialog>
   );

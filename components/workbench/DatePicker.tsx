@@ -84,7 +84,7 @@ export function DatePicker({ value, onChange }: { value: string; onChange: (day:
         <button
           type="button"
           aria-label="选择日期"
-          className="tabular flex h-8 w-[150px] items-center gap-1.5 rounded-md border border-site-line bg-site-bg px-2 text-xs text-site-ink hover:bg-site-surface-2"
+          className="tabular flex h-8 w-[150px] items-center gap-1.5 rounded-[var(--site-radius-control)] border border-site-line bg-site-bg px-2 text-xs text-site-ink hover:bg-site-surface-2"
         >
           <CalendarDays className="h-3.5 w-3.5 shrink-0 text-site-ink-soft" />
           <span className="truncate">{value.replaceAll('-', '/')}</span>
@@ -101,7 +101,7 @@ export function DatePicker({ value, onChange }: { value: string; onChange: (day:
           </button>
         </div>
         <div className="grid grid-cols-7 gap-0.5 px-1">
-          {WEEK_LABELS.map((w) => <span key={w} className="text-center text-[10px] text-site-ink-soft">{w}</span>)}
+          {WEEK_LABELS.map((w) => <span key={w} className="text-center text-xs text-site-ink-soft">{w}</span>)}
           {cells.map((day, i) => {
             if (!day) return <span key={`b${i}`} />;
             const d = Number(day.slice(8));
@@ -116,7 +116,7 @@ export function DatePicker({ value, onChange }: { value: string; onChange: (day:
                 aria-pressed={selected}
                 onClick={() => pick(day)}
                 className={cn(
-                  'relative flex h-7 w-full items-center justify-center rounded-md text-[11px] tabular transition-colors',
+                  'relative flex h-7 w-full items-center justify-center rounded-[var(--site-radius-control)] text-xs tabular transition-colors',
                   selected ? 'bg-site-ink text-site-bg' : 'text-site-ink hover:bg-site-surface-2',
                   isToday && !selected && 'ring-1 ring-inset ring-site-ink/40',
                 )}
@@ -136,9 +136,9 @@ export function DatePicker({ value, onChange }: { value: string; onChange: (day:
             placeholder="yyyy-mm-dd"
             onChange={(e) => setTyped(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') commitTyped(typed); }}
-            className="tabular h-7 flex-1 text-[11px]"
+            className="tabular h-7 flex-1 text-xs"
           />
-          <button type="button" className="rounded px-2 py-1 text-[11px] text-site-ink hover:bg-site-surface-2" onClick={() => commitTyped(typed)}>跳转</button>
+          <button type="button" className="rounded px-2 py-1 text-xs text-site-ink hover:bg-site-surface-2" onClick={() => commitTyped(typed)}>跳转</button>
         </div>
       </PopoverContent>
     </Popover>

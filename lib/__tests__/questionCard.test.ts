@@ -12,8 +12,8 @@ const card = {
 
 describe('questionCard', () => {
   it('多问题：按问题顺序拼成一条消息，只带已作答的行', () => {
-    expect(composeAnswers(card, { 0: '每周3练', 1: '早上 07:00–08:30' })).toBe('每周想练几次？：每周3练\n训练放在哪个时段？：早上 07:00–08:30');
-    expect(composeAnswers(card, { 1: '晚上 22:30 之后' })).toBe('训练放在哪个时段？：晚上 22:30 之后');
+    expect(composeAnswers(card, { 0: '每周3练', 1: '早上 07:00–08:30' })).toBe('每周想练几次 → 每周3练\n训练放在哪个时段 → 早上 07:00–08:30');
+    expect(composeAnswers(card, { 1: '晚上 22:30 之后' })).toBe('训练放在哪个时段 → 晚上 22:30 之后');
     expect(composeAnswers(card, {})).toBe('');
   });
 
@@ -23,7 +23,16 @@ describe('questionCard', () => {
   });
 
   it('自定义回答文本去空白参与拼接，空输入不计入', () => {
-    expect(composeAnswers(card, { 0: '  每周4练，周末加一次  ', 1: '   ' })).toBe('每周想练几次？：每周4练，周末加一次');
+    expect(composeAnswers(card, { 0: '  每周4练，周末加一次  ', 1: '   ' })).toBe('每周想练几次 → 每周4练，周末加一次');
     expect(composeAnswers(card, { 0: '' })).toBe('');
+  });
+});
+describe('composeAnswers 文案', () => {
+  it('问题末尾标点不残留，使用「问题 → 回答」', async () => {
+    const { composeAnswers } = await import('@/lib/questionCard');
+    const artifact: any = { type: 'question_card', questions: [{ text: '复习密度。' }, { text: '每天多久？' }] };
+    const text = composeAnswers(artifact, { 0: '3 周后', 1: '2 小时。' });
+    expect(text).toBe('复习密度 → 3 周后\n每天多久 → 2 小时');
+    expect(text).not.toContain('。：');
   });
 });

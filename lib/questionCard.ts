@@ -5,8 +5,9 @@ export const CUSTOM_ANSWER_LABEL = '自定义回答';
 
 /** 把卡片上选中的答案拼成一条用户消息：按问题顺序，只带已作答的行。 */
 export function composeAnswers(artifact: QuestionCardArtifact, answers: Record<number, string>): string {
+  const clean = (t: string) => t.trim().replace(/[。；;，,：:？?！!\s]+$/u, '');
   return artifact.questions
-    .map((q, i) => (answers[i]?.trim() ? `${q.text}：${answers[i].trim()}` : null))
+    .map((q, i) => (answers[i]?.trim() ? `${clean(q.text)} → ${clean(answers[i])}` : null))
     .filter((line): line is string => line !== null)
     .join('\n');
 }

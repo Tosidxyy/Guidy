@@ -36,7 +36,7 @@ export function ChatInput({ streaming, disabled, queued = [], onSend, onSendNow,
       {queued.length > 0 && (
         <div className="mb-2 space-y-1" aria-label="排队中的消息">
           {queued.map((q) => (
-            <div key={q.id} className="flex items-center gap-2 rounded-lg border border-site-line bg-site-surface-2 px-2 py-1 text-[11px] text-site-ink">
+            <div key={q.id} className="flex items-center gap-2 rounded-[var(--site-radius-card)] border border-site-line bg-site-surface-2 px-2 py-1 text-xs text-site-ink">
               <span className="shrink-0 text-site-ink-soft">排队</span>
               <span className="min-w-0 flex-1 truncate">{q.text}</span>
               <button type="button" className="shrink-0 rounded px-1.5 py-0.5 text-site-ink hover:bg-site-surface" onClick={() => onSendNow(q.id)}>插队</button>
@@ -61,7 +61,7 @@ export function ChatInput({ streaming, disabled, queued = [], onSend, onSendNow,
           aria-label="对话输入"
         />
         <div className="absolute bottom-2 right-2 flex items-center gap-2">
-          <span className={cn('tabular text-[10px]', text.length > MESSAGE_MAX - 100 ? 'text-site-danger' : 'text-site-ink-soft')}>
+          <span className={cn('tabular text-xs', text.length > MESSAGE_MAX - 100 ? 'text-site-danger' : 'text-site-ink-soft')}>
             {text.length}/{MESSAGE_MAX}
           </span>
           {streaming ? (

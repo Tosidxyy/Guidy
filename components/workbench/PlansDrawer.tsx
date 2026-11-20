@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { FolderOpen, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { FolderOpen, Plus, Trash2, X } from 'lucide-react';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useChatStore } from '@/store/useChatStore';
 import { useUiStore } from '@/store/useUiStore';
@@ -23,6 +23,13 @@ export function PlansDrawer() {
   const { plans, isLoading, isError, refetch, switchPlan, newPlan, deletePlan, isPending } = usePlanManager();
 
   const [confirm, setConfirm] = useState<Confirm>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeDrawer(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, closeDrawer]);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState('');
   const busy = isPending;
@@ -54,6 +61,9 @@ export function PlansDrawer() {
         onClick={closeDrawer}
         aria-hidden="true"
       />
+      {open && (
+        <div className="absolute inset-0 z-40 bg-black/30" aria-hidden="true" onClick={closeDrawer} />
+      )}
       <div
         role="dialog"
         aria-label="对话与计划"
@@ -63,32 +73,35 @@ export function PlansDrawer() {
         )}
         style={{ translate: open ? '0 0' : '-100% 0' }}
       >
-        <div className="border-b border-site-line px-5 py-4">
+        <div className="relative border-b border-site-line px-5 py-4">
+          <button type="button" aria-label="关闭" className="absolute right-3 top-3 flex size-8 items-center justify-center rounded-[var(--site-radius-control)] text-site-ink-soft hover:bg-site-surface-2" onClick={closeDrawer}>
+            <X className="h-4 w-4" />
+          </button>
           <h2 className="font-display flex items-center gap-2 text-sm font-semibold text-site-ink"><FolderOpen className="h-4 w-4 text-site-ink" /> 对话与计划</h2>
           <p className="mt-0.5 text-xs text-site-ink-soft">每个对话对应一个计划；切换会切换日历的活动层。</p>
         </div>
 
         <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
           <Button className="w-full" onClick={requestNew} disabled={busy}><Plus className="mr-1.5 h-4 w-4" /> 新建对话（新计划）</Button>
-          {streaming && <p className="text-[11px] text-site-ink-soft">当前对话仍在后台规划；切换或删除会断开本地流，切回可继续。</p>}
+          {streaming && <p className="text-xs text-site-ink-soft">当前对话仍在后台规划；切换或删除会断开本地流，切回可继续。</p>}
           {isLoading && <p className="text-xs text-site-ink-soft">加载中…</p>}
           {isError && (
-            <div className="flex items-center justify-between rounded-lg border border-site-line px-3 py-2 text-xs text-site-ink-soft">
+            <div className="flex items-center justify-between rounded-[var(--site-radius-card)] border border-site-line px-3 py-2 text-xs text-site-ink-soft">
               列表加载失败 <Button variant="outline" size="sm" onClick={() => refetch()}>重试</Button>
             </div>
           )}
           {currentId === null && (
-            <div className="rounded-lg border border-site-line bg-site-surface-2 px-3 py-2 text-xs text-site-ink">未保存草稿 <Badge variant="secondary" className="ml-1">当前</Badge></div>
+            <div className="rounded-[var(--site-radius-card)] border border-site-line bg-site-surface-2 px-3 py-2 text-xs text-site-ink">未保存草稿 <Badge variant="secondary" className="ml-1">当前</Badge></div>
           )}
           {plans.map((p) => (
-            <div key={p.id} className={cn('rounded-lg border px-3 py-2', p.id === currentId ? 'border-site-ink/50 bg-site-ink/5' : 'border-site-line')}>
+            <div key={p.id} className={cn('rounded-[var(--site-radius-card)] border px-3 py-2', p.id === currentId ? 'border-site-ink/50 bg-site-ink/5' : 'border-site-line')}>
               <div className="flex items-center justify-between gap-2">
                 <button type="button" className="min-w-0 flex-1 truncate text-left text-sm font-medium text-site-ink hover:text-site-ink disabled:opacity-50" onClick={() => requestSwitch(p.id)} disabled={busy || p.id === currentId}>
                   {p.title}
                 </button>
                 {p.id === currentId && <Badge variant="secondary">当前</Badge>}
               </div>
-              <p className="tabular mt-0.5 text-[11px] text-site-ink-soft">{p.horizon_start} · {p.horizon_days} 天 · v{p.version} · 更新于 {p.updated_at.slice(0, 10)}</p>
+              <p className="tabular mt-0.5 text-xs text-site-ink-soft">{p.horizon_start} · {p.horizon_days} 天 · v{p.version} · 更新于 {p.updated_at.slice(0, 10)}</p>
               <div className="mt-1.5 flex justify-end gap-1">
                 {p.id === currentId && (
                   <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => { setDraft(p.title); setRenaming(true); }}>重命名</Button>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
-import { CalendarDays, ChevronLeft, ChevronRight, MessageSquareText, Moon, Redo2, Settings2, Sun, Undo2, Users } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, MessageSquareText, Moon, MoreHorizontal, Redo2, Settings2, Sun, Undo2 } from 'lucide-react';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { useBlockHistory } from '@/store/useBlockHistory';
@@ -39,6 +39,7 @@ export function TopBar() {
   const openDrawer = useUiStore((s) => s.openDrawer);
 
   const [renaming, setRenaming] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [draft, setDraft] = useState(title);
 
   const doUndo = () => {
@@ -54,7 +55,7 @@ export function TopBar() {
 
       <button
         type="button"
-        className="ml-1 hidden min-w-0 items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-site-ink hover:bg-site-surface-2 md:flex"
+        className="ml-1 hidden min-w-0 items-center gap-1 rounded-[var(--site-radius-control)] px-2 py-1 text-sm font-medium text-site-ink hover:bg-site-surface-2 md:flex"
         onClick={() => { setDraft(title); setRenaming(true); }}
         title="重命名计划"
       >
@@ -70,7 +71,7 @@ export function TopBar() {
         <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={view === 'day' ? '后一天' : '下一周'} onClick={() => setDayAnchor(shiftDate(anchorDate, view === 'day' ? 1 : 7))}>
           <ChevronRight className="h-4 w-4" />
         </Button>
-        <div className="ml-1 flex rounded-lg border border-site-line p-0.5" role="tablist" aria-label="视图切换">
+        <div className="ml-1 flex rounded-[var(--site-radius-card)] border border-site-line p-0.5" role="tablist" aria-label="视图切换">
           {(['week', 'day'] as const).map((v) => (
             <button
               key={v}
@@ -79,7 +80,7 @@ export function TopBar() {
               aria-selected={view === v}
               onClick={() => setView(v)}
               className={cn(
-                'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                'rounded-[var(--site-radius-control)] px-2.5 py-1 text-xs font-medium transition-colors',
                 view === v ? 'bg-site-ink text-site-bg shadow-sm' : 'text-site-ink-soft hover:text-site-ink',
               )}
             >
@@ -89,7 +90,7 @@ export function TopBar() {
         </div>
       </div>
 
-      <div className="flex items-center gap-0.5">
+      <div className="hidden items-center gap-0.5 sm:flex">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon" className="h-8 w-8" disabled={undoDepth === 0} aria-label="撤销" onClick={doUndo}>
@@ -110,12 +111,7 @@ export function TopBar() {
         <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="反馈" onClick={() => openDrawer('feedback')}>
           <MessageSquareText className="h-4 w-4" />
         </Button>
-        <Button
-          variant="ghost" size="icon" className="h-8 w-8" aria-label="社区模板"
-          onClick={() => toast.info('社区模板将在 M4 里程碑上线，敬请期待')}
-        >
-          <Users className="h-4 w-4" />
-        </Button>
+
         <Button
           variant="ghost" size="icon" className="h-8 w-8" aria-label={theme === 'dark' ? '切换到浅色' : '切换到深色'}
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -125,6 +121,31 @@ export function TopBar() {
         <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="设置" onClick={() => openDrawer('settings')}>
           <Settings2 className="h-4 w-4" />
         </Button>
+      </div>
+
+      <div className="relative sm:hidden">
+        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="更多" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+        {moreOpen && (
+          <div className="absolute right-0 top-10 z-50 w-40 rounded-[var(--site-radius-card)] border border-site-line bg-site-surface p-1 shadow-lg" role="menu">
+            {[
+              { label: '撤销', disabled: undoDepth === 0, onClick: doUndo },
+              { label: '重做', disabled: redoDepth === 0, onClick: doRedo },
+              { label: '反馈', onClick: () => openDrawer('feedback') },
+              { label: theme === 'dark' ? '切换到浅色' : '切换到深色', onClick: () => setTheme(theme === 'dark' ? 'light' : 'dark') },
+              { label: '设置', onClick: () => openDrawer('settings') },
+            ].map((item) => (
+              <button
+                key={item.label} type="button" role="menuitem" disabled={item.disabled}
+                className="flex w-full items-center rounded-[var(--site-radius-control)] px-3 py-2 text-left text-sm text-site-ink hover:bg-site-surface-2 disabled:opacity-50"
+                onClick={() => { setMoreOpen(false); item.onClick(); }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <Dialog open={renaming} onOpenChange={setRenaming}>

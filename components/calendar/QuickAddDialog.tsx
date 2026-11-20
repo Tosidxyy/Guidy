@@ -69,7 +69,7 @@ export function QuickAddDialog() {
           <DialogTitle className="font-display">添加任务</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="rounded-lg bg-site-surface-2 px-3 py-2 text-sm text-site-ink-soft">
+          <div className="rounded-[var(--site-radius-card)] bg-site-surface-2 px-3 py-2 text-sm text-site-ink-soft">
             <span className="tabular font-medium text-site-ink">{quickAdd.day} {minToHHmm(quickAdd.minutes)}</span> 开始
           </div>
           <div className="space-y-1.5">

@@ -30,6 +30,12 @@
   --site-border: #eff3f4;
   --site-font: "Inter", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
   --site-radius: 16px;
+  --site-radius-control: 8px;
+  --site-radius-card: var(--site-radius);
+  --site-text-body: 14px;
+  --site-text-secondary: 13px;
+  --site-text-label: 12px;
+  --site-focus-ring: color-mix(in srgb, var(--site-ink) 22%, transparent);
   --site-space: 1;
   --site-type: 1;
   --site-motion: 1;
@@ -399,4 +405,22 @@
 @keyframes guidy-pulse {
   0%, 100% { opacity: 0.2; }
   50% { opacity: 0.85; }
+}
+
+/* 统一焦点环：只在键盘焦点时出现，细且不抢视觉 */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--site-bg), 0 0 0 3px var(--site-focus-ring);
+}
+button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  box-shadow: 0 0 0 1px var(--site-bg), 0 0 0 3px var(--site-focus-ring);
+}
+/* 主题切换做短暂颜色过渡 */
+html, body, .bg-site-bg, .bg-site-surface, .bg-site-surface-2, .text-site-ink, .text-site-ink-soft, .border-site-line {
+  transition: background-color var(--site-motion-standard) var(--site-ease-glide),
+    color var(--site-motion-standard) var(--site-ease-glide),
+    border-color var(--site-motion-standard) var(--site-ease-glide);
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }

@@ -42,7 +42,7 @@ export const BlockCard = memo(function BlockCard({
       tabIndex={interactive ? 0 : undefined}
       aria-label={`${block.title} ${minToHHmm(startMin)} 到 ${minToHHmm(endMin)}${planLabel ? `，${planLabel}` : ''}`}
       className={cn(
-        'group absolute select-none overflow-hidden rounded-md border text-left hover:[--cat-fill:18%]',
+        'group absolute select-none overflow-hidden rounded-[var(--site-radius-control)] border text-left hover:[--cat-fill:18%]',
         'transition-shadow duration-150',
         interactive && !block.pinned && 'cursor-grab active:cursor-grabbing touch-none',
         interactive && block.pinned && 'cursor-default',
@@ -84,7 +84,7 @@ export const BlockCard = memo(function BlockCard({
           {titleLines?.length ? (
             <span className="flex min-w-0 flex-col" style={{ color: 'var(--site-fg)' }}>
               {titleLines.map((line, i) => (
-                <span key={i} className={i === 0 ? 'truncate text-xs font-semibold leading-tight' : 'truncate text-[10px] leading-tight opacity-90'}>
+                <span key={i} className={i === 0 ? 'truncate text-xs font-semibold leading-tight' : 'truncate text-xs leading-tight opacity-90'}>
                   {i > 0 ? `+ ${line}` : line}
                 </span>
               ))}
@@ -97,12 +97,12 @@ export const BlockCard = memo(function BlockCard({
           {block.pinned && <Pin className="h-3 w-3 shrink-0" style={{ color: 'var(--cat)' }} aria-label="已钉住" />}
           {block.status === 'completed' && <Check className="h-3 w-3 shrink-0" style={{ color: 'var(--cat)' }} aria-label="已完成" />}
           {block.origin === 'fixed' && <Lock className="h-3 w-3 shrink-0 text-site-ink-soft" aria-label="固定" />}
-          {planLabel && <span className="ml-auto max-w-[55%] truncate rounded bg-site-surface/85 px-1 text-[9px] leading-tight text-site-ink-soft">{planLabel}</span>}
-          {visual === 'ghost-removed' && <span className="ml-auto text-[10px] text-site-danger">移除</span>}
-          {visual === 'ghost-added' && <span className="ml-auto text-[10px] text-site-success">新增</span>}
+          {planLabel && <span className="ml-auto max-w-[55%] truncate rounded bg-site-surface/85 px-1 text-xs leading-tight text-site-ink-soft">{planLabel}</span>}
+          {visual === 'ghost-removed' && <span className="ml-auto text-xs text-site-danger">移除</span>}
+          {visual === 'ghost-added' && <span className="ml-auto text-xs text-site-success">新增</span>}
         </div>
         {!compact && (
-          <span className="tabular mt-0.5 text-[10px] leading-tight text-site-ink-soft">
+          <span className="tabular mt-0.5 text-xs leading-tight text-site-ink-soft">
             {minToHHmm(startMin)}–{minToHHmm(endMin)}
           </span>
         )}

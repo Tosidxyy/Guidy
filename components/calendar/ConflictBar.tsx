@@ -25,17 +25,17 @@ export function ConflictBar({ conflicts, activePlanId, timezone, onMerge, onIgno
   const label = names.slice(0, 2).join('、') + (names.length > 2 ? ` 等 ${names.length} 个计划` : '');
 
   return (
-    <div className="border-b border-site-line bg-site-warning/10 text-[11px] text-site-ink">
+    <div className="border-b border-site-line bg-site-warning/10 text-xs text-site-ink">
       <div className="flex items-center gap-2 px-3 py-1.5">
         <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-site-warning-text" />
         <span className="min-w-0 flex-1 truncate">
           与「{label}」有 <span className="tabular font-semibold">{conflicts.length}</span> 处时间重叠
         </span>
-        <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[11px]" onClick={() => setOpen((v) => !v)}>
+        <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" onClick={() => setOpen((v) => !v)}>
           {open ? <ChevronUp className="mr-0.5 h-3 w-3" /> : <ChevronDown className="mr-0.5 h-3 w-3" />}
           {open ? '收起' : '查看'}
         </Button>
-        <Button variant="outline" size="sm" className="h-6 px-1.5 text-[11px]" onClick={onMergeAll}>
+        <Button variant="outline" size="sm" className="h-6 px-1.5 text-xs" onClick={onMergeAll}>
           <Merge className="mr-0.5 h-3 w-3" /> 全部合并
         </Button>
       </div>
@@ -54,8 +54,8 @@ export function ConflictBar({ conflicts, activePlanId, timezone, onMerge, onIgno
                   {c.merged_title}
                   <span className="ml-1 text-site-ink-soft">（{other}）</span>
                 </span>
-                <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[11px] text-site-ink" onClick={() => onMerge(c)}>合并</Button>
-                <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[11px]" onClick={() => onIgnore(c)}>忽略</Button>
+                <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-site-ink" onClick={() => onMerge(c)}>合并</Button>
+                <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs" onClick={() => onIgnore(c)}>忽略</Button>
               </li>
             );
           })}

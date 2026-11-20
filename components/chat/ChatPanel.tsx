@@ -24,7 +24,7 @@ function ThinkingHint() {
     return () => clearInterval(t);
   }, []);
   return (
-    <p className="animate-pulse px-1 text-[11px] text-site-ink-soft">
+    <p className="animate-pulse px-1 text-xs text-site-ink-soft">
       Guidy 正在思考…（{secs}s）{secs >= 45 ? ' 复杂计划可能需要 1–2 分钟，请稍候' : ''}
     </p>
   );
@@ -138,7 +138,7 @@ export function ChatPanel() {
       <PlansDrawer />
       <div className="flex items-center justify-between border-b border-site-line px-3 py-2">
         <div className="flex items-center gap-1">
-        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="对话列表" title="对话与计划" onClick={() => openDrawer('plans')}>
+        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="对话列表" title="对话与计划" onClick={() => { const ui = useUiStore.getState(); if (ui.drawer === 'plans') ui.closeDrawer(); else openDrawer('plans'); }}>
           <PanelLeftOpen className="h-4 w-4" />
         </Button>
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-site-ink"><MessageCircle className="h-4 w-4 text-site-ink" /> AI 对话排程</h2>
@@ -167,9 +167,9 @@ export function ChatPanel() {
           />
         )}
         {patch && !planId && (
-          <div className="rounded-lg border border-site-warning/40 bg-site-warning/5 p-3">
+          <div className="rounded-[var(--site-radius-card)] border border-site-warning/40 bg-site-warning/5 p-3">
             <p className="text-xs font-semibold text-site-ink">这条调整无法应用</p>
-            <p className="mt-1 text-[11px] leading-relaxed text-site-ink-soft">
+            <p className="mt-1 text-xs leading-relaxed text-site-ink-soft">
               当前还没有保存的计划。请让 AI 重新输出完整方案，或先把上一版约束方案确认为计划。
             </p>
             <div className="mt-2 flex justify-end">
@@ -178,22 +178,22 @@ export function ChatPanel() {
           </div>
         )}
         {error && (
-          <p className="rounded-lg border border-site-danger/30 bg-site-danger/5 px-3 py-2 text-xs text-site-danger">
+          <p className="rounded-[var(--site-radius-card)] border border-site-danger/30 bg-site-danger/5 px-3 py-2 text-xs text-site-danger">
             {error.message}{error.diagnosticId ? `（诊断 ID：${error.diagnosticId}）` : ''}
           </p>
         )}
-        {connection === 'connecting' && <p className="px-1 text-[11px] text-site-ink-soft">正在连接…</p>}
+        {connection === 'connecting' && <p className="px-1 text-xs text-site-ink-soft">正在连接…</p>}
         {streaming && lastMessage?.role === 'user' && <ThinkingHint />}
         {streaming && lastMessage?.role !== 'user' && splitArtifactText(lastMessage?.content ?? '').artifactJson !== null && (
-          <p className="animate-pulse px-1 text-[11px] text-site-ink-soft">正在生成方案…</p>
+          <p className="animate-pulse px-1 text-xs text-site-ink-soft">正在生成方案…</p>
         )}
-        {thinking && streaming && <p className="animate-pulse px-1 text-[11px] text-site-ink-soft">正在思考…</p>}
-        {searching && streaming && <p className="px-1 text-[11px] text-site-ink-soft">正在联网检索…</p>}
-        {switching && streaming && <p className="animate-pulse px-1 text-[11px] text-site-ink-soft">主模型暂不可用，正在切换备用模型重试…</p>}
+        {thinking && streaming && <p className="animate-pulse px-1 text-xs text-site-ink-soft">正在思考…</p>}
+        {searching && streaming && <p className="px-1 text-xs text-site-ink-soft">正在联网检索…</p>}
+        {switching && streaming && <p className="animate-pulse px-1 text-xs text-site-ink-soft">主模型暂不可用，正在切换备用模型重试…</p>}
       </div>
 
       {chatRemaining !== undefined && chatRemaining <= 10 && (
-        <p className="px-3 pb-1 text-[11px] text-site-ink-soft">
+        <p className="px-3 pb-1 text-xs text-site-ink-soft">
           {quotaExhausted ? '今天的对话额度用完了，明天再来继续规划。' : `今日对话额度还剩 ${chatRemaining} 轮`}
         </p>
       )}
