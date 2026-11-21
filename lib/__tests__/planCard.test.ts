@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { artifactFromPlan, canGenerateSchedule, diffPlanCard, patchFitsPlanCard, planFromArtifact, stagePatchOnDraft } from '@/lib/planCard';
+import { artifactFromPlan, canGenerateSchedule, diffPlanCard, patchFitsPlanCard, planFromArtifact, scheduleInputsChanged, stagePatchOnDraft } from '@/lib/planCard';
 import type { PlanState } from '@/shared/types';
 
 const plan: PlanState = {
@@ -116,5 +116,21 @@ describe('stagePatchOnDraft', () => {
   it('无 draft 时按当前计划应用 patch', () => {
     const staged = stagePatchOnDraft(plan, null, mk([{ op: 'update_task_def', key: 'math', patch: { duration_min: 90 } }]));
     expect(staged.task_defs[0].duration_min).toBe(90);
+  });
+});
+
+describe('scheduleInputsChanged', () => {
+  const base = artifactFromPlan(plan);
+  it('标题/备注编辑不触发重排（保护已应用的时间块调整）', () => {
+    const next = { ...base, plan_title: '新名字', task_defs: base.task_defs.map((t) => ({ ...t, notes: '改备注', title: '改标题' })) };
+    expect(scheduleInputsChanged(base, next)).toBe(false);
+  });
+  it('时长/约束/horizon 变化触发重排', () => {
+    expect(scheduleInputsChanged(base, { ...base, task_defs: base.task_defs.map((t) => ({ ...t, duration_min: 90 })) })).toBe(true);
+    expect(scheduleInputsChanged(base, { ...base, constraints: [...base.constraints, { type: 'buffer', minutes: 10 }] })).toBe(true);
+    expect(scheduleInputsChanged(base, { ...base, horizon_start: '2026-11-19' })).toBe(true);
+  });
+  it('完全相同不触发', () => {
+    expect(scheduleInputsChanged(base, artifactFromPlan(plan))).toBe(false);
   });
 });

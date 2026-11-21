@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
-import { artifactFromPlan, canGenerateSchedule, patchFitsPlanCard, planFromArtifact, stagePatchOnDraft } from '@/lib/planCard';
+import { artifactFromPlan, canGenerateSchedule, patchFitsPlanCard, planFromArtifact, scheduleInputsChanged, stagePatchOnDraft } from '@/lib/planCard';
 import { generateScheduleAction, savePlanCardAction } from '@/lib/planActions';
 import { useApplyPatch } from '@/lib/useApplyPatch';
 import { useAutoSaveDraft } from '@/lib/useAutoSaveDraft';
@@ -229,10 +229,19 @@ export function PlanCardPanel() {
   };
 
   // 方案卡保存后再重排：先落任务/约束（草稿首次保存或已保存计划的差异），再生成时间块。
+  // 排程输入没变时只保存不重排：重排会按引擎偏好重新落块，抹掉刚应用/手动调整的时间。
   const saveAndGenerate = async () => {
     setSaving(true);
+    const base = artifactFromPlan(usePlanStore.getState().state);
     const saved = await savePlanCardAction(viewed);
     if (!saved.ok) { setSaving(false); toast.error(saved.reason ?? '保存失败'); return; }
+    if (!needsSchedule && !scheduleInputsChanged(base, viewed)) {
+      setSaving(false);
+      toast.success('已保存');
+      setAttention(false);
+      close();
+      return;
+    }
     const r = await generateScheduleAction();
     setSaving(false);
     if (!r.ok) { toast.error(r.reason ?? '生成排程失败'); return; }

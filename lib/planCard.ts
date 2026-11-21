@@ -97,6 +97,22 @@ export function canGenerateSchedule(state: PlanState): boolean {
   return state.task_defs.length > 0 && state.blocks.length === 0;
 }
 
+/** 排程输入（horizon/任务排程字段/约束）是否变化：标题、备注等不影响排程的编辑不应触发重排，否则会抹掉已应用的时间块调整。 */
+export function scheduleInputsChanged(base: ConstraintSetArtifact, next: ConstraintSetArtifact): boolean {
+  const sig = (a: ConstraintSetArtifact) => canonical({
+    horizon_start: a.horizon_start ?? null,
+    horizon_days: a.horizon_days,
+    tasks: a.task_defs.map((t) => ({
+      key: t.key, category: t.category, duration_min: t.duration_min, frequency: t.frequency,
+      priority: t.priority, splittable: t.splittable, preferred_period: t.preferred_period ?? null,
+      sort_order: t.sort_order, deadline: t.deadline ?? null, earliest_start: t.earliest_start ?? null,
+      depends_on: t.depends_on ?? null,
+    })),
+    constraints: a.constraints,
+  });
+  return sig(base) !== sig(next);
+}
+
 const PLAN_CARD_OPS = new Set(['add_task_def', 'update_task_def', 'remove_task_def', 'add_constraint', 'update_constraint', 'remove_constraint', 'update_plan']);
 
 /** fitting patch 暂存到卡片：叠加在用户未保存的编辑草稿上，避免服务端旧状态复活已删任务。 */
