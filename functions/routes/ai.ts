@@ -214,6 +214,8 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
         const sessionId = session.id;
         let bestText = '';
         let emittedProse = '';
+        // 客户端气泡当前显示的文字：终局 flush 必须复用同一气泡 seq 并整段替换，不能新 seq 再发一遍全文。
+        let shownProse = '';
         // 重试时客户端已收到上一轮文字：用 attempt 标记让它整段替换，不要在同一个气泡里叠加。
         let replacedThisAttempt = false;
         const assistantSeq = nextSeq();
@@ -257,6 +259,7 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
                     const text = replace ? safe : safe.slice(emittedProse.length);
                     replacedThisAttempt = true;
                     emittedProse = safe;
+                    shownProse = replace ? safe : shownProse + text;
                     emit({ event: 'delta', data: { seq: p.data.seq, text, attempt } as any });
                   }
                   continue;
@@ -346,7 +349,9 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
             }
             if (parsed.kind === 'patch' && !proseNow.trim()) {
               const summary = String((parsed.value as any).summary ?? '').slice(0, 80);
-              emit({ event: 'delta', data: { seq: assistantSeq, text: `已按你的要求更新：${summary || '完成这轮调整'}。`, attempt } as any });
+              const fallback = `已按你的要求更新：${summary || '完成这轮调整'}。`;
+              shownProse = fallback;
+              emit({ event: 'delta', data: { seq: assistantSeq, text: fallback, attempt: attempt + 1 } as any });
             }
             if (missingPrefs.length) {
               const base = (preview as any) ?? (preview = {});
@@ -368,9 +373,8 @@ export async function aiChat(ctx: RouteCtx, deps: Deps): Promise<Response> {
           break;
         }
         const finalProse = splitArtifactText(bestText).prose;
-        if (finalProse.length > emittedProse.length) {
-          const replace = emittedProse === '' && finalProse.length > 0;
-          emit({ event: 'delta', data: { seq: nextSeq(), text: replace ? finalProse : finalProse.slice(emittedProse.length), attempt: terminalAttempt } as any });
+        if (finalProse && finalProse !== shownProse) {
+          emit({ event: 'delta', data: { seq: assistantSeq, text: finalProse, attempt: terminalAttempt + 1 } as any });
         }
         emit({ event: 'status', data: { seq: nextSeq(), state: terminalState } });
         emit({ event: 'done', data: { seq: nextSeq() } });

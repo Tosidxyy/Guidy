@@ -3,7 +3,7 @@ import { addDays, format, parseISO, startOfWeek } from 'date-fns';
 import { toast } from 'sonner';
 import { CalendarPlus } from 'lucide-react';
 import type { Block, PlanState } from '@/shared/types';
-import { findConflicts, hhmmToMin, localDay, localMinutes, minToHHmm, utcAt, validatePlacement, weekdayOfDay, applyPatch, type PlanConflict } from '@/shared/engine';
+import { findConflicts, isMergedPair, hhmmToMin, localDay, localMinutes, minToHHmm, utcAt, validatePlacement, weekdayOfDay, applyPatch, type PlanConflict } from '@/shared/engine';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useUiStore } from '@/store/useUiStore';
 import { usePlanLayers } from '@/lib/usePlanLayers';
@@ -25,7 +25,7 @@ import { BlockCard, type BlockVisualState } from './BlockCard';
 import { ConflictBar } from './ConflictBar';
 import { GUTTER_PX, HOUR_PX, PX_PER_MIN, SNAP_MIN, layoutDay, snap } from './layout';
 import { QuickAddDialog } from './QuickAddDialog';
-import { loadPairs, pairKey } from '@/lib/parallel';
+import { loadPairs, pairKey, acceptPairs } from '@/lib/parallel';
 
 const WEEKDAY_LABEL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -101,6 +101,14 @@ export function CalendarPanel() {
   const foreignMap = useMemo(() => new Map(foreign.map((f) => [f.block.id, f])), [foreign]);
   const combinedBlocks = useMemo(() => [...state.blocks, ...foreign.map((f) => f.block), ...busyBlocks], [state.blocks, foreign, busyBlocks]);
 
+  // 并行对变化（接受/取消）→ 触发合并渲染重算。
+  const [parallelTick, setParallelTick] = useState(0);
+  useEffect(() => {
+    const onChange = () => setParallelTick((t) => t + 1);
+    window.addEventListener('guidy:parallel-changed', onChange);
+    return () => window.removeEventListener('guidy:parallel-changed', onChange);
+  }, []);
+
   const [ignoredConflicts, setIgnoredConflicts] = useState<string[]>([]);
   const conflicts = useMemo<PlanConflict[]>(() => {
     if (!state.plan.id) return [];
@@ -108,18 +116,26 @@ export function CalendarPanel() {
       { id: state.plan.id, title: state.plan.title, blocks: state.blocks },
       ...layers.map((l) => ({ id: l.id, title: l.title, blocks: l.state.blocks })),
     ];
-    return findConflicts(plans, { onlyPlanId: state.plan.id }).filter((c) => !ignoredConflicts.includes(c.key));
-  }, [state.plan.id, state.plan.title, state.blocks, layers, ignoredConflicts]);
+    return findConflicts(plans, { onlyPlanId: state.plan.id }).filter((c) => !ignoredConflicts.includes(c.key) && !loadPairs().has(pairKey(c.a.block.id, c.b.block.id)));
+  }, [state.plan.id, state.plan.title, state.blocks, layers, ignoredConflicts, parallelTick]);
 
-  const undoAction = useCallback((ids: string[]) => ({
+  // 旧版合并曾把两侧块改写成并集窗口+拼接标题：识别这类遗留对并登记为并行对，显示层合成一张卡，避免超长块与并列重复。
+  useEffect(() => {
+    const legacy: string[] = [];
+    for (const own of state.blocks) {
+      if (!own.pinned || !own.title.includes(' + ')) continue;
+      for (const f of foreign) {
+        if (f.block.pinned && isMergedPair(own, f.block)) legacy.push(pairKey(own.id, f.block.id));
+      }
+    }
+    if (legacy.length) acceptPairs(legacy);
+  }, [state.blocks, foreign]);
+
+  const undoAction = useCallback((keys: string[]) => ({
     label: '撤销',
     onClick: () => {
-      void undoMergedPlans(ids).then(({ undone, failures }) => {
-        if (failures.length) {
-          toast.error(`已撤销 ${undone} 次，${failures.length} 次失败：${failures[0]}`);
-          return;
-        }
-        if (undone) toast.success(`已撤销 ${undone} 次合并`);
+      void undoMergedPlans(keys).then(({ undone }) => {
+        if (undone) toast.success(`已撤销 ${undone} 处合并`);
       });
     },
   }), []);
@@ -127,20 +143,17 @@ export function CalendarPanel() {
   const runMerge = useCallback(async (targets: PlanConflict[]) => {
     if (!targets.length) return;
     const merged: string[] = [];
-    const planIds: string[] = [];
+    const pairKeys: string[] = [];
     for (const conflict of targets) {
       const r = await mergeConflictAction(conflict);
-      planIds.push(...r.planIds);
+      pairKeys.push(...r.pairKeys);
       if (!r.ok) {
         toast.error(r.reason ?? '合并失败');
-        if (r.planIds.length) {
-          toast('已合并部分冲突', { action: undoAction(planIds) });
-        }
         return;
       }
       merged.push(conflict.merged_title);
     }
-    toast.success(merged.length > 1 ? `已合并 ${merged.length} 处重叠` : `已合并「${merged[0]}」`, { action: undoAction(planIds) });
+    toast.success(merged.length > 1 ? `已合并 ${merged.length} 处重叠` : `已合并「${merged[0]}」`, { action: undoAction(pairKeys) });
   }, [undoAction]);
 
   const requestSwitchPlan = useCallback((id: string, title: string) => {
@@ -154,13 +167,6 @@ export function CalendarPanel() {
 
   const tz = state.plan.timezone;
 
-  // 并行对变化（接受/取消）→ 触发合并渲染重算。
-  const [parallelTick, setParallelTick] = useState(0);
-  useEffect(() => {
-    const onChange = () => setParallelTick((t) => t + 1);
-    window.addEventListener('guidy:parallel-changed', onChange);
-    return () => window.removeEventListener('guidy:parallel-changed', onChange);
-  }, []);
 
   // 已接受的并行对 → 显示层合并为一个「A + B」块（底层仍是独立块，备注拼接、逐行标题）。
   const { displayBlocks, compositeIds } = useMemo(() => {

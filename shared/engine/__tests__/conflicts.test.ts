@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findConflicts, isMergedPair, mergeConflictOps } from '../conflicts';
+import { findConflicts, isMergedPair } from '../conflicts';
 import type { Block } from '../../types';
 
 function block(id: string, title: string, start: string, end: string): Block {
@@ -65,21 +65,7 @@ describe('findConflicts', () => {
   });
 });
 
-describe('mergeConflictOps', () => {
-  it('两侧各一个 update_block，携带并集窗口、追加标题并钉住', () => {
-    const [c] = findConflicts([A, B]);
-    const parts = mergeConflictOps(c);
-    expect(parts).toHaveLength(2);
-    expect(parts[0]).toEqual({
-      planId: 'p1',
-      ops: [{ op: 'update_block', id: 'a1', allow_overlap: true, patch: { title: '数学真题 + 核心训练', start_utc: c.start_utc, end_utc: c.end_utc, pinned: true } }],
-    });
-    expect(parts[1]).toEqual({
-      planId: 'p2',
-      ops: [{ op: 'update_block', id: 'b1', allow_overlap: true, patch: { title: '数学真题 + 核心训练', start_utc: c.start_utc, end_utc: c.end_utc, pinned: true } }],
-    });
-  });
-
+describe('isMergedPair', () => {
   it('isMergedPair 只看起止与标题', () => {
     expect(isMergedPair(block('x', 'A', '2026-11-20T00:00:00.000Z', '2026-11-20T01:00:00.000Z'), block('y', 'A', '2026-11-20T00:00:00.000Z', '2026-11-20T01:00:00.000Z'))).toBe(true);
     expect(isMergedPair(block('x', 'A', '2026-11-20T00:00:00.000Z', '2026-11-20T01:00:00.000Z'), block('y', 'B', '2026-11-20T00:00:00.000Z', '2026-11-20T01:00:00.000Z'))).toBe(false);

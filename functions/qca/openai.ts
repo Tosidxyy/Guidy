@@ -43,7 +43,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'WebSearch',
-      description: '搜索互联网，返回最多 6 条标题/链接/摘要。需要外部事实（天气、日期、政策、价格等）时先搜再答。',
+      description: '搜索互联网，返回最多 6 条标题/链接/摘要。天气/温差请用 Weather 工具；其他外部事实（政策、价格、日期等）先搜再答。',
       parameters: { type: 'object', properties: { query: { type: 'string', description: '搜索词' } }, required: ['query'] },
     },
   },
@@ -55,7 +55,63 @@ const TOOLS = [
       parameters: { type: 'object', properties: { url: { type: 'string', description: '完整 URL' } }, required: ['url'] },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'Weather',
+      description: '查询城市实时天气与未来逐日最高/最低温、降水概率（Open-Meteo 公开数据，无需密钥）。问天气、温差、出行穿衣时直接调用，不要靠搜索摘要猜数值。',
+      parameters: {
+        type: 'object',
+        properties: {
+          city: { type: 'string', description: '城市名，中文或英文，如「武汉」或「Huangshan」' },
+          days: { type: 'number', description: '未来天数 1-7，默认 3' },
+        },
+        required: ['city'],
+      },
+    },
+  },
 ];
+
+const WMO: Record<number, string> = {
+  0: '晴', 1: '大致晴', 2: '局部多云', 3: '阴', 45: '雾', 48: '冻雾',
+  51: '小毛毛雨', 53: '毛毛雨', 55: '大毛毛雨', 61: '小雨', 63: '中雨', 65: '大雨',
+  66: '冻雨', 67: '强冻雨', 71: '小雪', 73: '中雪', 75: '大雪', 77: '雪粒',
+  80: '小阵雨', 81: '阵雨', 82: '强阵雨', 85: '小阵雪', 86: '大阵雪',
+  95: '雷暴', 96: '雷暴伴冰雹', 99: '强雷暴伴冰雹',
+};
+
+export async function weather(city: string, days: number): Promise<string> {
+  const n = Math.max(1, Math.min(7, Math.floor(days) || 3));
+  try {
+    const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh&format=json`, { signal: AbortSignal.timeout(5000) });
+    if (!geoRes.ok) return JSON.stringify({ error: 'weather_unavailable', note: '地理编码服务不可用；不要编造数值，可建议用户看天气 App。' });
+    const geo = (await geoRes.json()) as any;
+    const g = geo?.results?.[0];
+    if (!g) return JSON.stringify({ error: 'city_not_found', note: `找不到城市「${city}」，请向用户确认地名。` });
+    const fcRes = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${g.latitude}&longitude=${g.longitude}&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max&timezone=auto&forecast_days=${n}`,
+      { signal: AbortSignal.timeout(6000) },
+    );
+    if (!fcRes.ok) return JSON.stringify({ error: 'weather_unavailable', note: '天气服务不可用；不要编造数值，可建议用户看天气 App。' });
+    const fc = (await fcRes.json()) as any;
+    const w = (c: number) => WMO[c] ?? `代码${c}`;
+    return JSON.stringify({
+      city: g.name ?? city,
+      country: g.country ?? undefined,
+      current: fc.current ? {
+        temp_c: fc.current.temperature_2m, feels_c: fc.current.apparent_temperature,
+        humidity_pct: fc.current.relative_humidity_2m, wind_kmh: fc.current.wind_speed_10m,
+        weather: w(fc.current.weather_code), time: fc.current.time,
+      } : undefined,
+      daily: (fc.daily?.time ?? []).map((d: string, i: number) => ({
+        date: d, max_c: fc.daily.temperature_2m_max[i], min_c: fc.daily.temperature_2m_min[i],
+        weather: w(fc.daily.weather_code[i]), precip_prob_pct: fc.daily.precipitation_probability_max?.[i] ?? null,
+      })),
+    });
+  } catch (e) {
+    return JSON.stringify({ error: 'weather_unavailable', note: '天气查询超时或网络受限；不要编造数值，可建议用户看天气 App。', detail: String(e).slice(0, 80) });
+  }
+}
 
 function isPublicUrl(raw: string): boolean {
   let u: URL;
@@ -131,6 +187,7 @@ async function runTool(call: ToolCall): Promise<string> {
   try { args = JSON.parse(call.arguments || '{}'); } catch { /* 空参数 */ }
   if (call.name === 'WebSearch') return webSearch(String(args.query ?? ''));
   if (call.name === 'WebFetch') return webFetch(String(args.url ?? ''));
+  if (call.name === 'Weather') return weather(String(args.city ?? ''), Number(args.days ?? 3));
   return JSON.stringify({ error: 'unknown_tool' });
 }
 

@@ -1,4 +1,4 @@
-import type { ApplyOp, Block } from '../types.ts';
+import type { Block } from '../types.ts';
 
 export interface ConflictPlan {
   id: string;
@@ -79,14 +79,4 @@ export function findConflicts(plans: ConflictPlan[], opts: { onlyPlanId?: string
     }
   }
   return out.sort((p, q) => p.start_utc.localeCompare(q.start_utc) || p.key.localeCompare(q.key));
-}
-
-export function mergeConflictOps(conflict: PlanConflict): { planId: string; ops: ApplyOp[] }[] {
-  // 钉住两侧：合并是用户明确认可的时间窗，后续重排不应把它重新打散。
-  const patch = { title: conflict.merged_title, start_utc: conflict.start_utc, end_utc: conflict.end_utc, pinned: true };
-  // allow_overlap：合并后窗口可能与本计划其他块重叠（用户明确接受），落点校验要放行。
-  return [
-    { planId: conflict.a.planId, ops: [{ op: 'update_block', id: conflict.a.block.id, patch, allow_overlap: true } as ApplyOp] },
-    { planId: conflict.b.planId, ops: [{ op: 'update_block', id: conflict.b.block.id, patch, allow_overlap: true } as ApplyOp] },
-  ];
 }

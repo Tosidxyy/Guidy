@@ -34,7 +34,22 @@ export interface OverlapPair {
 }
 
 export function pairKey(ownId: string, foreignId: string): string {
-  return `${ownId}|${foreignId}`;
+  // 与计划切换方向无关：两侧 block id 排序后拼接。
+  return [ownId, foreignId].sort().join('|');
+}
+
+export function acceptPairs(keys: string[]): void {
+  const set = loadPairs();
+  keys.forEach((k) => set.add(k));
+  savePairs(set);
+}
+
+export function removePairs(keys: string[]): number {
+  const set = loadPairs();
+  let removed = 0;
+  for (const k of keys) if (set.delete(k)) removed += 1;
+  if (removed) savePairs(set);
+  return removed;
 }
 
 function overlaps(a: { day: string; startMin: number; endMin: number }, b: { day: string; startMin: number; endMin: number }): boolean {

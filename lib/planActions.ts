@@ -1,7 +1,8 @@
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { diffPlanCard, planFromArtifact } from '@/lib/planCard';
-import { applyPatch, mergeConflictOps } from '@/shared/engine';
+import { applyPatch } from '@/shared/engine';
+import { acceptPairs, pairKey, removePairs } from '@/lib/parallel';
 import { planController } from '@/lib/planRuntime';
 import { queryClient } from '@/lib/queryClient';
 import { pickUndoSource } from '@/lib/undoPriority';
@@ -141,52 +142,19 @@ async function doSaveDraftAction(): Promise<{ ok: boolean; planId?: string; reas
   }
 }
 
-function planStateOf(planId: string): PlanState | undefined {
-  const active = usePlanStore.getState().state;
-  if (active.plan.id === planId) return active;
-  return queryClient.getQueryData<PlanState>(['plan', planId]);
-}
-
 /**
- * 合并两个计划的重叠块：先写非活动计划，再写活动计划。
- * 每侧一个 update_block（标题追加 + 并集窗口），各自进入该计划的撤销栈。
+ * 合并两个计划的重叠块 = 接受并行：只登记并行对，显示层合成一张「A + B」卡。
+ * 不改任何一侧的时间/标题/钉住：并集窗口会把短任务拉成超长块，且两计划同块并列像重复任务。
  */
-export async function mergeConflictAction(conflict: PlanConflict): Promise<{ ok: boolean; reason?: string; planIds: string[] }> {
-  const activeId = usePlanStore.getState().state.plan.id;
-  const parts = mergeConflictOps(conflict).sort((p, q) => (p.planId === activeId ? 1 : 0) - (q.planId === activeId ? 1 : 0));
-  const done: string[] = [];
-  for (const part of parts) {
-    const planState = planStateOf(part.planId);
-    if (!planState) return { ok: false, reason: '计划数据未就绪，请刷新后重试', planIds: done };
-    const optimistic = applyPatch(planState, part.ops).state;
-    const r = await planController.apply({
-      planId: part.planId,
-      ops: part.ops,
-      label: `合并「${conflict.merged_title}」`,
-      optimistic: { blocks: optimistic.blocks },
-    });
-    if (!r.ok) {
-      return {
-        ok: false,
-        reason: done.length ? `「${conflict.a.planTitle}」已合并，另一侧失败：${r.reason ?? '未知原因'}` : r.reason ?? '合并失败',
-        planIds: done,
-      };
-    }
-    done.push(part.planId);
-  }
-  return { ok: true, planIds: done };
+export async function mergeConflictAction(conflict: PlanConflict): Promise<{ ok: boolean; reason?: string; pairKeys: string[] }> {
+  const key = pairKey(conflict.a.block.id, conflict.b.block.id);
+  acceptPairs([key]);
+  return { ok: true, pairKeys: [key] };
 }
 
-/** 撤销一次跨计划合并：按合并顺序倒序撤销两侧的该条历史，逐个计划回报失败原因。 */
-export async function undoMergedPlans(planIds: string[]): Promise<{ undone: number; failures: string[] }> {
-  let undone = 0;
-  const failures: string[] = [];
-  for (const planId of [...planIds].reverse()) {
-    const r = await planController.undoMergeDetailed(planId);
-    if (r.label) undone += 1;
-    else if (r.reason) failures.push(r.reason);
-  }
-  return { undone, failures: Array.from(new Set(failures)) };
+/** 撤销合并 = 移除并行对登记：显示层回到重叠并列，冲突条重新提示；不涉及计划数据，必然可撤。 */
+export async function undoMergedPlans(pairKeys: string[]): Promise<{ undone: number; failures: string[] }> {
+  return { undone: removePairs(pairKeys), failures: [] };
 }
 
 /**

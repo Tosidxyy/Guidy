@@ -25,8 +25,8 @@ export function createProjector(seq: () => number, deltaSeq: number) {
         if (!streamed && t) out.push({ event: 'delta', data: { seq: deltaSeq, text: t } });
       } else if (type === 'agent.tool_use') {
         const name: string = ev.name ?? '';
-        if (name === 'WebSearch' || name === 'WebFetch') {
-          out.push({ event: 'progress', data: { seq: deltaSeq, tool: name as 'WebSearch' | 'WebFetch' } });
+        if (name === 'WebSearch' || name === 'WebFetch' || name === 'Weather') {
+          out.push({ event: 'progress', data: { seq: deltaSeq, tool: name as 'WebSearch' | 'WebFetch' | 'Weather' } });
         }
       } else if (type === 'agent.thinking') {
         sawThinking = true;
