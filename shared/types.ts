@@ -15,6 +15,9 @@ export interface Block {
   pinned: boolean;
   origin: 'engine' | 'manual' | 'fixed';
   notes?: string;
+  recurrence_weekday?: number;
+  /** Dated full-day unavailability inherited by display-only replacement fragments. */
+  unavailable_date?: string;
   /** planned（默认）| in_progress | completed | partial | cancelled | skipped */
   status?: BlockStatus;
   completed_at?: string | null;
@@ -59,6 +62,8 @@ export interface Compromise {
 
 export interface SolveInput {
   engine_version: number;
+  /** Explicit scheduling clock; omitted means no current-time cutoff. */
+  now_ms?: number;
   horizon_start: string;
   horizon_days: HorizonDays;
   timezone: string;

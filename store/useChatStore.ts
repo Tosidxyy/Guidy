@@ -65,13 +65,23 @@ export function reduceFrame(state: ChatState, frame: AppFrame): ChatState {
       const clarifications = d.kind === 'constraint_set' ? (d.payload.clarifications_needed ?? []) : state.clarifications;
       const patch = d.kind === 'patch' ? (d.payload as PatchArtifact) : state.patch;
       const question = d.kind === 'question_card' ? (d.payload as QuestionCardArtifact) : null;
-      return { ...state, artifact, artifactPreview: d.kind === 'constraint_set' ? ((d as any).preview ?? null) : state.artifactPreview, patchPreview: d.kind === 'patch' ? ((d as any).preview ?? null) : state.patchPreview, clarifications, patch, question, messages: [...state.messages, { seq: d.seq, role: 'assistant', kind: d.kind, content: '', payload: d.payload }], cursor: `${d.seq}:0` };
+      const notices = [...new Set<string>([
+        ...(d.preview?.notes ?? []),
+        ...(d.preview?.compromises ?? []).map((c: { reason: string }) => c.reason),
+      ])].filter(Boolean);
+      const content = notices.length ? `排程预览提示：${notices.join('；')}` : '';
+      return { ...state, artifact, artifactPreview: d.kind === 'constraint_set' ? ((d as any).preview ?? null) : state.artifactPreview, patchPreview: d.kind === 'patch' ? ((d as any).preview ?? null) : state.patchPreview, clarifications, patch, question, messages: [...state.messages, { seq: d.seq, role: 'assistant', kind: d.kind, content, payload: d.payload }], cursor: `${d.seq}:0` };
     }
     case 'progress':
       if (d.tool === 'Thinking') return { ...state, thinking: true, searching: false, switching: false };
-      return d.tool === 'ModelSwitch'
-        ? { ...state, thinking: false, switching: true, searching: false }
-        : { ...state, thinking: false, searching: true, switching: false };
+      if (d.tool === 'ModelSwitch') {
+        // 切换提示要留在对话里（小字），不能只靠瞬态 switching 标记。
+        const messages = state.switching
+          ? state.messages
+          : [...state.messages, { seq: d.seq, role: 'system' as const, kind: 'status', content: '主模型暂不可用，已切换备用模型继续生成' }];
+        return { ...state, thinking: false, switching: true, searching: false, messages };
+      }
+      return { ...state, thinking: false, searching: true, switching: false };
     case 'status':
       // 上游终态 status 早于 artifact/done（服务端还要解析与落库）：不能据此结束回合，
       // 否则输入提前变回「发送」，此时发送会撞 dispatch_busy。只有 done/error 结束。

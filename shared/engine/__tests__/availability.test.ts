@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAvailability, weeklyAvailability } from '../availability';
+import { blockBusyCuts, formatAvailability, pastTodayCuts, weeklyAvailability } from '../availability';
 import type { Block, Constraint } from '../../types';
 
 const constraint = (payload: Constraint['payload'], enabled = true): Constraint => ({ id: `c-${Math.random()}`, payload, source: 'user', enabled });
@@ -59,6 +59,30 @@ describe('weeklyAvailability', () => {
   });
 });
 
+describe('blockBusyCuts full-day scheduling provenance', () => {
+  it('cuts the full local date without changing the display interval or inferring from travel titles', () => {
+    const child = { ...block(SAT, '06:30', '21:00'), title: 'Detail', unavailable_date: SAT };
+    const before = JSON.stringify(child);
+    expect(blockBusyCuts([child], 'Asia/Shanghai').map((c) => c.payload)).toEqual([
+      { type: 'busy_window', date: SAT, start: '00:00', end: '24:00', label: 'Detail' },
+    ]);
+    expect(JSON.stringify(child)).toBe(before);
+    expect(blockBusyCuts([{ ...child, unavailable_date: undefined, title: 'Whole day trip' }], 'Asia/Shanghai')[0].payload)
+      .toMatchObject({ date: SAT, start: '06:30', end: '21:00' });
+  });
+
+  it('ignores a stale marker after a day move and still cuts actual cross-midnight occupancy', () => {
+    const moved = { ...block(SAT, '09:00', '10:00'), unavailable_date: WED };
+    expect(blockBusyCuts([moved], 'Asia/Shanghai').map((c) => c.payload)).toEqual([
+      { type: 'busy_window', date: SAT, start: '09:00', end: '10:00', label: 'x' },
+    ]);
+    const overnight = { ...moved, unavailable_date: SAT, end_utc: '2026-11-21T17:00:00.000Z' };
+    const cuts = blockBusyCuts([overnight], 'Asia/Shanghai');
+    expect(cuts[0].payload).toMatchObject({ date: SAT, start: '00:00', end: '24:00' });
+    expect(cuts.at(-1)!.payload).toMatchObject({ date: '2026-11-22', start: '00:00', end: '01:00' });
+  });
+});
+
 describe('formatAvailability', () => {
   it('相同作息的相邻工作日合并成一段话', () => {
     const week = weeklyAvailability([{
@@ -75,5 +99,46 @@ describe('formatAvailability', () => {
     const text = formatAvailability(week);
     expect(text).toContain('周一至周五：07:00–09:00、17:30–23:00');
     expect(text).toContain('周六、周日：07:00–23:00');
+  });
+});
+
+describe('pastTodayCuts explicit clock', () => {
+  it.each([
+    ['00:00:00.000', undefined],
+    ['00:00:00.001', '00:05'],
+    ['10:00:00.000', '10:00'],
+    ['10:00:00.001', '10:05'],
+    ['10:00:01.000', '10:05'],
+    ['10:01:00.000', '10:05'],
+    ['10:04:59.999', '10:05'],
+    ['10:05:00.000', '10:05'],
+    ['10:05:00.001', '10:10'],
+    ['23:55:00.000', '23:55'],
+    ['23:55:00.001', '24:00'],
+    ['23:59:59.999', '24:00'],
+  ])('rounds %s upward including sub-minute time to %s', (time, end) => {
+    for (const [tz, offset] of [['Asia/Shanghai', '+08:00'], ['America/Denver', '-07:00']]) {
+      const cuts = pastTodayCuts(tz, WED, 1, Date.parse(`${WED}T${time}${offset}`));
+      if (end === undefined) {
+        expect(cuts).toEqual([]);
+      } else {
+        expect(cuts).toHaveLength(1);
+        expect(cuts[0]).toMatchObject({ id: 'now-past', enabled: true, payload: { type: 'busy_window', date: WED, start: '00:00', end } });
+      }
+    }
+  });
+
+  it('uses the timezone local date and keeps a rounded midnight on the original day', () => {
+    const now = Date.parse('2026-11-17T06:59:59.999Z');
+    expect(pastTodayCuts('America/Denver', '2026-11-16', 2, now)[0].payload).toMatchObject({ date: '2026-11-16', end: '24:00' });
+    expect(pastTodayCuts('Asia/Shanghai', '2026-11-16', 2, now)[0].payload).toMatchObject({ date: '2026-11-17', end: '15:00' });
+    expect(pastTodayCuts('America/Denver', '2026-11-16', 2, now + 1)).toEqual([]);
+    expect(pastTodayCuts('Asia/Shanghai', '2026-11-16', 2, now + 1)[0].payload).toMatchObject({ date: '2026-11-17', end: '15:00' });
+  });
+
+  it('does not add a today cut outside the horizon', () => {
+    const now = Date.parse('2026-11-18T12:00:00+08:00');
+    expect(pastTodayCuts('Asia/Shanghai', '2026-11-19', 7, now)).toEqual([]);
+    expect(pastTodayCuts('Asia/Shanghai', '2026-11-16', 2, now)).toEqual([]);
   });
 });

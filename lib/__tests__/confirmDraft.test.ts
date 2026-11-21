@@ -81,6 +81,34 @@ describe('固定日程（busy_window / fixed_block）', () => {
     expect(scheduleDayText(groups[0])).toBe('周一、周三');
   });
 
+  it.each(['busy_window', 'fixed_block'] as const)('%s 的日期与每周规则不能合组或互相修改', (type) => {
+    const schedule = type === 'busy_window'
+      ? { type, label: '工作', start: '08:30', end: '17:30' }
+      : { type, title: '工作', start: '08:30', end: '17:30', category: 'work' as const };
+    const draft: ConstraintSetArtifact = {
+      ...base,
+      constraints: [
+        { ...schedule, weekday: 1 },
+        { ...schedule, date: '2026-11-23' },
+        { ...schedule, date: '2026-11-16' },
+        { ...schedule, date: '2026-11-23' },
+        { ...schedule, weekday: 1 },
+      ],
+    };
+    const groups = groupSchedules(draft);
+    expect(groups).toHaveLength(2);
+    const weekly = groups.find((g) => g.anchorKind === 'weekly')!;
+    const dated = groups.find((g) => g.anchorKind === 'date')!;
+    expect(weekly.indices).toEqual([0, 4]);
+    expect(weekly.days).toEqual([1]);
+    expect(dated.dates).toEqual(['2026-11-16', '2026-11-23']);
+    expect(scheduleDayText(dated)).toBe('2026-11-16、2026-11-23');
+    expect(scheduleDayText(weekly)).toBe('周一');
+    const changed = updateScheduleGroup(draft, dated.indices, 'end', '18:00');
+    expect(changed.constraints[0]).toEqual(draft.constraints[0]);
+    expect(removeScheduleGroup(draft, dated.indices).constraints).toEqual([draft.constraints[0], draft.constraints[4]]);
+  });
+
   it('改时间会同时改这一组，删除会移除整组且不动规则', () => {
     const groups = groupSchedules(sched);
     const moved = updateScheduleGroup(sched, groups[0].indices, 'end', '18:00');

@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { ENGINE_VERSION, LIMITS } from '@/shared/constants';
-import { diffBlocks, solve, validatePlacement, applyPatch } from '@/shared/engine';
+import { diffBlocks, solve, validatePlacement, applyPatch, reschedulePinnedBlocks, hasExplicitBlockOps, changesScheduleInputs } from '@/shared/engine';
 import type { Block, Constraint, ConstraintPayload, DiffResult, PlanState, SolveOutput, TaskDef } from '@/shared/types';
 import { buildEmptyPlan } from '@/lib/seed';
 import { solveArtifact } from '@/lib/preview';
 import { moveSelection } from '@/lib/moveSelection';
-import { loadPersisted, persist } from '@/lib/storage';
+import { isPersistedPlanState, loadPersisted } from '@/lib/storage';
+import { flushPlanSessionWrites, importPlanSession, writePlanSession } from '@/lib/local/repo';
 import { mergeSharedWindows, sharedBlockCuts } from '@/lib/sharedCalendar';
 import { useSharedCalendar } from '@/store/useSharedCalendar';
 
@@ -26,6 +27,13 @@ export interface ReschedulePreview {
 
 interface PlanStore {
   state: PlanState;
+  ready: boolean;
+  storageError: string | null;
+  /** Changes only on selection/adoption, not an edit within the current draft. */
+  selectionRevision: number;
+  hydrate: () => Promise<void>;
+  flush: () => Promise<void>;
+  importJsonState: (state: PlanState) => Promise<void>;
   undoStack: UndoEntry[];
   redoStack: UndoEntry[];
   preview: ReschedulePreview | null;
@@ -61,7 +69,8 @@ interface PlanStore {
   discardPreview: () => void;
 
   renamePlan: (title: string) => void;
-  importState: (state: PlanState) => void;
+  /** Select already-durable data (or a null draft); never writes a saved-plan snapshot. */
+  importState: (state: PlanState, consumeDraft?: boolean) => void;
   /** 草稿卡片的就地编辑：只替换状态并本地持久化，不重置撤销栈（草稿没有服务端历史）。 */
   applyDraftState: (state: PlanState) => void;
   resetAll: () => void;
@@ -71,16 +80,16 @@ function clone(s: PlanState): PlanState {
   return JSON.parse(JSON.stringify(s)) as PlanState;
 }
 
-function initial(): PlanState {
-  const persisted = loadPersisted();
-  if (persisted) return persisted.state;
-  return buildEmptyPlan();
-}
-
-const init = initial();
-
 export const usePlanStore = create<PlanStore>((set, get) => {
-  const save = (state: PlanState) => persist(state);
+  let hydration: Promise<void> | null = null;
+  const reportStorageError = (err: unknown) => {
+    set({ storageError: err instanceof Error ? err.message : '本机计划存储失败，请检查浏览器存储空间/权限' });
+  };
+  const select = (state: PlanState, consumeDraft = false) => {
+    void writePlanSession(state, consumeDraft).catch(reportStorageError);
+  };
+  // Saved states may be optimistic (including applyServerState). The domain owns their writes.
+  const save = (state: PlanState) => { if (state.plan.id === null) select(state); };
   const withShared = (own: PlanState['constraints']) => mergeSharedWindows(own, useSharedCalendar.getState().windows);
 
   const placementCtx = (s: PlanState) => ({
@@ -92,7 +101,34 @@ export const usePlanStore = create<PlanStore>((set, get) => {
   });
 
   return {
-    state: init,
+    state: buildEmptyPlan(),
+    ready: false,
+    storageError: null,
+    selectionRevision: 0,
+    hydrate: () => {
+      if (get().ready) return Promise.resolve();
+      if (!hydration) {
+        hydration = loadPersisted().then((stored) => {
+          set({ state: stored?.state ?? buildEmptyPlan(), ready: true, storageError: null, undoStack: [], redoStack: [], preview: null, dirty: false });
+        }).catch((err) => {
+          hydration = null;
+          reportStorageError(err);
+          throw err;
+        });
+      }
+      return hydration;
+    },
+    flush: async () => {
+      try { await flushPlanSessionWrites(); }
+      catch (err) { reportStorageError(err); throw err; }
+    },
+    importJsonState: async (state) => {
+      if (!isPersistedPlanState(state)) throw new Error('计划数据不完整');
+      try {
+        const imported = await importPlanSession(state);
+        set({ state: imported, selectionRevision: get().selectionRevision + 1, undoStack: [], redoStack: [], preview: null, dirty: false });
+      } catch (err) { reportStorageError(err); throw err; }
+    },
     undoStack: [],
     redoStack: [],
     preview: null,
@@ -155,6 +191,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
         const b = draft.blocks.find((x) => x.id === id)!;
         b.start_utc = startUtc;
         b.end_utc = endUtc;
+        if (b.origin === 'engine') b.origin = 'manual';
       });
       return { ok: true };
     },
@@ -172,6 +209,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
           if (!m) continue;
           b.start_utc = m.start_utc;
           b.end_utc = m.end_utc;
+          if (b.origin === 'engine') b.origin = 'manual';
         }
       });
       return { ok: true };
@@ -264,9 +302,10 @@ export const usePlanStore = create<PlanStore>((set, get) => {
     rescheduleNow: (reason) => {
       const { state } = get();
       const shared = useSharedCalendar.getState();
-      const pinned = state.blocks.filter((b) => b.pinned || b.origin === 'manual');
+      const pinned = state.blocks.filter((b) => b.pinned || b.origin === 'manual' || ['completed', 'in_progress', 'partial'].includes(b.status ?? ''));
       const output = solve({
         engine_version: ENGINE_VERSION,
+        now_ms: Date.now(),
         horizon_start: state.plan.horizon_start,
         horizon_days: state.plan.horizon_days,
         timezone: state.plan.timezone,
@@ -298,9 +337,10 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       const { state } = get();
       const patched = applyPatch(state, patch.ops);
       let output: SolveOutput;
-      if (patched.requiresReschedule) {
-        const pinned = patched.state.blocks.filter((b) => b.pinned || b.origin === 'manual');
-        output = solve({ engine_version: ENGINE_VERSION, horizon_start: state.plan.horizon_start, horizon_days: state.plan.horizon_days, timezone: state.plan.timezone, task_defs: patched.state.task_defs, constraints: [...withShared(patched.state.constraints), ...sharedBlockCuts(useSharedCalendar.getState().busyBlocks, state.plan.timezone)], pinned_blocks: pinned });
+      const shouldReschedule = patched.requiresReschedule && (!hasExplicitBlockOps(patch.ops) || (patch.ops.some(op => op.op === 'reschedule') && changesScheduleInputs(patch.ops)));
+      if (shouldReschedule) {
+        const pinned = reschedulePinnedBlocks(state, patched.state, patch.ops);
+        output = solve({ engine_version: ENGINE_VERSION, now_ms: Date.now(), horizon_start: state.plan.horizon_start, horizon_days: state.plan.horizon_days, timezone: state.plan.timezone, task_defs: patched.state.task_defs, constraints: [...withShared(patched.state.constraints), ...sharedBlockCuts(useSharedCalendar.getState().busyBlocks, state.plan.timezone)], pinned_blocks: pinned });
       } else {
         output = { blocks: patched.state.blocks, violations: [], compromises: [], feasibility: 'FEASIBLE', unplaced: [], stats: { placed: patched.state.blocks.length, unplaced: 0, solve_ms: 0 } };
       }
@@ -349,9 +389,9 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       });
     },
 
-    importState: (state) => {
-      set({ state, undoStack: [], redoStack: [], preview: null, dirty: false });
-      save(state);
+    importState: (state, consumeDraft = false) => {
+      set({ state, selectionRevision: get().selectionRevision + 1, undoStack: [], redoStack: [], preview: null, dirty: false });
+      select(state, consumeDraft);
     },
 
     applyDraftState: (state) => {
@@ -361,7 +401,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
 
     resetAll: () => {
       const empty = buildEmptyPlan();
-      set({ state: empty, undoStack: [], redoStack: [], preview: null, lastCompromises: [], dirty: false });
+      set({ state: empty, selectionRevision: get().selectionRevision + 1, undoStack: [], redoStack: [], preview: null, lastCompromises: [], dirty: false });
       save(empty);
     },
   };

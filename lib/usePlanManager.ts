@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import { usePlanStore } from '@/store/usePlanStore';
+import { useBlockHistory } from '@/store/useBlockHistory';
 import { useChatStore } from '@/store/useChatStore';
 import { chatController } from '@/lib/chatRuntime';
 import { createPlanManager } from '@/lib/planManagerCore';
@@ -33,6 +34,7 @@ export function usePlanManager() {
     detachStream: () => chatController.detach(),
     invalidatePlans: () => { qc.invalidateQueries({ queryKey: ['plans'] }); },
     listPlans: async () => (await api.plans()).items,
+    forgetHistory: (id) => useBlockHistory.getState().forget(id),
   });
   const run = async (fn: () => void | Promise<void>) => {
     setPending(true);

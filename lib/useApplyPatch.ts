@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { buildPatchBody } from '@/lib/patchInput';
-import { applyPatch, solve } from '@/shared/engine';
+import { applyPatch, solve, reschedulePinnedBlocks } from '@/shared/engine';
 import { ENGINE_VERSION } from '@/shared/constants';
 import { mergeSharedWindows } from '@/lib/sharedCalendar';
 import { relaxPatchOps } from '@/lib/relaxPlan';
@@ -10,13 +10,14 @@ import { planController } from '@/lib/planRuntime';
 import { resolvePatchTargets, SHARED_PLAN_ID } from '@/lib/patchTargets';
 import { applySharedOps } from '@/lib/sharedBlocks';
 import { appliedPatches } from '@/lib/appliedPatches';
+import { snapshotOps } from '@/lib/snapshotOps';
 import { useChatStore } from '@/store/useChatStore';
 import { useBlockHistory } from '@/store/useBlockHistory';
 import { localLearnProfile } from '@/lib/local/domain';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useSharedCalendar } from '@/store/useSharedCalendar';
 import type { PatchArtifact } from '@/shared/schemas';
-import type { PlanState } from '@/shared/types';
+import type { ApplyOp, PlanState } from '@/shared/types';
 
 /** AI 调整确认：一次点击就直接落库（不经过预览/二次确认），日历随服务端结果刷新。 */
 export function useApplyPatch() {
@@ -30,6 +31,7 @@ export function useApplyPatch() {
     mutationFn: async (patch: PatchArtifact) => {
       const store = usePlanStore.getState();
       const activeId = store.state.plan.id;
+      const conversationId = useChatStore.getState().conversationId;
       if (!activeId) throw new ApiError('plan_not_saved', 409, '当前计划尚未保存');
 
       const groups = resolvePatchTargets(patch.ops, store.state, layerStates(), useSharedCalendar.getState().busyBlocks);
@@ -38,20 +40,22 @@ export function useApplyPatch() {
       const shared = groups.find((g) => g.planId === SHARED_PLAN_ID)?.ops ?? [];
 
       let resp: any = null;
-      const buildBodyFor = async (baseVersion: number) => {
+      let before: PlanState | null = null;
+      const buildBodyFor = async (baseVersion: number, current: PlanState = store.state) => {
         // result_hash 由本地引擎算：服务端重排后据此判断是否需要以服务端结果为准。
-        const current = usePlanStore.getState().state;
+        before = current;
         const local = applyPatch(current, activeOps);
         let hashBlocks = local.state.blocks;
         if (local.requiresReschedule) {
           hashBlocks = solve({
             engine_version: ENGINE_VERSION,
+            now_ms: Date.now(),
             horizon_start: local.state.plan.horizon_start,
             horizon_days: local.state.plan.horizon_days,
             timezone: local.state.plan.timezone,
             task_defs: local.state.task_defs,
             constraints: mergeSharedWindows(local.state.constraints, useSharedCalendar.getState().windows),
-            pinned_blocks: local.state.blocks.filter((b) => b.pinned || b.origin === 'manual'),
+            pinned_blocks: reschedulePinnedBlocks(current, local.state, activeOps),
           }).blocks;
         }
         return buildPatchBody({
@@ -60,6 +64,8 @@ export function useApplyPatch() {
           previewId: crypto.randomUUID(),
           planId: activeId,
           baseVersion,
+          // 同一 patch 里的共享日历增删随请求带上：新增子块按「删掉原共享块之后」的日历校验落位。
+          sharedOps: shared,
         });
       };
       if (activeOps.length) {
@@ -71,8 +77,9 @@ export function useApplyPatch() {
           const d = e?.details as any;
           if (e?.code === 'version_conflict' && d?.plan && Array.isArray(d.blocks)) {
             const s = usePlanStore.getState();
-            s.applyServerState({ plan: d.plan, task_defs: d.task_defs, constraints: d.constraints, blocks: d.blocks });
-                        resp = await api.applyPatch(await buildBodyFor(d.plan.version));
+            const fresh = { plan: d.plan, task_defs: d.task_defs, constraints: d.constraints, blocks: d.blocks };
+            if (s.state.plan.id === activeId && s.selectionRevision === store.selectionRevision) s.applyServerState(fresh);
+            resp = await api.applyPatch(await buildBodyFor(d.plan.version, fresh));
           } else {
             throw err;
           }
@@ -90,14 +97,16 @@ export function useApplyPatch() {
             resp ? `当前计划已保存，但其他计划未保存：${r.reason ?? '未知原因'}` : `其他计划未保存：${r.reason ?? '未知原因'}`);
         }
       }
+      let sharedInverse: ApplyOp[] = [];
       if (shared.length) {
         const r = await applySharedOps(shared);
         if (!r.ok) {
           throw new ApiError('service_unavailable', 503,
             resp ? `当前计划已保存，但公共日历未保存：${r.reason ?? '未知原因'}` : `公共日历未保存：${r.reason ?? '未知原因'}`);
         }
+        sharedInverse = r.inverseOps ?? [];
       }
-      return { resp, foreignOps };
+      return { resp, foreignOps, sharedInverse, before, sharedForward: shared, planId: activeId, selectionRevision: store.selectionRevision, conversationId };
     },
     onError: (err, patch) => {
       const e = err instanceof ApiError ? err : new ApiError('service_unavailable', 503, '提交失败，请重试');
@@ -114,37 +123,48 @@ export function useApplyPatch() {
       }
       toast.error(e.message, { description: e.diagnosticId ? `诊断 ID：${e.diagnosticId}` : undefined });
     },
-    onSuccess: ({ resp, foreignOps }: { resp: any; foreignOps: number }, patch: PatchArtifact) => {
+    onSuccess: ({ resp, foreignOps, sharedInverse, before, sharedForward, planId, selectionRevision, conversationId }: { resp: any; foreignOps: number; sharedInverse: ApplyOp[]; before: PlanState | null; sharedForward: ApplyOp[]; planId: string; selectionRevision: number; conversationId: string | null }, patch: PatchArtifact) => {
       const store = usePlanStore.getState();
-      appliedPatches.mark(useChatStore.getState().conversationId, patch);
-      if (resp) {
-        const next: PlanState = {
-          plan: { ...store.state.plan, version: resp.version, updated_at: new Date().toISOString() },
-          task_defs: resp.task_defs,
-          constraints: resp.constraints,
-          blocks: resp.blocks,
-        };
-        store.replaceStateKeepUndo(next);
-        const planId = store.state.plan.id;
-        if (planId) {
-                    // 进入撤销栈：顶栏撤销/重做与手动拖动一致，撤销走服务端逆操作。
-          if (Array.isArray(resp.inverse_ops) && resp.inverse_ops.length) {
-            useBlockHistory.getState().push(planId, {
-              at: Date.now(),
-              label: `AI 调整：${patch.summary.slice(0, 24)}`,
-              forwardOps: patch.ops,
-              inverseOps: resp.inverse_ops,
-            });
-          }
-        }
+      appliedPatches.mark(conversationId, patch);
+      const next: PlanState | null = resp ? {
+        plan: { ...(resp.plan ?? before?.plan), version: resp.version, updated_at: resp.plan?.updated_at ?? new Date().toISOString() },
+        task_defs: resp.task_defs,
+        constraints: resp.constraints,
+        blocks: resp.blocks,
+      } : null;
+      const stillSelected = store.state.plan.id === planId && store.selectionRevision === selectionRevision;
+      if (next && stillSelected) store.replaceStateKeepUndo(next);
+      else if (next) qc.setQueryData(['plan', planId], next);
+      // 进入撤销栈：顶栏撤销/重做与手动拖动一致，撤销走服务端逆操作。
+      // 共享日历的逆操作带上伪计划 id，撤销/重做时据此路由回共享通道。
+      const sharedInverseOps = sharedInverse.map((op) => ({ ...op, plan_id: SHARED_PLAN_ID }));
+      // 触发重排的调整：patch 级逆操作无法还原被引擎替换的块，改用整plan快照，撤销/重做都精确恢复。
+      const planMetaOps = (ops: ApplyOp[]) => ops.filter((op) => op.op === 'update_plan');
+      const inverseOps = resp?.rescheduled && before
+        ? [...planMetaOps(resp.inverse_ops ?? []), ...snapshotOps(before), ...sharedInverseOps]
+        : [...(Array.isArray(resp?.inverse_ops) ? resp.inverse_ops : []), ...sharedInverseOps];
+      const forwardOps = resp?.rescheduled && before && next
+        ? [...planMetaOps(patch.ops), ...snapshotOps(next), ...sharedForward]
+        : patch.ops;
+      if (planId && inverseOps.length) {
+        useBlockHistory.getState().push(planId, {
+          at: Date.now(),
+          label: `AI 调整：${patch.summary.slice(0, 24)}`,
+          forwardOps,
+          inverseOps,
+        });
       }
       qc.invalidateQueries({ queryKey: ['plans'] });
       qc.invalidateQueries({ queryKey: ['calendar'] });
       void localLearnProfile().then(() => qc.invalidateQueries({ queryKey: ['profile'] })).catch(() => null);
       const suffix = foreignOps ? `（含其他计划/公共日历 ${foreignOps} 项）` : '';
       toast.success(`调整已保存到本机${suffix}`);
-      if (Array.isArray(resp?.warnings) && resp.warnings.length) toast.info(resp.warnings[0], { duration: 8000 });
-      useChatStore.setState({ patch: null });
+      const notices = [...new Set<string>([
+        ...(resp?.warnings ?? []),
+        ...(resp?.compromises ?? []).map((c: { reason: string }) => c.reason),
+      ])].filter(Boolean);
+      if (notices.length) toast.info('实际排程提示', { description: notices.join('；'), duration: 12000 });
+      if (useChatStore.getState().conversationId === conversationId) useChatStore.setState({ patch: null });
     },
   });
   return {

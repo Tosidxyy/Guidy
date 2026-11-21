@@ -3,7 +3,7 @@ import { saveDraftAction } from '@/lib/planActions';
 import { usePlanStore } from '@/store/usePlanStore';
 import type { PlanState } from '@/shared/types';
 
-/** 只有「还没有云端 id、且有内容」的草稿才需要自动保存。默认的 07:00–23:00 时段不算内容。 */
+/** 只有「还没有本机计划 id、且有内容」的草稿才需要自动保存。默认的 07:00–23:00 时段不算内容。 */
 export function shouldAutoSave(state: PlanState): boolean {
   if (state.plan.id) return false;
   const hasCustomConstraint = state.constraints.some((c) => {
@@ -16,8 +16,8 @@ export function shouldAutoSave(state: PlanState): boolean {
 export type AutoSaveStatus = 'idle' | 'saving' | 'saved' | 'failed';
 
 /**
- * 草稿自动保存：用户停止操作约 1 秒后整份落库；保存成功后计划拿到云端 id，
- * 后续编辑本来就服务端优先，不再触发。
+ * Null-id edits already persist in kv; after idle, promote the draft to the plans table.
+ * Identified plans are written by domain commands, never by this subscription.
  */
 export function useAutoSaveDraft(delay = 1000): AutoSaveStatus {
   const [status, setStatus] = useState<AutoSaveStatus>('idle');
@@ -25,19 +25,23 @@ export function useAutoSaveDraft(delay = 1000): AutoSaveStatus {
   const busy = useRef(false);
 
   useEffect(() => {
-    const unsub = usePlanStore.subscribe((s) => {
-      if (!shouldAutoSave(s.state)) return;
+    const schedule = (s: ReturnType<typeof usePlanStore.getState>) => {
       if (timer.current) window.clearTimeout(timer.current);
+      if (!s.ready || !shouldAutoSave(s.state)) return;
       timer.current = window.setTimeout(async () => {
         if (busy.current) return;
-        if (!shouldAutoSave(usePlanStore.getState().state)) return;
+        if (!usePlanStore.getState().ready || !shouldAutoSave(usePlanStore.getState().state)) return;
         busy.current = true;
         setStatus('saving');
         const r = await saveDraftAction();
         busy.current = false;
         setStatus(r.ok ? 'saved' : 'failed');
       }, delay);
+    };
+    const unsub = usePlanStore.subscribe((s, previous) => {
+      if (s.state !== previous.state || s.ready !== previous.ready) schedule(s);
     });
+    schedule(usePlanStore.getState());
     return () => {
       unsub();
       if (timer.current) window.clearTimeout(timer.current);

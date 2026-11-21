@@ -2,6 +2,7 @@ import { conversationForPlan, type ConversationLike } from '@/lib/planConversati
 import { cursorAfterMessages, type ChatState } from '@/store/useChatStore';
 import { restoreChat } from '@/lib/restoreChat';
 import { buildEmptyPlan } from '@/lib/seed';
+import { flushPlanSessionWrites } from '@/lib/local/repo';
 import type { PlanState } from '@/shared/types';
 
 export interface PlanManagerDeps {
@@ -18,6 +19,7 @@ export interface PlanManagerDeps {
   detachStream(): void;
   invalidatePlans(): void;
   listPlans(): Promise<{ id: string }[]>;
+  forgetHistory?(id: string): void;
 }
 
 export function createPlanManager(deps: PlanManagerDeps) {
@@ -37,17 +39,19 @@ export function createPlanManager(deps: PlanManagerDeps) {
   }
   async function switchPlan(id: string) {
     deps.detachStream();
-    if (deps.getPlanState().plan.id === id) { await restoreConversation(id); return; }
+    if (deps.getPlanState().plan.id === id) { await flushPlanSessionWrites(); await restoreConversation(id); return; }
     let serverPlan: PlanState;
     try { serverPlan = await deps.fetchPlan(id); }
     catch (err) { deps.invalidatePlans(); throw err; }
     deps.importState(serverPlan);
+    await flushPlanSessionWrites();
     await restoreConversation(id);
   }
-  function newPlan() {
+  async function newPlan() {
     deps.detachStream();
     deps.importState(buildEmptyPlan());
     deps.newConversation();
+    await flushPlanSessionWrites();
   }
   async function deletePlan(id: string) {
     deps.detachStream();
@@ -57,10 +61,11 @@ export function createPlanManager(deps: PlanManagerDeps) {
       if ((err as { status?: number }).status !== 404) throw err;
     }
     deps.invalidatePlans();
+    deps.forgetHistory?.(id);
     if (deps.getPlanState().plan.id === id) {
       const remaining = (await deps.listPlans()).filter((p) => p.id !== id);
       if (remaining.length) await switchPlan(remaining[0].id);
-      else newPlan();
+      else await newPlan();
     }
   }
   return { switchPlan, newPlan, deletePlan, restoreConversation };

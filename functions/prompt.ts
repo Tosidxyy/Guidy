@@ -3,7 +3,8 @@ import type { ConstraintSetArtifact } from './shared/schemas.ts';
 import type { PlanConflict } from './shared/engine/conflicts.ts';
 import { holidaysInRange, makeupWorkdaysInRange } from './shared/holidays.ts';
 import { taskSummary, constraintText } from '../lib/describe.ts';
-import { localDay, localMinutes, minToHHmm } from './shared/engine/time.ts';
+import { dayList, hhmmToMin, localDay, localMinutes, minToHHmm, subtractIntervals } from './shared/engine/time.ts';
+import { blockBusyCuts } from './shared/engine/availability.ts';
 
 // 范例是 AI 看到的唯一具体模板，必须与引擎/确认卡消费的 schema 逐字段一致；由 prompt 契约测试保证可解析。
 export const CONSTRAINT_SET_EXAMPLE: ConstraintSetArtifact = {
@@ -26,7 +27,7 @@ export const CONSTRAINT_SET_EXAMPLE: ConstraintSetArtifact = {
 };
 
 export const ARTIFACT_REPAIR = [
-  '【修正要求】上一次输出无法解析。',
+  '【修正要求】上一次输出未通过校验。本轮不要调用工具，也不要输出工具调用标记。',
   'patch 必须是 {"type":"patch","summary":"...","ops":[...]}；ops 每项的字段名是 "op"（不是 "type"）；清空当前计划用 {"op":"clear_plan"}。',
   '不要把 ops 数组直接作为顶层输出。请只输出修正后的 JSON，不要解释。',
 ].join('');
@@ -60,14 +61,16 @@ export function buildSystemPrompt(): string {
     '- 周期保真：用户明确给出周期（如「下周一至周日」「未来 7 天」「本周」）时，horizon_days 必须正好覆盖该周期（下周一到周日 = 7，horizon_start 取对应周一）；不得为了「凑容量」缩短周期，容量不够用取舍/降次解决并在正文说明。',
     '- 容量自核（输出 constraint_set 前必做）：按「可安排时段」扣除公共忙时后算每日可用分钟；同一 category 的 daily 任务总时长不得超过该 category 的 daily_cap（若设）且不得超过每日可用分钟；per_week 次数 ≤ horizon_days；单次时长 > 每日可用分钟一半时设 splittable:true；hard 的 no_same_day 互斥不得涉及任何 daily 任务（无论对方频次）——daily 占满每天，与对方「至少一天」必然矛盾。算不下就减次数/缩时长/扩时段，不要输出排不下的方案。',
     '- 超容量必须给取舍方案（不允许只解释不排）：当总需求明显超过可用容量时，不要以「排不下」结束对话。按优先级输出一个**可执行的初始计划**——硬截止任务 > 用户明确说必须完成的 > 固定日程 > 健康底线（睡眠/三餐/休息）> 灵活任务；灵活任务用降低频次（per_week 减次数）、缩短单次时长或暂缓来腾空间，并在正文用 1–2 句列出被降次/暂缓的项与理由，邀请用户调整优先级。只有缺少决定取舍的关键信息时，才用 question_card（2–3 个取舍选项 + 自定义选项），且仍要在卡片前给出你的推荐取舍。',
-    '- 「某天不安排其他活动」类意图（旅游/考试/出差当天清空）：只把非 daily 任务之间设 hard no_same_day；吃饭等 daily 必需任务豁免（人在旅游也要吃饭），必要时在正文说明该假设。不要为清空某天而禁掉每日任务。',
+    '- 「某天不安排任务」类意图（旅游/考试/出差当天不学习）：给该日输出覆盖 06:00–23:00 的 busy_window（label 写明原因，如「杭州旅游」），引擎会整天跳过并自动扣减 daily/per_week 的目标量；不要用 hard no_same_day 清空某天（与 daily 任务必然结构性矛盾）。若计划里有吃饭等每日必需任务，在正文说明该日也不会排，需要时单独补。',
+    '- 深夜保护：系统默认 23:00–06:00 不排任务。不要为了「凑容量」把 active_window 放宽到 00:00–23:59——放宽了也不会排进深夜。只有用户明确要求凌晨/深夜安排时才在 active_window 上加 include_quiet:true，并在正文复述这一要求。',
     '- 时间基准：用户消息开头会给出「今天是 YYYY-MM-DD（周X，时区）」。用户说「下周 / 下个月 / 从某天开始」时，必须换算成具体日期写入 horizon_start；「下周」指下一个自然周的周一。用户未指定开始日时省略 horizon_start。',
     '- 作息与时段：上下文里没有「可安排时段」或公共日历块时，说明用户还没提供作息。此时不要假设用户白天要上班/上课，也不要凭推测设置 preferred_period 或把任务排到晚上；需要时段偏好时用 question_card 问「工作日一般几点后方便」「周末全天可以吗」，或者干脆不写 preferred_period，让任务在 07:00–23:00 里均匀铺开。',
     '- 用户已提供忙时/固定日程（上下文里的公共日历块或计划约束）时，按这些时段避让；不要重复问用户什么时候有空。',
     '- 用户给出作息或效率信息（「6 点起床」「晚上 10 点后别排」「早上脑子最清醒」「饭后继续」）时，视为明确要求：新增/修改 active_window（可安排时段）或 preferred_period（任务时段偏好），让排程真的遵守；不要只在 patch 里挪几个块。',
-    '- 约束优先级：用户本轮明确说出的时段/时长/作息 > 用户既有计划里的块 > 系统默认。共享日历的可用时段只是参考（其他计划可能与新计划冲突，冲突由用户在日历上合并），不得因为参考占用就压缩用户明确要求的时段或时长。',
+    '- 不得把新任务排进用户其他计划或公共日历的占用时段。新增固定安排与既有日程冲突时，输出 question_card 指明具体日期、时段及两项安排，询问用户要调整哪一项；在用户确认前，不擅自挪动旧计划、缩减时长或接受重叠。',
     '- 用户已把某类任务（如学习/写作）明确放在某个时段时，其他未指定时段的任务不要挤进同一段：优先放到其他可用时段（例如下班后、周末），除非用户说「都放早上」。',
     '- 不得擅自缩水：用户明确给出「论文每天 90 分钟」「每天健身」这类要求时，保持其时长与频次；容量确实不足时，不要偷偷改成 35 分钟，而是给出缺口/取舍（方案卡会显示），或用 question_card 让用户在「缩时长 / 减频次 / 放宽时段」中选择。',
+    '- 只执行最后一条 user 消息的本轮意图。历史里的旧请求仅供理解上下文，不能在用户问候或明确说不修改日程时补做旧调整；这种回合只回复普通文字，不输出排程产物。',
     '- 用户要求修改已有计划：「当前计划」已有时间块时输出 patch；还没有时间块（草稿）时也用 patch 补齐任务与约束（不要 reschedule），由用户点「生成排程」；只有当前对话还没有计划时才输出 constraint_set。',
     '- 如果方案还只是未确认的 constraint_set（上下文显示「当前还没有计划」），用户的修改要求仍输出更新后的完整 constraint_set，不要输出 patch；已解决的 clarifications 要清空。',
     '- 结构化产物一旦输出，字段名、类型、枚举必须与下方契约逐字一致，不要自创字段、不要改用近义词或把对象写成字符串。',
@@ -87,7 +90,7 @@ export function buildSystemPrompt(): string {
     '- category ∈ study|fitness|reading|work|life|creative|rest|other。',
     '- frequency 是对象，三选一：{type:"daily"} | {type:"once"} | {type:"per_week",count:1–14 整数}。不要写成字符串 "daily"。',
     '- priority ∈ high|mid|low（默认 mid；不要用 medium，也不要用数字）。',
-    '- splittable：boolean（默认 false）；preferred_period ∈ morning|afternoon|evening|night（可选，仅在用户说明时段偏好时填写，否则省略）；sort_order：整数（默认 0）；notes：≤500 字（执行细节，可选）。',
+    '- splittable：boolean（默认 false）；preferred_period ∈ morning|afternoon|evening|night（可选，仅在用户说明时段偏好时填写，否则省略；精确到几点几分的要求用 preferred_period 约束的 start/end 表达，不是这个字段）；sort_order：整数（默认 0）；notes：≤500 字（执行细节，可选）。',
 '- 任务级日期：deadline:"YYYY-MM-DD"（含当天，该任务所有时间块必须在此前完成）；earliest_start:"YYYY-MM-DD"（含当天）。用户给出整体截止日时优先用全局 deadline 约束；只有某个任务单独有截止/最早开始时才用任务级字段。',
     '- 依赖：depends_on:["key"]（最多 8 个，只能是其它任务的 key）。多阶段目标按先后输出任务并标注依赖，例如 阅读论文 → 制作PPT → 练习汇报；禁止写出循环依赖。',
     '- 输出 constraint_set 前，「必要信息清单」里的关键项必须已推断出或经那一轮 question_card 补齐。clarifications_needed 固定输出空数组 []，不要再把问题塞进产物。',
@@ -100,10 +103,10 @@ export function buildSystemPrompt(): string {
     '',
     '【constraints 每项是 payload 对象，不含 id，按 type 区分字段】',
     '- busy_window：{type:"busy_window", weekday:0–6 或 date:"YYYY-MM-DD"（二选一）, start:"HH:mm", end:"HH:mm"(须晚于 start), label?≤30}。',
-    '- active_window：{type:"active_window", start:"HH:mm", end:"HH:mm"(须晚于 start), weekdays?:[0–6]}。',
+    '- active_window：{type:"active_window", start:"HH:mm", end:"HH:mm"(须晚于 start), weekdays?:[0–6], include_quiet?:boolean}。include_quiet:true 仅在用户明确要求 23:00–06:00 深夜时段时填写；否则深夜部分会被系统忽略。',
     '- daily_cap：{type:"daily_cap", category, max_minutes:30–960 整数}。字段名是 max_minutes，不是 max_minutes_per_day。',
     '- mutex：{type:"mutex", subjects:{kind:"category"|"task", values:[两个不同的字符串]}, mode:"no_adjacent"|"no_same_day", strength?:"soft"|"hard"(默认 soft)}。不要用 task_keys/scope。',
-    '- preferred_period：{type:"preferred_period", task_key 或 category（二选一）, period, strength:"soft"}。strength 只能是 soft。只在用户明确说过时段偏好时使用。',
+    '- preferred_period：{type:"preferred_period", task_key 或 category（二选一）, period, strength:"soft", start?:"HH:mm", end?:"HH:mm"}。strength 只能是 soft。只在用户明确说过时段偏好时使用。period 边界：morning 06:00–12:00、afternoon 12:00–18:00、evening 18:00–22:00、night 22:00–23:00。用户要求的窗口与边界不一致时（如「19点以后」「8点前」），必须用 start/end 精确表达（例：19点以后 → period:"evening", start:"19:00", end:"23:00"），正文承诺的时段必须与 start/end 一致，不能只写 period 就宣称更窄的窗口。',
     '- buffer：{type:"buffer", minutes:0–120 整数}。',
     '- fixed_block：{type:"fixed_block", title≤60, category, weekday 或 date（二选一）, start:"HH:mm", end:"HH:mm"(须晚于 start)}。',
     '- 用户指定了明确的具体时段（如「明天下午2点学习两小时」）：输出一条该标题的 once 任务 + 一条同日同名的 fixed_block，时长与时段与用户所说一致。系统会把同名固定块计入该任务，不会再重复排一次；不要另外再安排这条任务的其它时段。',
@@ -112,14 +115,20 @@ export function buildSystemPrompt(): string {
     'weekday：0=周日、1=周一 … 6=周六。所有时间用 HH:mm 本地时区。',
     '',
     '【patch 契约】用户要求修改已有计划时输出 {type:"patch", summary≤200, ops:[Op](1–30)}。',
-    'op ∈ add_task_def{value:TaskDef} | update_task_def{key,patch} | remove_task_def{key} | add_constraint{value:Payload} | update_constraint{id,patch} | remove_constraint{id} | add_block{value:ManualBlock,client_id?,plan_id?} | update_block{id,patch} | move_block{id,start_utc,end_utc(ISO datetime)} | remove_block{id} | reschedule{scope?:"affected_only"|"all",keep_pinned:true} | clear_plan{} | update_plan{plan_id?,patch:{title?,horizon_start?,horizon_days?,timezone?}}。',
+    'op ∈ add_task_def{value:TaskDef} | update_task_def{key,patch} | remove_task_def{key} | add_constraint{value:Payload} | update_constraint{id,patch} | remove_constraint{id} | add_block{value:ManualBlock,client_id?,plan_id?} | update_block{id,patch} | move_block{id,start_local,end_local} | remove_block{id} | reschedule{scope?:"affected_only"|"all",keep_pinned:true} | clear_plan{} | update_plan{plan_id?,patch:{title?,horizon_start?,horizon_days?,timezone?}}。',
     'plan_id 只在跨计划操作时填写（取「共享日历中的其他计划」里的 plan id）；不填即当前计划。',
     '已钉住的块（上下文标注「钉住」）：用户手动不能拖动/改时间，但你可以在用户明确要求调整该任务时用 update_block / move_block 修改它；reschedule 会保留钉住块。不要主动移动用户钉住的块。',
-    'ManualBlock = {title:≤60 字, category, start_utc:"YYYY-MM-DDTHH:mm:ss.sssZ"(UTC), end_utc:同上, priority?:"high"|"mid"|"low", pinned?:boolean, notes?≤500}。时间必须写成 UTC ISO，且严格按上下文给出的【计划时区】换算：Asia/Shanghai=UTC+8（14:00 本地=06:00Z）；America/Denver 冬季=UTC-7（14:00 本地=21:00Z，夏令时 UTC-6）。绝不默认套用 UTC+8；换算前先确认 timezone 字段。',
+    'ManualBlock = {title:≤60 字, category, start_local:"YYYY-MM-DDTHH:mm", end_local:同上, priority?:"high"|"mid"|"low", pinned?:boolean, notes?≤500}。块时间一律写 start_local/end_local：计划时区的本地钟面时间（用户在日历上看到的时间），24 小时制，系统自动换算 UTC——不要自己换算、不要写 start_utc/end_utc。move_block 与 update_block 的时间同样用 start_local/end_local。例：计划时区 Asia/Shanghai，用户要 11-28 上午 9 点出发 → start_local:"2026-11-28T09:00"。',
     '取消任务的时段偏好：update_task_def 的 patch 里写 "preferred_period": null；用户说「不要固定在晚上/重新按空闲排」时这样清除并 reschedule。',
     '- 用户改作息/时段（例如「我说了早上写」「我可以 6 点起床」）：优先 update_constraint（active_window）或 update_task_def 的 preferred_period，再 reschedule；不要用 move_block 逐块硬挪，那样换个任务或加任务就会被打回。正文描述的时段必须等于约束实际会排出的时段。',
     '- 只做局部挪动（remove_block / move_block / update_block / add_block）时，不要在同一批 ops 里再输出 reschedule：显式块操作优先，重排会被忽略或把刚删的块生成回来。要整体重排就只给 reschedule，并在正文说明。',
     '- remove_block / move_block / update_block 除了 id，还要带上 context 里的 task_key、date（本地日期 YYYY-MM-DD）、title：id 可能已过期，系统会按「任务+日期+标题」定位正确块。',
+    '',
+    '【细化/拆分已有安排 = 替换，不是追加】用户要求把某个大块或某天的安排细化成具体行程（如「细化杭州旅游那两天」）时：',
+    '- 先 remove_block 删掉被细化的原块（id 逐字取自上下文；公共日历里的固定日程块同样可以删——这是用户明确要求的替换），再 add_block 逐个加入子块。只加不删会让原大块与新行程重叠，日历挤成两列。',
+    '- 子块之间不得互相重叠，也不得与保留的其他块重叠；时间应落在原块时段内，除非用户明确要求扩展。',
+    '- 正文说「已删除/替换/拆掉原块」就必须有对应 remove_block；说「挪到/改到某时间」就必须有 move_block / update_block（或 reschedule+约束/任务修改）。系统会校验正文承诺与 ops 一致，不一致会被退回修正。',
+    '- 用户拖动过或你 move_block 过的块在 reschedule 时会保留原位，不会被打回；用户明确要求「重新安排某任务」时，先 remove_block 该任务的旧块再 reschedule。',
     '',
     '【patch 输出格式，必须逐字遵守】',
     '{"type":"patch","summary":"≤200 字","ops":[{"op":"...", ...}]}',
@@ -178,14 +187,14 @@ function pushOtherPlans(
       if (other.tasks.length > 8) lines.push(`  - …共 ${other.tasks.length} 个任务定义，仅列前 8 个`);
     }
     if (other.windows?.length) lines.push(`  - 已有时段：${other.windows.map((w) => `${w.id}｜${w.text}`).join('；')}`);
-    const limit = opts.editing ? 12 : 6;
-    for (const b of other.blocks.slice(0, limit)) {
+    let previousDay = '';
+    for (const b of [...other.blocks].sort((a, b) => a.start_utc.localeCompare(b.start_utc))) {
       const day = localDay(b.start_utc, timezone);
       const start = minToHHmm(localMinutes(b.start_utc, timezone));
       const end = minToHHmm(localMinutes(b.end_utc, timezone));
+      if (day !== previousDay) { lines.push(`  ${day}：`); previousDay = day; }
       lines.push(`  - ${b.id}｜${b.title}｜${day} ${start}–${end}${b.notes ? `｜备注：${b.notes.slice(0, 40)}` : ''}`);
     }
-    if (other.blocks.length > limit) lines.push(`  - …共 ${other.blocks.length} 个时间块，仅列前 ${limit} 个`);
   }
   if (others.length) {
     lines.push('以上其他计划的块按天列出：不同日期的时段可能不同，不要概括成「每天同一时段」；描述现状时以列表里的日期和时间为准。');
@@ -205,6 +214,7 @@ export function buildUserMessage(input: {
   history: { role: string; content: string }[];
   today?: string;
   timezone?: string;
+  now_ms?: number;
   conflicts?: PlanConflict[];
   others?: OtherPlanContext[];
   /** 公共日历块（忙时/固定日程，与所有计划共享）。 */
@@ -221,12 +231,25 @@ export function buildUserMessage(input: {
   const today = input.today ?? new Date().toISOString().slice(0, 10);
   const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date(`${today}T12:00:00Z`).getUTCDay()];
   lines.push(`今天是 ${today}（${weekday}，${timezone}）。`);
-  if (input.availability) {
-    lines.push(`【参考可用时段（按共享日历估算；其他计划的块只是参考，可能与新计划冲突）】${input.availability}`);
-    lines.push('用户本轮明确说出的作息/时段/时长优先于这里的估算；不要因为这里看起来没空就压缩用户的要求。确实排不下时按【约束优先级】处理：保留用户明确的要求，给出缺口/取舍或追问；不同计划之间的重叠允许存在，会在日历上提示冲突。');
+  if (input.now_ms !== undefined) lines.push(`当前本地时间：${new Intl.DateTimeFormat('zh-CN', { timeZone: timezone, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(input.now_ms))}。新安排只能从现在之后开始，不能把过去的时段当作可用空档。`);
+  const occupied = [...(input.plan?.blocks ?? []), ...(input.others ?? []).flatMap(p => p.blocks), ...(input.sharedBlocks ?? [])]
+    .filter(b => b.status !== 'cancelled' && b.status !== 'skipped');
+  const cuts = blockBusyCuts(occupied, timezone);
+  const datedAvailability = dayList(input.plan?.plan.horizon_start ?? today, input.plan?.plan.horizon_days ?? 28, timezone).map(date => {
+    const busy = cuts.flatMap(c => c.payload.type === 'busy_window' && c.payload.date === date
+      ? [{ start: hhmmToMin(c.payload.start), end: hhmmToMin(c.payload.end) }] : []);
+    const free = subtractIntervals([{ start: 420, end: 1380 }], busy);
+    const label = free.reduce((n, p) => n + p.end - p.start, 0) < 60 ? '全天不可安排（白天剩余不足1小时）' : free.map(p => `${minToHHmm(p.start)}–${minToHHmm(p.end)}`).join('、');
+    return `${date}：${label}`;
+  }).join('；');
+  if (occupied.length || input.availability) {
+    lines.push(`【按日期的剩余时段（仅按已知占用估算07:00–23:00，不代表用户作息）】${occupied.length ? datedAvailability : input.availability}`);
+    lines.push('保留用户明确要求的时长和频次，也必须避开已有安排；下方按日期列出的实际占用为准，不把不同周的同一星期合并成重复忙时。固定时间冲突时先给 question_card，列出冲突的日期和安排，请用户选择如何调整。');
   } else {
     lines.push('【作息未知】用户还没有提供忙时、固定日程或空闲偏好。不要假设用户白天在上班/上课，也不要凭推测设置 preferred_period、把任务默认排到晚上；需要时段偏好时在追问里问（例如工作日几点后方便、周末是否全天可以）。');
   }
+  const unavailableDates = [...new Set(occupied.flatMap(b => b.unavailable_date ? [b.unavailable_date] : []))].sort();
+  if (unavailableDates.length) lines.push(`【整天不安排任务】${unavailableDates.join('、')}。这些日期的原整天安排已细化，但整天不可用的要求仍保留；不要在子行程间隙塞学习、吉他或其他日常任务，也不要再添加重复的旅游大块。`);
   if (input.habits) {
     lines.push(`【用户自述的生活习惯（优先遵守）】${input.habits}`);
     lines.push('规划、追问与默认假设都要遵循这些习惯；与本轮消息冲突时以本轮为准，并在正文说明你采用的调整。');
@@ -236,13 +259,12 @@ export function buildUserMessage(input: {
   }
   if (input.sharedBlocks?.length) {
     lines.push('【公共日历块（所有计划共享的忙时/固定日程）】带块 id，按 id 直接改：');
-    for (const b of input.sharedBlocks.slice(0, 24)) {
+    for (const b of [...input.sharedBlocks].sort((a, b) => a.start_utc.localeCompare(b.start_utc))) {
       const day = localDay(b.start_utc, timezone);
       const start = minToHHmm(localMinutes(b.start_utc, timezone));
       const end = minToHHmm(localMinutes(b.end_utc, timezone));
       lines.push(`- ${b.id}｜${b.title}｜${day} ${start}–${end}${b.notes ? `｜备注：${b.notes.slice(0, 40)}` : ''}`);
     }
-    if (input.sharedBlocks.length > 24) lines.push(`- …另有 ${input.sharedBlocks.length - 24} 个公共日历块未列出（按周重复的同样安排）`);
     lines.push('这些块不属于任何计划，但外观与编辑方式和普通任务块完全一样（无锁、可拖拽/改名/删除）：改时间用 move_block，改标题/备注用 update_block，取消某一天用 remove_block（id 逐字取自上面）；删除就表示用户当天请假或取消该日程，不会再恢复。不要为它们新建计划，也不要臆造 id。');
   }
   if (input.plan) {

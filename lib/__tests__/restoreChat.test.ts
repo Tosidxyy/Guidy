@@ -42,6 +42,13 @@ describe('restoreChat — 历史回放', () => {
     expect(r.messages.map((m) => m.seq)).toEqual([1, 2]);
   });
 
+  it('已应用方案的偏差提示随历史保留，刷新不抹掉已告知的取舍', () => {
+    const content = '排程预览提示：今天剩余时段不足，英语今天先跳过';
+    const r = restoreChat([rows[0], { ...rows[3], content }], plan());
+    expect(r.artifact).toBeNull();
+    expect(r.messages.at(-1)?.content).toBe(content);
+  });
+
   it('标题被本地改名不影响「已落库」判定', () => {
     const renamed = plan();
     renamed.plan.title = '改名的计划';

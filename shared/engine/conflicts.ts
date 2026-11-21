@@ -1,4 +1,5 @@
-import type { Block } from '../types.ts';
+import type { Block, Constraint } from '../types.ts';
+import { dayList, hhmmToMin, utcAt, weekdayOfDay } from './time.ts';
 
 export interface ConflictPlan {
   id: string;
@@ -42,6 +43,35 @@ function unionTitle(a: string, b: string): string {
 }
 
 const ms = (iso: string) => Date.parse(iso);
+
+export function scheduleConflicts(
+  proposed: Block[], constraints: Constraint[], existing: Block[],
+  meta: { horizon_start: string; horizon_days: number; timezone: string },
+): { proposed: Block; existing: Block; start_utc: string; end_utc: string }[] {
+  const candidates = [...proposed];
+  for (const c of constraints) {
+    if (!c.enabled || c.payload.type !== 'busy_window') continue;
+    const p = c.payload;
+    for (const day of dayList(meta.horizon_start, meta.horizon_days, meta.timezone)) {
+      if (!(p.date !== undefined ? p.date === day : p.weekday === weekdayOfDay(day, meta.timezone))) continue;
+      candidates.push({ id: `busy-${c.id}-${day}`, title: p.label ?? '固定占用', category: 'work', priority: 'high', pinned: true, origin: 'fixed',
+        start_utc: utcAt(day, hhmmToMin(p.start), meta.timezone), end_utc: utcAt(day, hhmmToMin(p.end), meta.timezone) });
+    }
+  }
+  const conflicts: { proposed: Block; existing: Block; start_utc: string; end_utc: string }[] = [];
+  const seen = new Set<string>();
+  for (const p of candidates) for (const e of existing) {
+    if (['cancelled', 'skipped'].includes(p.status ?? '') || ['cancelled', 'skipped'].includes(e.status ?? '') || isMergedPair(p, e)) continue;
+    const start = Math.max(ms(p.start_utc), ms(e.start_utc));
+    const end = Math.min(ms(p.end_utc), ms(e.end_utc));
+    if (end <= start) continue;
+    const key = `${p.title}|${e.title}|${start}|${end}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    conflicts.push({ proposed: p, existing: e, start_utc: new Date(start).toISOString(), end_utc: new Date(end).toISOString() });
+  }
+  return conflicts;
+}
 
 export function findConflicts(plans: ConflictPlan[], opts: { onlyPlanId?: string } = {}): PlanConflict[] {
   const out: PlanConflict[] = [];

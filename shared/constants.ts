@@ -37,6 +37,11 @@ export const PERIOD_LABEL: Record<string, string> = {
 };
 
 export const DEFAULT_ACTIVE: [number, number] = [420, 1380];
+// 深夜保护段 23:00–次日 06:00：除非用户明确指定（include_quiet 或手工约束），自动排程不得进入。
+export const QUIET_START = 1380;
+export const QUIET_END = 360;
+// 无偏好时段时优先从 07:00 附近开始放置（常见作息），而不是贴着可用时段起点。
+export const PREFERRED_DAY_START = 420;
 export const MIN_FRAGMENT_MIN = 25;
 export const SNAP_MIN = 15;
 export const DEFAULT_MUTEX_GAP = 15;

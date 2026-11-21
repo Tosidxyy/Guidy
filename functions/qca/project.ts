@@ -56,5 +56,6 @@ export function createProjector(seq: () => number, deltaSeq: number) {
     text: fullText,
     sawThinking: () => sawThinking,
     isTerminal: () => terminal,
+    hasFailed: () => failed,
   };
 }

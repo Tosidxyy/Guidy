@@ -1,5 +1,5 @@
-import { getAll, getOne, putOne, deleteOne, clearAll } from './db';
-import type { Block, Constraint, TaskDef } from '@/shared/types';
+import { getAll, getOne, putOne, deleteOne, clearAll, planStorageTransaction } from './db';
+import type { Block, Constraint, PlanState, TaskDef } from '@/shared/types';
 import type { Profile } from '@/shared/profile';
 
 export interface PlanRecord {
@@ -65,7 +65,10 @@ export async function putPlan(rec: PlanRecord): Promise<void> {
   await putOne('plans', rec.id, rec);
 }
 export async function removePlan(id: string): Promise<void> {
-  await deleteOne('plans', id);
+  await queuePlanSessionWrite(() => planStorageTransaction(async (tx) => {
+    tx.delete('plans', id);
+    if (await tx.get<string | null>('kv', PLAN_SELECTION_KEY) === id) tx.put('kv', PLAN_SELECTION_KEY, null);
+  }));
 }
 export async function planCount(): Promise<number> {
   return (await listPlans()).length;
@@ -131,6 +134,105 @@ export async function putProfile(p: Profile): Promise<void> {
   await putOne(KV, 'profile', p);
 }
 
+export interface StoredBlockHistory {
+  entries: Record<string, import('@/store/useBlockHistory').BlockHistoryEntry[]>;
+  redo: Record<string, import('@/store/useBlockHistory').BlockHistoryEntry[]>;
+}
+export async function getBlockHistory(): Promise<StoredBlockHistory> {
+  return ((await getOne<StoredBlockHistory>(KV, 'block_history')) ?? { entries: {}, redo: {} });
+}
+export async function putBlockHistory(h: StoredBlockHistory): Promise<void> {
+  await putOne(KV, 'block_history', h);
+}
+
 export async function deleteEverything(): Promise<void> {
-  await clearAll();
+  await queuePlanSessionWrite(() => clearAll());
+}
+
+// Only null-id drafts live in kv. Saved plan contents live exclusively in plans.
+export const PLAN_DRAFT_KEY = 'plan_draft';
+export const PLAN_SELECTION_KEY = 'plan_selection';
+export const LEGACY_PLAN_MIGRATION_KEY = 'plan_v1_migrated';
+let planSessionWrites: Promise<unknown> = Promise.resolve();
+let planSessionError: unknown;
+function queuePlanSessionWrite<T>(write: () => Promise<T>): Promise<T> {
+  const result = planSessionWrites.then(write);
+  planSessionWrites = result.then(
+    () => { planSessionError = undefined; },
+    (err) => { planSessionError = err; },
+  );
+  return result;
+}
+export async function flushPlanSessionWrites(): Promise<void> {
+  // Include writes appended while an earlier transaction was completing.
+  let pending: Promise<unknown>;
+  do { pending = planSessionWrites; await pending; } while (pending !== planSessionWrites);
+  if (planSessionError !== undefined) throw planSessionError;
+}
+
+export async function readPlanSession() {
+  await flushPlanSessionWrites();
+  return {
+    selection: await getOne<string | null>('kv', PLAN_SELECTION_KEY),
+    draft: await getOne<PlanState>('kv', PLAN_DRAFT_KEY),
+  };
+}
+
+export function writePlanSession(state: PlanState, consumeDraft = false): Promise<void> {
+  const id = state.plan.id;
+  const draft = id === null ? structuredClone(state) : undefined;
+  return queuePlanSessionWrite(() => planStorageTransaction(async (tx) => {
+    // A delayed selection cannot revive a deleted plan, even after another tab deletes it.
+    if (id !== null && !await tx.get('plans', id)) return;
+    if (draft) tx.put('kv', PLAN_DRAFT_KEY, draft);
+    else if (consumeDraft) tx.delete('kv', PLAN_DRAFT_KEY);
+    tx.put('kv', PLAN_SELECTION_KEY, id);
+  }));
+}
+
+const planRecord = (s: PlanState, id: string): PlanRecord => ({
+  ...s.plan, id, status: s.plan.status === 'active' ? 'active' : 'draft',
+  task_defs: s.task_defs, constraints: s.constraints, blocks: s.blocks,
+});
+export async function hasLegacyPlanMigration(): Promise<boolean> {
+  return await getOne('kv', LEGACY_PLAN_MIGRATION_KEY) === true;
+}
+
+/** Insert only: canonical records always win, irrespective of snapshot timestamps/versions. */
+export function migrateLegacyPlan(state: PlanState | null): Promise<void> {
+  return queuePlanSessionWrite(() => planStorageTransaction(async (tx) => {
+    if (await tx.get('kv', LEGACY_PLAN_MIGRATION_KEY) === true) return;
+    if (state) {
+      const id = state.plan.id;
+      if (id === null) {
+        if (await tx.get('kv', PLAN_DRAFT_KEY) === undefined) tx.put('kv', PLAN_DRAFT_KEY, state);
+      } else if (await tx.get('plans', id) === undefined) {
+        tx.put('plans', id, planRecord(state, id));
+      }
+      if (await tx.get('kv', PLAN_SELECTION_KEY) === undefined) tx.put('kv', PLAN_SELECTION_KEY, id);
+    }
+    tx.put('kv', LEGACY_PLAN_MIGRATION_KEY, true);
+  }));
+}
+
+/** Explicit JSON import, not a rendering update. Existing IDs are imported as a copy. */
+export function importPlanSession(state: PlanState): Promise<PlanState> {
+  const snapshot = structuredClone(state);
+  return queuePlanSessionWrite(() => planStorageTransaction(async (tx) => {
+    let id = snapshot.plan.id;
+    if (id === null) {
+      tx.put('kv', PLAN_DRAFT_KEY, snapshot);
+    } else {
+      if (await tx.get('plans', id)) {
+        id = uuid();
+        // A copied plan must not share block identities with the original (undo/conflict targets).
+        snapshot.blocks = snapshot.blocks.map((block) => ({ ...block, id: uuid() }));
+        snapshot.constraints = snapshot.constraints.map((constraint) => ({ ...constraint, id: uuid() }));
+      }
+      snapshot.plan.id = id;
+      tx.put('plans', id, planRecord(snapshot, id));
+    }
+    tx.put('kv', PLAN_SELECTION_KEY, id);
+    return snapshot;
+  }));
 }

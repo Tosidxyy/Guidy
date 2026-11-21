@@ -10,9 +10,10 @@ export interface PatchBody {
   ops: PatchArtifact['ops'];
   result_hash: string;
   engine_version: number;
+  shared_ops?: PatchArtifact['ops'];
 }
 
-export async function buildPatchBody(args: { patch: PatchArtifact; blocks: Block[]; previewId: string; planId: string | null; baseVersion: number }): Promise<PatchBody> {
+export async function buildPatchBody(args: { patch: PatchArtifact; blocks: Block[]; previewId: string; planId: string | null; baseVersion: number; sharedOps?: PatchArtifact['ops'] }): Promise<PatchBody> {
   return {
     preview_id: args.previewId,
     plan_id: args.planId,
@@ -20,5 +21,6 @@ export async function buildPatchBody(args: { patch: PatchArtifact; blocks: Block
     ops: args.patch.ops,
     result_hash: await resultHash(args.blocks),
     engine_version: ENGINE_VERSION,
+    ...(args.sharedOps?.length ? { shared_ops: args.sharedOps } : {}),
   };
 }

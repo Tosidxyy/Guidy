@@ -17,7 +17,7 @@ function sseResponse(chunks: unknown[]) {
 }
 const delta = (text: string) => ({ choices: [{ delta: { content: text } }] });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 async function drain(stream: { body: ReadableStream<Uint8Array> }) {
   const out: any[] = [];
@@ -71,5 +71,54 @@ describe('createOpenAiQca（DB 历史）', () => {
     const events = await drain(st);
     expect(events.some((e) => e.type === 'provider.switch')).toBe(true);
     expect(events.some((e) => e.type === 'agent.message' && e.content[0].text === '兜底回复')).toBe(true);
+  });
+});
+describe('createOpenAiQca 错误可见性（供 failover 判定）', () => {
+  it.each([401, 429, 500])('上游 HTTP %i → session.error 帧带 llm_http 状态信息', async (status) => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status }) as Response));
+    const qca = createOpenAiQca({ baseUrl: 'https://a/v1', apiKey: 'bad', model: 'm' });
+    const binding = await qca.ensureBinding('scope');
+    const session = await qca.createSession(binding, 't', {});
+    const st = await qca.openStream(session.id, {});
+    await qca.sendEvents(session.id, '问', 'k');
+    const events = await drain(st);
+    const err = events.find((e) => e.type === 'session.error');
+    expect(err).toBeTruthy();
+    expect(err.message).toContain(`llm_http_${status}`);
+  });
+
+  it('headers 已到但首包挂起 20 秒 → 超时切备用，不泄露失败帧', async () => {
+    vi.useFakeTimers();
+    let requests = 0;
+    vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init: RequestInit) => {
+      if (++requests > 1) return sseResponse([delta('备用成功')]);
+      return new Response(new ReadableStream({ start(controller) {
+        init.signal!.addEventListener('abort', () => controller.error(init.signal!.reason));
+      } }), { headers: { 'content-type': 'text/event-stream' } });
+    }));
+    const adapter = () => createOpenAiQca({ baseUrl: 'https://a/v1', apiKey: 'k', model: 'm' });
+    const qca = createResilientQca([{ name: 'primary', adapter: adapter() }, { name: 'backup', adapter: adapter() }]);
+    const binding = await qca.ensureBinding('scope');
+    const session = await qca.createSession(binding, 't', {});
+    const stream = await qca.openStream(session.id, {});
+    await qca.sendEvents(session.id, '问', 'timeout');
+    const pending = drain(stream);
+    await vi.advanceTimersByTimeAsync(20001);
+    const events = await pending;
+    expect(requests).toBe(2);
+    expect(events.some((e) => e.type === 'provider.switch')).toBe(true);
+    expect(events.some((e) => e.type === 'session.error')).toBe(false);
+    expect(events.some((e) => e.type === 'agent.message' && e.content[0].text === '备用成功')).toBe(true);
+  });
+
+  it('连接失败 → session.error 帧带 fetch failed 原因', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch failed'); }));
+    const qca = createOpenAiQca({ baseUrl: 'https://a/v1', apiKey: 'k', model: 'm' });
+    const binding = await qca.ensureBinding('scope');
+    const session = await qca.createSession(binding, 't', {});
+    const st = await qca.openStream(session.id, {});
+    await qca.sendEvents(session.id, '问', 'k');
+    const events = await drain(st);
+    expect(events.find((e) => e.type === 'session.error')?.message).toContain('fetch failed');
   });
 });

@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ENGINE_VERSION } from '../../constants';
 import type { Block, Constraint, ConstraintPayload, SolveInput, TaskDef } from '../../types';
-import { diffBlocks, localDay, localMinutes, resultHash, solve, validatePlacement } from '../index';
+import { diffBlocks, localDay, localMinutes, pastTodayCuts, resultHash, solve, utcAt, validatePlacement } from '../index';
 
 const TZ = 'Asia/Shanghai';
 const START = '2026-11-16';
@@ -199,6 +199,90 @@ describe('engine solve', () => {
     expect(math.length).toBeGreaterThanOrEqual(2);
     for (const b of math) expect(mins(b)).toBeGreaterThanOrEqual(25);
     expect(math.reduce((s, b) => s + mins(b), 0)).toBe(100);
+  });
+
+  it('E10b daily 拆分不跨天回填：工作日上课 8–12，数学 2h 可拆 → 每天恰好 120min', () => {
+    const out = solve(input({
+      task_defs: [task({ key: 'math', title: '数学', duration_min: 120, splittable: true })],
+      constraints: [active(), ...[1, 2, 3, 4, 5].map((wd) => cons({ type: 'busy_window', weekday: wd, start: '08:00', end: '12:00', label: '上课' }))],
+    }));
+    expect(out.violations).toHaveLength(0);
+    const perDay = new Map<string, number>();
+    for (const b of out.blocks.filter((b) => b.task_key === 'math')) {
+      const d = localDay(b.start_utc, TZ);
+      perDay.set(d, (perDay.get(d) ?? 0) + mins(b));
+    }
+    expect(perDay.size).toBe(7);
+    for (const total of perDay.values()) expect(total).toBe(120);
+  });
+
+  it('E10c preferred_period 精确窗口：start/end 覆盖 period 边界（19点以后）', () => {
+    const out = solve(input({
+      task_defs: [task({ key: 'math', title: '数学', duration_min: 120, splittable: true })],
+      constraints: [
+        active(),
+        ...[1, 2, 3, 4, 5].map((wd) => cons({ type: 'busy_window', weekday: wd, start: '08:00', end: '12:00' })),
+        cons({ type: 'busy_window', weekday: 3, start: '19:00', end: '21:00', label: '选修' }),
+        cons({ type: 'preferred_period', task_key: 'math', period: 'evening', strength: 'soft', start: '19:00', end: '23:00' }),
+      ],
+    }));
+    expect(out.violations).toHaveLength(0);
+    const math = out.blocks.filter((b) => b.task_key === 'math');
+    const perDay = new Map<string, number>();
+    for (const b of math) {
+      expect(localMinutes(b.start_utc, TZ)).toBeGreaterThanOrEqual(1140);
+      expect(localMinutes(b.end_utc, TZ)).toBeLessThanOrEqual(1380);
+      const d = localDay(b.start_utc, TZ);
+      perDay.set(d, (perDay.get(d) ?? 0) + mins(b));
+    }
+    expect(perDay.size).toBe(7);
+    for (const total of perDay.values()) expect(total).toBe(120);
+    const wed = math.filter((b) => localDay(b.start_utc, TZ) === '2026-11-18');
+    for (const b of wed) expect(localMinutes(b.start_utc, TZ)).toBeGreaterThanOrEqual(1260);
+  });
+
+  it('E10d 全天手动承诺（无任务 pinned 块）→ 当天跳过且不计入 daily 目标', () => {
+    const trip: Block = {
+      id: 'trip-1', title: '旅行', category: 'life',
+      start_utc: '2026-11-17T23:00:00.000Z', end_utc: '2026-11-18T14:30:00.000Z',
+      priority: 'mid', pinned: true, origin: 'manual',
+    };
+    const out = solve(input({ task_defs: [task({ key: 'math', duration_min: 120 })], constraints: [active()], pinned_blocks: [trip] }));
+    expect(out.violations).toHaveLength(0);
+    const math = out.blocks.filter((b) => b.task_key === 'math');
+    expect(math).toHaveLength(6);
+    expect(math.filter((b) => localDay(b.start_utc, TZ) === '2026-11-18')).toHaveLength(0);
+    expect(out.compromises.some((c) => c.reason.includes('2026-11-18'))).toBe(true);
+  });
+
+  it('E10e 精确窗口视为任务可用时段：06–08 窗口能用 06:00–07:00，无偏好任务仍从默认作息起点开始', () => {
+    const out = solve(input({
+      task_defs: [
+        task({ key: 'english', title: '英语', duration_min: 60, sort_order: 0 }),
+        task({ key: 'vocab', title: '背单词', duration_min: 30, sort_order: 1, preferred_period: 'morning' }),
+      ],
+      constraints: [cons({ type: 'preferred_period', task_key: 'vocab', period: 'morning', strength: 'soft', start: '06:00', end: '08:00' })],
+    }));
+    expect(out.violations).toHaveLength(0);
+    const vocab = out.blocks.filter((b) => b.task_key === 'vocab');
+    expect(vocab).toHaveLength(7);
+    for (const b of vocab) {
+      expect(localMinutes(b.start_utc, TZ)).toBeGreaterThanOrEqual(360);
+      expect(localMinutes(b.end_utc, TZ)).toBeLessThanOrEqual(480);
+    }
+    const eng = out.blocks.filter((b) => b.task_key === 'english');
+    expect(eng).toHaveLength(7);
+    for (const b of eng) expect(localMinutes(b.start_utc, TZ)).toBeGreaterThanOrEqual(420);
+  });
+
+  it('E10f 精确窗口仍受作息保护：05:00 起点被夹到 06:00', () => {
+    const out = solve(input({
+      task_defs: [task({ key: 'vocab', duration_min: 30, preferred_period: 'morning' })],
+      constraints: [cons({ type: 'preferred_period', task_key: 'vocab', period: 'morning', strength: 'soft', start: '05:00', end: '07:00' })],
+    }));
+    expect(out.violations).toHaveLength(0);
+    expect(out.blocks).toHaveLength(7);
+    for (const b of out.blocks) expect(localMinutes(b.start_utc, TZ)).toBeGreaterThanOrEqual(360);
   });
 
   it('E11 必然无解：cap 120 + 日需 600 → 冲突报告含建议', () => {
@@ -525,5 +609,175 @@ describe('短任务整块落位（duration < MIN_FRAGMENT 不得被碎片门槛�
     const total = out.blocks.filter((b) => b.task_key === 'math').reduce((s, b) => s + mins(b), 0);
     expect(total).toBe(40);
     expect(out.violations).toHaveLength(0);
+  });
+});
+
+describe('engine explicit now_ms cutoff', () => {
+  it.each([
+    ['10:00:00.000', 600],
+    ['10:00:00.001', 605],
+    ['10:00:01.000', 605],
+    ['10:01:00.000', 605],
+    ['10:04:59.999', 605],
+    ['10:05:00.000', 605],
+    ['10:05:00.001', 610],
+  ])('new tasks at %s start at rounded minute %s', (time, expectedMinute) => {
+    for (const [timezone, offset] of [[TZ, '+08:00'], ['America/Denver', '-07:00']]) {
+      const now_ms = Date.parse(`${START}T${time}${offset}`);
+      const out = solve(input({ timezone, now_ms, horizon_days: 1, task_defs: [task({ key: 't' })], constraints: [active()] }));
+      expect(out.blocks).toHaveLength(1);
+      expect(localMinutes(out.blocks[0].start_utc, timezone)).toBe(expectedMinute);
+      expect(Date.parse(out.blocks[0].start_utc)).toBeGreaterThanOrEqual(now_ms);
+      expect(out.violations).toEqual([]);
+    }
+  });
+
+  it('uses local today rather than the UTC or machine date', () => {
+    const now_ms = Date.parse('2026-11-17T01:00:01Z');
+    for (const [timezone, today, minute] of [[TZ, '2026-11-17', 545], ['America/Denver', START, 1085]] as const) {
+      const out = solve(input({ timezone, now_ms, horizon_days: 2, task_defs: [task({ key: 't' })] }));
+      expect(out.blocks[0].start_utc).toBe(utcAt(today, minute, timezone));
+      expect(out.blocks.every((b) => Date.parse(b.start_utc) >= now_ms)).toBe(true);
+      expect(out.blocks).toHaveLength(timezone === TZ ? 1 : 2);
+      expect(out.violations).toEqual([]);
+      expect(out.unplaced).toEqual([]);
+    }
+  });
+
+  it('skips past dates for daily and weekly tasks without reporting missed historical capacity', () => {
+    for (const frequency of [{ type: 'daily' }, { type: 'per_week', count: 7 }] as const) {
+      const now_ms = Date.parse('2026-11-17T10:00:01+08:00');
+      const out = solve(input({ now_ms, task_defs: [task({ key: 't', frequency })] }));
+      expect(out.blocks).toHaveLength(6);
+      expect(out.blocks.every((b) => Date.parse(b.start_utc) >= now_ms)).toBe(true);
+      expect(out.violations).toEqual([]);
+      expect(out.unplaced).toEqual([]);
+    }
+  });
+
+  it('does not backfill split fragments into yesterday', () => {
+    const now_ms = Date.parse('2026-11-17T10:00:01+08:00');
+    const out = solve(input({
+      now_ms, horizon_days: 3,
+      task_defs: [task({ key: 't', frequency: { type: 'once' }, duration_min: 90, splittable: true })],
+      constraints: [cons({ type: 'active_window', start: '10:00', end: '11:00' })],
+    }));
+    expect(out.blocks).toHaveLength(2);
+    expect(out.blocks.every((b) => Date.parse(b.start_utc) >= now_ms)).toBe(true);
+    expect(out.blocks.reduce((sum, b) => sum + mins(b), 0)).toBe(90);
+    expect(out.violations).toEqual([]);
+  });
+
+  it('custom preferred windows cannot reopen elapsed time', () => {
+    const now_ms = Date.parse(`${START}T07:00:01+08:00`);
+    const out = solve(input({
+      now_ms, horizon_days: 1, task_defs: [task({ key: 't', duration_min: 30 })],
+      constraints: [cons({ type: 'preferred_period', task_key: 't', period: 'morning', strength: 'soft', start: '06:00', end: '08:00' })],
+    }));
+    expect(out.blocks).toHaveLength(1);
+    expect(out.blocks[0].start_utc).toBe(utcAt(START, 425, TZ));
+  });
+
+  it('replaces duplicate/stale now-past cuts without mutating the caller input', () => {
+    const now_ms = Date.parse(`${START}T10:00:01+08:00`);
+    const base = input({ now_ms, horizon_days: 2, task_defs: [task({ key: 't' })], constraints: [active()] });
+    const stale = pastTodayCuts(TZ, START, 2, Date.parse('2026-11-17T23:59:59+08:00'));
+    const duplicate = pastTodayCuts(TZ, START, 2, now_ms);
+    const withCuts = { ...base, constraints: [...base.constraints, ...stale, ...duplicate, ...duplicate] };
+    const before = structuredClone(withCuts);
+    expect(solve(withCuts)).toEqual(solve(base));
+    expect(withCuts).toEqual(before);
+  });
+
+  it('skips newly generated elapsed and ongoing fixed blocks, with a compromise per occurrence', () => {
+    const now_ms = Date.parse('2026-11-17T10:00:01+08:00');
+    const constraints = [
+      cons({ type: 'fixed_block', title: 'yesterday', category: 'study', date: START, start: '12:00', end: '13:00' }),
+      cons({ type: 'fixed_block', title: 'elapsed', category: 'study', date: '2026-11-17', start: '08:00', end: '09:00' }),
+      cons({ type: 'fixed_block', title: 'ongoing', category: 'study', weekday: 2, start: '10:00', end: '11:00' }),
+      cons({ type: 'fixed_block', title: 'later', category: 'study', date: '2026-11-17', start: '12:00', end: '13:00' }),
+      cons({ type: 'fixed_block', title: 'tomorrow', category: 'study', date: '2026-11-18', start: '08:00', end: '09:00' }),
+    ];
+    const out = solve(input({ now_ms, horizon_days: 3, constraints }));
+    expect(out.blocks.map((b) => b.title)).toEqual(['later', 'tomorrow']);
+    expect(out.blocks.every((b) => Date.parse(b.start_utc) >= now_ms)).toBe(true);
+    expect(out.compromises.map((c) => c.constraint_id)).toEqual(constraints.slice(0, 3).map((c) => c.id));
+    expect(out.compromises.every((c) => c.reason.includes('已过去'))).toBe(true);
+    expect(out.violations).toEqual([]);
+  });
+
+  it('keeps a fixed event starting exactly now, but never newly creates one a millisecond late', () => {
+    const now_ms = Date.parse(`${START}T10:00:00+08:00`);
+    const base = input({ now_ms, horizon_days: 1, constraints: [cons({ type: 'fixed_block', title: 'meeting', category: 'other', date: START, start: '10:00', end: '11:00' })] });
+    expect(solve(base).blocks).toHaveLength(1);
+    const late = solve({ ...base, now_ms: now_ms + 1 });
+    expect(late.blocks).toEqual([]);
+    expect(late.compromises).toHaveLength(1);
+  });
+
+  it('retains supplied manual, pinned, ongoing and completed history intact without consuming future daily occurrences', () => {
+    const now_ms = Date.parse('2026-11-17T10:00:01+08:00');
+    const history: Block[] = [
+      { id: 'manual', title: 'manual', category: 'life', priority: 'mid', origin: 'manual', pinned: false, start_utc: utcAt(START, 420, TZ), end_utc: utcAt(START, 480, TZ) },
+      { id: 'completed', task_key: 't', title: 't', category: 'study', priority: 'mid', origin: 'engine', pinned: false, start_utc: utcAt(START, 600, TZ), end_utc: utcAt(START, 660, TZ), status: 'completed', completed_at: utcAt(START, 662, TZ), actual_duration_min: 55, notes: 'keep history', progress_updated_at: utcAt(START, 665, TZ) },
+      { id: 'fixed', title: 'fixed', category: 'other', priority: 'high', origin: 'fixed', pinned: true, start_utc: utcAt('2026-11-17', 480, TZ), end_utc: utcAt('2026-11-17', 540, TZ) },
+      { id: 'ongoing', title: 'ongoing', category: 'life', priority: 'mid', origin: 'manual', pinned: true, start_utc: utcAt('2026-11-17', 570, TZ), end_utc: utcAt('2026-11-17', 630, TZ), status: 'in_progress' },
+    ];
+    const base = input({ now_ms, horizon_days: 3, pinned_blocks: history, task_defs: [task({ key: 't' })], constraints: [cons({ type: 'fixed_block', title: 'fixed', category: 'other', date: '2026-11-17', start: '08:00', end: '09:00' })] });
+    const before = structuredClone(base);
+    const out = solve(base);
+    for (const block of history) expect(out.blocks.find((b) => b.id === block.id)).toEqual(block);
+    const generated = out.blocks.filter((b) => !history.some((h) => h.id === b.id));
+    expect(generated).toHaveLength(2);
+    expect(generated.every((b) => Date.parse(b.start_utc) >= now_ms)).toBe(true);
+    expect(out.violations).toEqual([]);
+    expect(out.unplaced).toEqual([]);
+    expect(base).toEqual(before);
+  });
+
+  it('does not create tasks or fixed blocks when the whole horizon is past', () => {
+    const out = solve(input({
+      now_ms: Date.parse('2026-11-18T00:00:00+08:00'), horizon_days: 2,
+      task_defs: [task({ key: 't' })],
+      constraints: [cons({ type: 'fixed_block', title: 'fixed', category: 'other', weekday: 1, start: '12:00', end: '13:00' })],
+    }));
+    expect(out.blocks).toEqual([]);
+    expect(out.violations).toEqual([]);
+  });
+
+  it('rounding to 24:00 never leaves a 23:59 slot or blocks the next day', () => {
+    const now_ms = Date.parse(`${START}T23:59:59.999+08:00`);
+    const out = solve(input({ now_ms, horizon_days: 2, task_defs: [task({ key: 't', duration_min: 1 })], constraints: [cons({ type: 'active_window', start: '00:00', end: '24:00' })] }));
+    expect(out.blocks).toHaveLength(1);
+    expect(localDay(out.blocks[0].start_utc, TZ)).toBe('2026-11-17');
+    expect(out.violations).toEqual([]);
+    const midnight = solve(input({ now_ms: now_ms + 1, horizon_start: '2026-11-17', horizon_days: 1, task_defs: [task({ key: 't', duration_min: 1 })], constraints: [cons({ type: 'active_window', start: '00:00', end: '00:10' })] }));
+    expect(midnight.blocks[0].start_utc).toBe(new Date(now_ms + 1).toISOString());
+  });
+
+  it('leaves future-only horizons unchanged', () => {
+    const base = input({ task_defs: [task({ key: 't' })], constraints: [active(), cons({ type: 'fixed_block', title: 'meeting', category: 'other', weekday: 1, start: '12:00', end: '13:00' })] });
+    expect(solve({ ...base, now_ms: Date.parse('2026-11-15T23:59:59+08:00') })).toEqual(solve(base));
+  });
+
+  it('remains deterministic without now_ms and never reads the ambient clock', () => {
+    const base = input({ horizon_days: 1, task_defs: [task({ key: 't' })], constraints: [active()] });
+    const explicit = { ...base, now_ms: Date.parse(`${START}T10:00:01+08:00`) };
+    const expected = solve(base);
+    const expectedExplicit = solve(explicit);
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => { throw new Error('solver must not read ambient time'); });
+    try {
+      expect(solve(base)).toEqual(expected);
+      expect(solve(explicit)).toEqual(expectedExplicit);
+      expect(clock).not.toHaveBeenCalled();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('still honors legacy manual cuts when now_ms is omitted', () => {
+    const now_ms = Date.parse(`${START}T10:00:01+08:00`);
+    const base = input({ horizon_days: 1, task_defs: [task({ key: 't' })], constraints: [active()] });
+    expect(solve({ ...base, constraints: [...base.constraints, ...pastTodayCuts(TZ, START, 1, now_ms)] })).toEqual(solve({ ...base, now_ms }));
   });
 });

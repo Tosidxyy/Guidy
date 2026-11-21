@@ -36,8 +36,10 @@ export function constraintText(p: ConstraintPayload, taskTitle?: (key: string) =
       const names = p.subjects.values.map((v) => (p.subjects.kind === 'task' ? (taskTitle?.(v) ?? v) : categoryLabel(v)));
       return `${names[0]} 与 ${names[1]} ${p.mode === 'no_same_day' ? '不在同一天' : '不连续安排'}（${p.strength === 'hard' ? '硬性' : '软性'}）`;
     }
-    case 'preferred_period':
-      return `${p.task_key ? (taskTitle?.(p.task_key) ?? p.task_key) : categoryLabel(p.category ?? '')} 偏好${PERIOD_LABEL[p.period]}`;
+    case 'preferred_period': {
+      const window = p.start || p.end ? `（${p.start ?? '…'}–${p.end ?? '…'}）` : '';
+      return `${p.task_key ? (taskTitle?.(p.task_key) ?? p.task_key) : categoryLabel(p.category ?? '')} 偏好${PERIOD_LABEL[p.period]}${window}`;
+    }
     case 'buffer':
       return `任务之间至少间隔 ${p.minutes} 分钟`;
     case 'fixed_block':

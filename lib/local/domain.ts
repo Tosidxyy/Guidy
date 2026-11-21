@@ -1,8 +1,10 @@
 // 本机业务实现：与旧服务端 routes 的行为对齐（求解/校验/忙时物化/版本），但只落在 IndexedDB。
 import { ApiError } from '@/lib/apiError';
 import { ENGINE_VERSION } from '@/shared/constants';
-import { applyPatch, diffBlocks, resultHash, solve, validatePlacement } from '@/shared/engine';
+import { applyPatch, blockBusyCuts, changesScheduleInputs, diffBlocks, hasExplicitBlockOps, inheritUnavailableDates, reschedulePinnedBlocks, resultHash, solve, validatePlacement } from '@/shared/engine';
+import { MATERIALIZED_NOTE } from '@/shared/engine/patch';
 import { dayList, hhmmToMin, localDay, localMinutes, minToHHmm, utcAt, weekdayOfDay } from '@/shared/engine/time';
+import { scheduleConflicts } from '@/shared/engine/conflicts';
 import { summarizeHabit, type LocalActivity, type Profile } from '@/shared/profile';
 import {
   addTombstone, appendMessage, deleteEverything, deleteShared, getConversation, getPlan, getProfile,
@@ -13,7 +15,7 @@ import type { ConversationRecord, MessageRecord, PlanRecord, SharedBlock } from 
 import type { ApplyOp, Block, Constraint, PlanState, TaskDef } from '@/shared/types';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 
-export const MATERIALIZED_NOTE = '共享日历：固定日程，与普通任务一样可拖拽/编辑/删除';
+export { MATERIALIZED_NOTE };
 const DROPPED_AT_COMMIT = new Set(['busy_window', 'fixed_block']);
 const MAX_DAYS = 92;
 
@@ -43,20 +45,6 @@ export function sanitizeTaskDates(tasks: TaskDef[], horizon_start: string, horiz
     }
     return earliest === t.earliest_start && deadline === t.deadline ? t : { ...t, earliest_start: earliest, deadline };
   });
-}
-
-/** 今天已经过去的时间不排：跨当前时刻的块从当前时刻开始，完全在过去的块丢弃。 */
-function dropPastToday(blocks: Block[], tz: string, nowMs = Date.now()): Block[] {
-  const today = localDay(new Date(nowMs).toISOString(), tz);
-  const nowIso = new Date(Math.ceil(nowMs / 300000) * 300000).toISOString();
-  const out: Block[] = [];
-  for (const b of blocks) {
-    if (localDay(b.start_utc, tz) !== today) { out.push(b); continue; }
-    if (Date.parse(b.end_utc) <= nowMs) continue;
-    if (Date.parse(b.start_utc) < nowMs) out.push({ ...b, start_utc: nowIso });
-    else out.push(b);
-  }
-  return out;
 }
 
 /** 日常且不可拆分的任务，同一天最多一个块：AI 的块操作引用过期 id 时，防止旧块残留成两块。 */
@@ -138,6 +126,9 @@ export async function materializeShared(): Promise<void> {
         const block: SharedBlock = {
           id: uuid(), title, category: payload.category ?? 'work', start_utc: startUtc, end_utc: endUtc,
           priority: 'high', pinned: false, origin: 'manual', notes: MATERIALIZED_NOTE,
+          ...(payload.date === undefined && payload.weekday !== undefined ? { recurrence_weekday: payload.weekday } : {}),
+          ...(payload.date !== undefined && hhmmToMin(payload.start) <= 7 * 60 && hhmmToMin(payload.end) >= 23 * 60
+            ? { unavailable_date: day } : {}),
         };
         seen.add(key);
         existing.push(block);
@@ -163,25 +154,43 @@ async function savePlanRecord(rec: PlanRecord): Promise<PlanRecord> {
   return (await getPlan(rec.id)) ?? rec;
 }
 
+/** 其他计划的块以忙时裁剪参与排程（跨计划不冲突、满档日按 blockedDays 跳过）。 */
+async function foreignCuts(excludePlanId: string | null | undefined, tz: string): Promise<Constraint[]> {
+  const plans = await listPlans();
+  const blocks = plans
+    .filter((p) => p.id !== excludePlanId)
+    .flatMap((p) => p.blocks)
+    .filter((b) => b.status !== 'cancelled' && b.status !== 'skipped');
+  return blockBusyCuts(blocks, tz);
+}
+
 export async function localCommit(body: any): Promise<any> {
   if (Number(body?.engine_version) !== ENGINE_VERSION) throw new ApiError('engine_version_mismatch', 409, '排程引擎版本不一致');
   const input = body?.input;
   if (!input || !Array.isArray(input.task_defs) || !input.task_defs.length) throw new ApiError('validation_failed', 422, '至少需要一个任务');
   const shared = await listShared();
+  const foreign = await foreignCuts(body.plan_id, input.timezone);
   const warnings: string[] = [];
   const sanitizedTasks = sanitizeTaskDates(input.task_defs as TaskDef[], input.horizon_start, input.horizon_days, warnings);
   const solved = solve({
     engine_version: ENGINE_VERSION,
+    now_ms: Date.now(),
     horizon_start: input.horizon_start,
     horizon_days: input.horizon_days,
     timezone: input.timezone,
     task_defs: sanitizedTasks,
-    constraints: (input.constraints ?? []).map((c: Constraint) => ({ ...c })),
+    constraints: [...(input.constraints ?? []).map((c: Constraint) => ({ ...c })), ...foreign, ...blockBusyCuts(shared, input.timezone)],
     pinned_blocks: shared.map((b) => ({ ...b, pinned: true })),
   });
-  if (solved.violations.length) throw new ApiError('engine_infeasible', 422, `当前约束下排不下全部任务：${solved.violations[0]?.reason ?? '无可安排时段'}`, undefined, { violations: solved.violations, compromises: solved.compromises, feasibility: solved.feasibility, unplaced: solved.unplaced });
   const busyIds = new Set(shared.map((b) => b.id));
-  const freshBlocks = dropPastToday(solved.blocks.filter((b) => !busyIds.has(b.id)), input.timezone);
+  const freshBlocks = solved.blocks.filter((b) => !busyIds.has(b.id));
+  const otherBlocks = (await listPlans()).filter(p => p.id !== body.plan_id).flatMap(p => p.blocks);
+  const conflicts = scheduleConflicts(freshBlocks, input.constraints ?? [], [...otherBlocks, ...shared], input);
+  if (conflicts.length) {
+    const c = conflicts[0];
+    throw new ApiError('placement_invalid', 422, `${localDay(c.start_utc, input.timezone)} ${minToHHmm(localMinutes(c.start_utc, input.timezone))}「${c.proposed.title}」与「${c.existing.title}」冲突，请先确认调整哪项安排`, undefined, { conflicts });
+  }
+  if (solved.violations.length) throw new ApiError('engine_infeasible', 422, `当前约束下排不下全部任务：${solved.violations[0]?.reason ?? '无可安排时段'}`, undefined, { violations: solved.violations, compromises: solved.compromises, feasibility: solved.feasibility, unplaced: solved.unplaced });
   const existing = body.plan_id ? await getPlan(String(body.plan_id)) : undefined;
   if (body.plan_id && !existing) throw new ApiError('not_found', 404, '计划不存在');
   const now = nowIso();
@@ -204,7 +213,8 @@ export async function localCommit(body: any): Promise<any> {
     const conv = await getConversation(String(body.conversation_id));
     if (conv && !conv.plan_id) await putConversation({ ...conv, plan_id: stored.id, updated_at: now });
   }
-  return { plan: stored, version: stored.version, task_defs: stored.task_defs, constraints: stored.constraints, blocks: stored.blocks, server_authoritative: false, warnings };
+  const sharedAdded = (await listShared()).filter((b) => !busyIds.has(b.id));
+  return { plan: stored, version: stored.version, task_defs: stored.task_defs, constraints: stored.constraints, blocks: stored.blocks, shared_added: sharedAdded, compromises: solved.compromises, server_authoritative: false, warnings };
 }
 
 export async function localSaveDraft(body: any): Promise<any> {
@@ -245,7 +255,7 @@ export async function localApplyPatch(body: any): Promise<any> {
   const rec = await getPlan(planId);
   if (!rec) throw new ApiError('not_found', 404, '计划不存在');
   const undo = !!body.undo;
-  const ops = (body.ops ?? []) as ApplyOp[];
+  let ops = (body.ops ?? []) as ApplyOp[];
   if (!undo && ops.length > 30) throw new ApiError('validation_failed', 422, '一次最多应用 30 条调整');
   const mem = appliedPreviews.get(String(body.preview_id));
   if (mem) return { plan: rec, version: rec.version, task_defs: rec.task_defs, constraints: rec.constraints, blocks: rec.blocks, inverse_ops: [], diff: { added: [], removed: [], moved: [] }, compromises: [], server_authoritative: false };
@@ -258,48 +268,63 @@ export async function localApplyPatch(body: any): Promise<any> {
   const baseBlocks = rec.blocks.filter((b) => !sharedIdsBefore.has(b.id));
   const state: PlanState = { ...stateOf(rec), constraints: visibleConstraints(rec.constraints), blocks: baseBlocks };
   const warnings: string[] = [];
+  const sharedOps = (body.shared_ops ?? []) as ApplyOp[];
+  // The shared parent removal is routed separately; enrich before applying only own ops.
+  const enriched = inheritUnavailableDates([...state.blocks, ...sharedBefore], [...ops, ...sharedOps], rec.timezone);
+  ops = enriched.slice(0, ops.length);
+  const enrichedSharedOps = enriched.slice(ops.length);
   const patched = applyPatch(state, ops);
   patched.state = { ...patched.state, task_defs: sanitizeTaskDates(patched.state.task_defs, rec.horizon_start, rec.horizon_days, warnings) };
   if (patched.missing.length) throw new ApiError('patch_target_missing', 422, '调整目标已不存在', undefined, { targets: patched.missing });
   const shared = await listShared();
+  // 同一 patch 的共享日历增删先预演：细化「删原共享块 + 加子块」时，子块按删除后的日历校验，否则会被待删块误判重叠。
+  const sharedAfter = enrichedSharedOps.length ? applyPatch({ ...state, blocks: shared }, enrichedSharedOps).state.blocks : shared;
   const pctx = {
     timezone: rec.timezone, horizon_start: rec.horizon_start, horizon_days: rec.horizon_days,
     blocks: patched.state.blocks, constraints: patched.state.constraints,
   };
+  // 新增块（AI 细化的子块等）不得与公共日历块重叠；挪动/编辑维持原校验口径（跨计划重叠由冲突条处理）。
+  const pctxWithShared = { ...pctx, blocks: [...patched.state.blocks, ...sharedAfter] };
+  const beforeIds = new Set(state.blocks.map((b) => b.id));
+  const addedBlocks = patched.state.blocks.filter((b) => !beforeIds.has(b.id));
+  let addIdx = 0;
   for (const op of ops) {
-    let id: string | null = null;
-    if (op.op === 'add_block') id = (op as any).client_id ?? null;
-    else if (op.op === 'move_block' || op.op === 'update_block') id = (op as any).id;
-    if (!id) continue;
-    const b = patched.state.blocks.find((x) => x.id === id);
+    let b: Block | undefined;
+    if (op.op === 'add_block') b = addedBlocks[addIdx++];
+    else if (op.op === 'move_block' || op.op === 'update_block') b = patched.state.blocks.find((x) => x.id === (op as any).id);
     if (!b) continue;
-    // 合并（用户明确接受重叠）放行落点校验；普通拖拽/调整仍严格校验。
+    // 合并（用户明确接受重叠）放行落点校验；普通拖拽/调整仍严格校验。撤销恢复也不叠加共享校验。
     if ((op as any).allow_overlap) continue;
-    const check = validatePlacement({ id: b.id, task_key: b.task_key, title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc }, pctx);
+    const ctx = op.op === 'add_block' && !undo ? pctxWithShared : pctx;
+    const check = validatePlacement({ id: b.id, task_key: b.task_key, title: b.title, category: b.category, start_utc: b.start_utc, end_utc: b.end_utc }, ctx);
     if (!check.ok) throw new ApiError('placement_invalid', 422, check.hard?.reason ?? '时间块位置不合法');
   }
   const explicitReschedule = ops.some((op) => op.op === 'reschedule');
-  // 含显式块操作（增/删/挪/改）时以布局为准：同批的 reschedule 一律忽略，否则重排会把刚删/刚挪的块生成回来。
-  const explicitLayout = ops.some((op) => ['add_block', 'remove_block', 'move_block', 'update_block'].includes(op.op));
-  const shouldReschedule = patched.requiresReschedule && (state.blocks.length > 0 || explicitReschedule) && !explicitLayout;
+  // 显式块操作（增/删/挪/改）且排程输入没变时以布局为准：重排会把刚删/刚挪的块生成回来。
+  // 输入变了（如「删旧数学块 + 改时段偏好 + reschedule」）则必须重排，显式块与未受影响任务按 pinned 保留。
+  const explicitLayout = hasExplicitBlockOps(ops);
+  const shouldReschedule = patched.requiresReschedule && (state.blocks.length > 0 || explicitReschedule)
+    && (!explicitLayout || (explicitReschedule && changesScheduleInputs(ops)));
   let blocks = patched.state.blocks;
   let compromises: any[] = [];
   if (shouldReschedule) {
+    const foreign = await foreignCuts(planId, rec.timezone);
     const pinned = [
-      ...patched.state.blocks.filter((b) => b.pinned || b.origin === 'manual' || ['completed', 'in_progress', 'partial'].includes(String(b.status ?? ''))),
-      ...shared.map((b) => ({ ...b, pinned: true })),
+      ...reschedulePinnedBlocks(state, patched.state, ops),
+      ...sharedAfter.map((b) => ({ ...b, pinned: true })),
     ];
     const out = solve({
       engine_version: ENGINE_VERSION,
+      now_ms: Date.now(),
       horizon_start: rec.horizon_start,
       horizon_days: rec.horizon_days,
       timezone: rec.timezone,
       task_defs: patched.state.task_defs,
-      constraints: patched.state.constraints,
+      constraints: [...patched.state.constraints, ...foreign, ...blockBusyCuts(sharedAfter, rec.timezone)],
       pinned_blocks: pinned,
     });
     if (out.violations.length) throw new ApiError('engine_infeasible', 422, `当前约束下排不下全部任务：${out.violations[0]?.reason ?? '无可安排时段'}`, undefined, { violations: out.violations, compromises: out.compromises, feasibility: out.feasibility, unplaced: out.unplaced });
-    const sharedIds = new Set(shared.map((b) => b.id));
+    const sharedIds = new Set(sharedAfter.map((b) => b.id));
     const inert = patched.state.blocks.filter((b) => b.status === 'cancelled' || b.status === 'skipped');
     blocks = [...out.blocks.filter((b) => !sharedIds.has(b.id)), ...inert];
     compromises = out.compromises;
@@ -308,7 +333,17 @@ export async function localApplyPatch(body: any): Promise<any> {
     if (op.op === 'move_block' || op.op === 'add_block') return [(op as any).id ?? (op as any).client_id].filter(Boolean);
     return [];
   }));
-  blocks = dropPastToday(enforceSinglePerDay(blocks, patched.state.task_defs, rec.timezone, movedIds), rec.timezone);
+  blocks = enforceSinglePerDay(blocks, patched.state.task_defs, rec.timezone, movedIds);
+  if (!undo && !ops.some(op => 'allow_overlap' in op && op.allow_overlap)) {
+    const foreignBlocks = (await listPlans()).filter(p => p.id !== planId).flatMap(p => p.blocks);
+    const key = (c: ReturnType<typeof scheduleConflicts>[number]) => `${c.proposed.title}|${c.existing.title}|${c.start_utc}|${c.end_utc}`;
+    const previous = new Set(scheduleConflicts(state.blocks, state.constraints, [...foreignBlocks, ...sharedBefore], rec).map(key));
+    const conflicts = scheduleConflicts(blocks, patched.state.constraints, [...foreignBlocks, ...sharedAfter], rec).filter(c => !previous.has(key(c)));
+    if (conflicts.length) {
+      const c = conflicts[0];
+      throw new ApiError('placement_invalid', 422, `${localDay(c.start_utc, rec.timezone)}「${c.proposed.title}」与「${c.existing.title}」冲突，请先确认调整方式`, undefined, { conflicts });
+    }
+  }
   const now = nowIso();
   const next: PlanRecord = {
     ...rec,
@@ -323,7 +358,7 @@ export async function localApplyPatch(body: any): Promise<any> {
   const diff = diffBlocks(state.blocks, stored.blocks);
   return {
     plan: stored, version: stored.version, task_defs: stored.task_defs, constraints: stored.constraints, blocks: stored.blocks,
-    inverse_ops: patched.inverse_ops ?? [], diff, compromises, server_authoritative: false, warnings,
+    inverse_ops: patched.inverse_ops ?? [], diff, compromises, rescheduled: shouldReschedule, server_authoritative: false, warnings,
   };
 }
 
@@ -344,7 +379,9 @@ export async function localSharedOps(body: any): Promise<any> {
   const usable = ops.filter((op) => allowed.has(op.op));
   if (!usable.length) throw new ApiError('validation_failed', 422, '公共日历只接受块的增删改移');
   let blocks = await listShared();
-  for (const op of usable) {
+  const tz = body.timezone ?? (await listPlans())[0]?.timezone ?? 'Asia/Shanghai';
+  const inverseOps: ApplyOp[] = [];
+  for (const op of inheritUnavailableDates(blocks, usable, tz)) {
     if (op.op === 'remove_block') {
       const target = blocks.find((b) => b.id === (op as any).id);
       if (!target) continue;
@@ -353,6 +390,8 @@ export async function localSharedOps(body: any): Promise<any> {
         await addTombstone(tombstoneKey([target.start_utc, target.end_utc]));
       }
       await deleteShared(target.id);
+      const { id, ...value } = target;
+      inverseOps.unshift({ op: 'add_block', client_id: id, value });
       blocks = blocks.filter((b) => b.id !== target.id);
       continue;
     }
@@ -363,22 +402,33 @@ export async function localSharedOps(body: any): Promise<any> {
         id: (op as any).client_id ?? uuid(), title: String(v.title ?? '').slice(0, 60), category: v.category ?? 'other',
         start_utc: v.start_utc, end_utc: v.end_utc, priority: v.priority ?? 'mid', pinned: !!v.pinned,
         origin: v.origin ?? 'manual', notes: v.notes ?? undefined,
+        ...(v.recurrence_weekday !== undefined ? { recurrence_weekday: v.recurrence_weekday } : {}),
+        ...(v.unavailable_date ? { unavailable_date: v.unavailable_date } : {}),
       };
       await putShared(block);
+      inverseOps.unshift({ op: 'remove_block', id: block.id });
       blocks.push(block);
       continue;
     }
     const id = (op as any).id;
     const idx = blocks.findIndex((b) => b.id === id);
     if (idx < 0) continue;
-    const patch = (op as any).patch ?? (op.op === 'move_block' ? { start_utc: (op as any).start_utc, end_utc: (op as any).end_utc } : {});
-    const next = { ...blocks[idx], ...patch };
+    const patch = (op as any).patch ?? (op.op === 'move_block' ? {
+      start_utc: op.start_utc, end_utc: op.end_utc,
+      ...(op.unavailable_date ? { unavailable_date: op.unavailable_date } : {}),
+    } : {});
+    const next = { ...blocks[idx], ...patch, ...(op.op === 'move_block' ? { origin: 'manual' as const } : {}) };
+    if (('start_utc' in patch || 'end_utc' in patch) && !('recurrence_weekday' in patch)) delete next.recurrence_weekday;
+    if (patch.start_utc && !('unavailable_date' in patch)
+      && localDay(patch.start_utc, tz) !== localDay(blocks[idx].start_utc, tz)) delete next.unavailable_date;
     if (!(Date.parse(next.end_utc) > Date.parse(next.start_utc))) throw new ApiError('placement_invalid', 422, '结束时间必须晚于开始时间');
     await putShared(next);
+    const { id: previousId, ...previous } = blocks[idx];
+    inverseOps.unshift({ op: 'update_block', id: previousId, patch: previous });
     blocks[idx] = next;
   }
   blocks = (await listShared()).sort((a, b) => a.start_utc.localeCompare(b.start_utc));
-  return { blocks, inverse_ops: [] };
+  return { blocks, inverse_ops: inverseOps };
 }
 
 export async function localMarkProgress(blockId: string, status: string, actualDurationMin?: number | null): Promise<{ block: Block }> {

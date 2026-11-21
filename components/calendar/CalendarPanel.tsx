@@ -19,11 +19,12 @@ import { todayStr } from '@/lib/seed';
 import { holidayOn, makeupWorkdayOn } from '@/shared/holidays';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { EmptyCalendar } from '@/components/brand/EmptyCalendar';
 import { BlockCard, type BlockVisualState } from './BlockCard';
 import { ConflictBar } from './ConflictBar';
-import { GUTTER_PX, HOUR_PX, PX_PER_MIN, SNAP_MIN, layoutDay, snap } from './layout';
+import { GUTTER_PX, HOUR_PX, MIN_LANE_PX, PX_PER_MIN, SNAP_MIN, blockTimeLabel, clipBlockToDay, clusterDisplay, layoutDay, snap, type PositionedBlock } from './layout';
 import { QuickAddDialog } from './QuickAddDialog';
 import { loadPairs, pairKey, acceptPairs } from '@/lib/parallel';
 
@@ -232,7 +233,18 @@ export function CalendarPanel() {
   const bodyH = (visibleEnd - visibleStart) * PX_PER_MIN;
   const cols = { gridTemplateColumns: `${GUTTER_PX}px repeat(${days.length}, minmax(0, 1fr))` };
 
-  const positioned = useMemo(() => days.map((d) => layoutDay(displayBlocks, d, tz)), [days, displayBlocks, tz]);
+  const positioned = useMemo(() => days.map((d) => layoutDay(displayBlocks, d, tz, busyIds)), [days, displayBlocks, tz, busyIds]);
+
+  // 完全落在显示时段之外的块：给一行提示 + 一键展开，避免「排了却看不见」。
+  const offscreen = useMemo(() => {
+    const before = new Set<string>();
+    const after = new Set<string>();
+    for (const p of positioned.flat()) {
+      if (p.endMin <= visibleStart) before.add(p.block.id);
+      else if (p.startMin >= visibleEnd) after.add(p.block.id);
+    }
+    return { before: before.size, after: after.size };
+  }, [positioned, visibleStart, visibleEnd]);
 
   const busyByDay = useMemo(() => days.map((d) => {
     const wd = weekdayOfDay(d, tz);
@@ -267,6 +279,17 @@ export function CalendarPanel() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const [columnWidth, setColumnWidth] = useState(0);
+  const [expandedCluster, setExpandedCluster] = useState<string | null>(null);
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const measure = () => setColumnWidth((grid.getBoundingClientRect().width - GUTTER_PX) / days.length);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [days.length]);
   const dragRef = useRef<DragState | null>(null);
   const rafRef = useRef(0);
   const [chip, setChip] = useState<Chip | null>(null);
@@ -705,8 +728,8 @@ export function CalendarPanel() {
 
   const renderBlocks = (dayIdx: number) => {
     const day = days[dayIdx];
-    const items = positioned[dayIdx];
-    const nodes = items.map((p) => {
+    const items = positioned[dayIdx].filter((p) => p.endMin > visibleStart && p.startMin < visibleEnd);
+    const renderCard = (p: PositionedBlock, origin = visibleStart, inClusterScroller = false, listRow = false) => {
       const busy = busyIds.has(p.block.id);
       const foreignInfo = foreignMap.get(p.block.id);
       const visual: BlockVisualState = foreignInfo
@@ -715,50 +738,125 @@ export function CalendarPanel() {
           ? ghostVisual(p.block.id)
           : invalidIds.includes(p.block.id) ? 'invalid' : selectedIds.includes(p.block.id) ? 'selected' : 'normal';
       const composite = compositeIds.has(p.block.id);
+      const crossesMidnight = localDay(p.block.start_utc, tz) !== localDay(p.block.end_utc, tz);
+      const canDrag = !composite && !crossesMidnight && !inClusterScroller;
+      const start = Math.max(p.startMin, visibleStart);
+      const end = Math.min(p.endMin, visibleEnd);
       return (
         <BlockCard
           key={p.block.id}
           block={p.block}
           startMin={p.startMin}
           endMin={p.endMin}
-          top={(p.startMin - visibleStart) * PX_PER_MIN}
-          height={(p.endMin - p.startMin) * PX_PER_MIN}
-          leftPct={(p.lane / p.lanes) * 100}
-          widthPct={100 / p.lanes}
+          top={listRow ? 0 : (start - origin) * PX_PER_MIN}
+          height={listRow ? 56 : (end - start) * PX_PER_MIN}
+          background={p.background}
+          timeLabel={blockTimeLabel(p.block, tz)}
+          inClusterScroller={inClusterScroller}
+          leftPct={listRow ? 0 : (p.lane / p.lanes) * 100}
+          widthPct={listRow ? 100 : 100 / p.lanes}
           visual={visual}
           overlap={!!foreignInfo && state.blocks.some((mine) => Date.parse(mine.start_utc) < Date.parse(p.block.end_utc) && Date.parse(mine.end_utc) > Date.parse(p.block.start_utc))}
           planLabel={composite ? '并行' : foreignInfo?.planLabel}
           titleLines={composite ? p.block.title.split(' + ') : undefined}
-          compact={(p.endMin - p.startMin) * PX_PER_MIN < 40}
-          onPointerDown={composite ? undefined : (e, b) => beginDrag(e, b, 'move', foreignInfo, busy)}
-          onResizeDown={composite ? undefined : (e, b) => beginDrag(e, b, 'resize', foreignInfo, busy)}
-          onOpen={composite || foreignInfo ? undefined : (b) => openDrawer('block', b.id)}
+          compact={!listRow && (end - start) * PX_PER_MIN < 40}
+          onPointerDown={canDrag ? (e, b) => beginDrag(e, b, 'move', foreignInfo, busy) : undefined}
+          onResizeDown={canDrag ? (e, b) => beginDrag(e, b, 'resize', foreignInfo, busy) : undefined}
+          onOpen={composite || foreignInfo ? undefined : (b) => { setExpandedCluster(null); openDrawer('block', b.id); }}
           onClick={foreignInfo && !composite ? () => {
             if (Date.now() - lastForeignDrag.current < 400) return;
+            setExpandedCluster(null);
             setForeignTarget({ planId: foreignInfo.planId, planTitle: foreignInfo.planLabel, blockTitle: p.block.title, drag: false });
-          } : undefined}
+          } : !composite && !canDrag ? () => { setExpandedCluster(null); openDrawer('block', p.block.id); } : undefined}
         />
       );
-    });
+    };
+    const nodes: React.ReactNode[] = [];
+    const renderedClusters = new Set<string>();
+    for (const p of items) {
+      const display = clusterDisplay(p.cluster, columnWidth, visibleStart, visibleEnd);
+      if (p.background || display === 'inline') {
+        nodes.push(renderCard(p));
+        continue;
+      }
+      if (renderedClusters.has(p.cluster.id)) continue;
+      renderedClusters.add(p.cluster.id);
+      const start = Math.max(p.cluster.startMin, visibleStart);
+      const end = Math.min(p.cluster.endMin, visibleEnd);
+      const clusterItems = items.filter((it) => !it.background && it.cluster.id === p.cluster.id);
+      const clusterKey = `${day}-${p.cluster.id}`;
+      // Short intervals need an accessible list rather than clipped cards and scrollbars.
+      if (display === 'list') {
+        nodes.push(
+          <Popover key={`cluster-${p.cluster.id}`} open={expandedCluster === clusterKey} onOpenChange={(v) => setExpandedCluster(v ? clusterKey : null)}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                data-overlap-cluster
+                className="absolute inset-x-0 z-10 h-[18px] truncate rounded border border-site-line bg-site-surface-2 px-1 text-left text-xs font-medium text-site-ink focus-visible:outline focus-visible:outline-site-ink"
+                style={{ top: (start - visibleStart) * PX_PER_MIN }}
+                aria-label={`${day} ${minToHHmm(start)}–${minToHHmm(end)}，查看 ${clusterItems.length} 项重叠日程`}
+                onPointerDown={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                {clusterItems.length} 项重叠
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              className="max-h-[min(50dvh,16rem)] overflow-y-auto border-site-line bg-site-surface p-2"
+              onPointerDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
+              <p className="mb-1 text-xs text-site-ink-soft">{minToHHmm(start)}–{minToHHmm(end)} · 点击查看或编辑</p>
+              {clusterItems.map((it) => <div key={it.block.id} className="relative mb-1 h-14">{renderCard(it, start, true, true)}</div>)}
+            </PopoverContent>
+          </Popover>,
+        );
+        continue;
+      }
+      // Dense lanes use drawer editing so a clipped viewport cannot distort drag coordinates.
+      nodes.push(
+        <div
+          key={`cluster-${p.cluster.id}`}
+          data-overlap-cluster
+          role="region"
+          tabIndex={0}
+          aria-label={`${day} ${minToHHmm(start)}–${minToHHmm(end)} 重叠日程，横向滚动，点击日程查看或编辑`}
+          className="absolute inset-x-0 z-10 overflow-x-auto overflow-y-hidden rounded-[var(--site-radius-control)] outline-offset-2 focus-visible:outline focus-visible:outline-site-ink"
+          style={{ top: (start - visibleStart) * PX_PER_MIN, height: Math.max(24, (end - start) * PX_PER_MIN) }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <div className="relative h-full" style={{ minWidth: p.lanes * MIN_LANE_PX }}>
+            {clusterItems.map((it) => renderCard(it, start, true))}
+          </div>
+        </div>,
+      );
+    }
     if (preview) {
       for (const id of preview.diff.removed) {
         const b = state.blocks.find((x) => x.id === id);
-        if (!b || localDay(b.start_utc, tz) !== day) continue;
-        const s = localMinutes(b.start_utc, tz);
-        const en = localMinutes(b.end_utc, tz);
+        const segment = b && clipBlockToDay(b, day, tz);
+        if (!b || !segment || segment.endMin <= visibleStart || segment.startMin >= visibleEnd) continue;
+        const s = Math.max(segment.startMin, visibleStart);
+        const en = Math.min(segment.endMin, visibleEnd);
         nodes.push(
-          <BlockCard key={`rm-${id}`} block={b} startMin={s} endMin={en}
+          <BlockCard key={`rm-${id}`} block={b} startMin={s} endMin={en} timeLabel={blockTimeLabel(b, tz)}
             top={(s - visibleStart) * PX_PER_MIN} height={(en - s) * PX_PER_MIN}
             leftPct={0} widthPct={100} visual="ghost-removed" compact={(en - s) * PX_PER_MIN < 40} />,
         );
       }
       for (const gb of preview.output.blocks) {
-        if (localDay(gb.start_utc, tz) !== day) continue;
+        const segment = clipBlockToDay(gb, day, tz);
+        if (!segment || segment.endMin <= visibleStart || segment.startMin >= visibleEnd) continue;
         if (!preview.diff.added.includes(gb.id) && !preview.diff.moved.some((m) => m.id === gb.id)) continue;
-        const s = localMinutes(gb.start_utc, tz);
-        const en = localMinutes(gb.end_utc, tz);
+        const s = Math.max(segment.startMin, visibleStart);
+        const en = Math.min(segment.endMin, visibleEnd);
         nodes.push(
-          <BlockCard key={`gh-${gb.id}`} block={gb} startMin={s} endMin={en}
+          <BlockCard key={`gh-${gb.id}`} block={gb} startMin={s} endMin={en} timeLabel={blockTimeLabel(gb, tz)}
             top={(s - visibleStart) * PX_PER_MIN} height={(en - s) * PX_PER_MIN}
             leftPct={0} widthPct={100} visual={preview.diff.added.includes(gb.id) ? 'ghost-added' : 'ghost-moved'}
             compact={(en - s) * PX_PER_MIN < 40} />,
@@ -778,19 +876,33 @@ export function CalendarPanel() {
         onIgnore={(c) => setIgnoredConflicts((prev) => (prev.includes(c.key) ? prev : [...prev, c.key]))}
         onMergeAll={() => { void runMerge(conflicts); }}
       />
+      {(offscreen.before > 0 || offscreen.after > 0) && (
+        <div className="flex items-center gap-2 border-b border-site-line bg-site-warning/10 px-3 py-1.5 text-xs text-site-warning-text" data-testid="offscreen-hint">
+          <span>
+            {offscreen.before > 0 && `${minToHHmm(visibleStart)} 前还有 ${offscreen.before} 个安排`}
+            {offscreen.before > 0 && offscreen.after > 0 && '，'}
+            {offscreen.after > 0 && `${minToHHmm(visibleEnd)} 后还有 ${offscreen.after} 个安排`}
+            ，当前显示时段外
+          </span>
+          <Button variant="outline" size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => useUiStore.getState().setVisibleRange(0, 1440)}>
+            展开全部时段
+          </Button>
+        </div>
+      )}
       <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={scrollRef} className="scrollbar-gutter-stable relative min-h-0 flex-1 overflow-y-auto">
         <div className="sticky top-0 z-30 grid border-b border-site-line bg-site-surface/95 backdrop-blur" style={cols}>
           <div className="flex items-end justify-center pb-1 text-xs text-site-ink-soft">GMT{formatTzOffset(tz)}</div>
-          {days.map((d) => {
+          {days.map((d, dayIdx) => {
             const isToday = d === today;
+            const backgrounds = positioned[dayIdx].filter((p) => p.background);
             return (
+              <div key={d} className="min-w-0 border-l border-site-line">
               <button
-                key={d}
                 type="button"
                 onClick={() => { setDayAnchor(d); useUiStore.getState().setView('day'); }}
                 className={cn(
-                  'flex flex-col items-center gap-0.5 border-l border-site-line py-2 transition-colors hover:bg-site-surface-2',
+                  'flex w-full flex-col items-center gap-0.5 py-2 transition-colors hover:bg-site-surface-2',
                   isToday && 'bg-site-surface-2/60',
                 )}
                 title="切换到日视图"
@@ -804,6 +916,24 @@ export function CalendarPanel() {
                 {holidayOn(d) && <span className="rounded-full bg-site-danger/10 px-1.5 py-px text-xs font-medium text-site-danger">{holidayOn(d)}</span>}
                 {!holidayOn(d) && makeupWorkdayOn(d) && <span className="rounded-full bg-site-warning/15 px-1.5 py-px text-xs font-medium text-site-warning-text">调休</span>}
               </button>
+              {backgrounds.length > 0 && (
+                <div className="max-h-16 space-y-1 overflow-y-auto overscroll-contain px-1 pb-1" aria-label={`${d} 公共忙时背景，点击编辑`}>
+                  {backgrounds.map(({ block }) => (
+                    <button
+                      key={block.id}
+                      type="button"
+                      className="block w-full rounded border border-dashed border-site-line bg-site-surface-2 px-1 py-0.5 text-left text-xs text-site-ink hover:bg-site-bg focus-visible:outline focus-visible:outline-site-ink"
+                      aria-label={`编辑公共忙时 ${block.title} ${blockTimeLabel(block, tz)}`}
+                      title={`${block.title} ${blockTimeLabel(block, tz)} · 点击编辑公共忙时`}
+                      onClick={() => { select(block.id); openDrawer('block', block.id); }}
+                    >
+                      <span className="block truncate font-medium">{block.title}</span>
+                      <span className="tabular block break-words text-site-ink-soft">{blockTimeLabel(block, tz)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              </div>
             );
           })}
         </div>

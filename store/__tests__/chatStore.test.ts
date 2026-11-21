@@ -18,6 +18,17 @@ describe('reduceFrame', () => {
     const s = reduceFrame(initialChatState, { event: 'artifact', data: { seq: 3, kind: 'constraint_set', payload: { clarifications_needed: ['每天几小时？'] } } });
     expect(s.clarifications).toEqual(['每天几小时？']);
   });
+  it('排程偏差写入消息正文，刷新后仍能展示，不只保留瞬态 preview', () => {
+    const reason = '「背单词」未落在偏好的早晨时段';
+    const s = reduceFrame(initialChatState, { event: 'artifact', data: {
+      seq: 3, kind: 'patch', payload: { type: 'patch', summary: '新增背单词', ops: [] },
+      preview: { notes: [reason], compromises: [{ reason }] },
+    } });
+    expect(s.messages.at(-1)?.content).toBe(`排程预览提示：${reason}`);
+    useChatStore.getState().setConversation('restored', JSON.parse(JSON.stringify(s.messages)));
+    expect(useChatStore.getState().patchPreview).toBeNull();
+    expect(useChatStore.getState().messages.at(-1)?.content).toContain(reason);
+  });
   it('error 置 connection=error 并停流', () => {
     const s = reduceFrame({ ...initialChatState, streaming: true }, { event: 'error', data: { seq: 4, code: 'quota_exceeded', message: '额度用完', diagnostic_id: 'd' } });
     expect(s.connection).toBe('error');
@@ -122,6 +133,17 @@ describe('reduceFrame — progress 研究指示', () => {
     expect(s2.switching).toBe(false);
     const s3 = reduceFrame(s1, { event: 'status', data: { seq: 3, state: 'completed' } });
     expect(s3.switching).toBe(false);
+  });
+  it('ModelSwitch 在对话里留一条小字提示，同一轮不重复', () => {
+    const s1 = reduceFrame(initialChatState, { event: 'progress', data: { seq: 2, tool: 'ModelSwitch' } });
+    const notices = s1.messages.filter((m) => m.role === 'system' && m.kind === 'status');
+    expect(notices).toHaveLength(1);
+    expect(notices[0].content).toContain('备用模型');
+    const s2 = reduceFrame(s1, { event: 'progress', data: { seq: 2, tool: 'ModelSwitch' } });
+    expect(s2.messages.filter((m) => m.role === 'system')).toHaveLength(1);
+    // 提示不随 delta 消失（区别于瞬态 switching 标记）
+    const s3 = reduceFrame(s2, { event: 'delta', data: { seq: 2, text: 'x' } });
+    expect(s3.messages.some((m) => m.role === 'system' && m.content.includes('备用模型'))).toBe(true);
   });
   it('排队队列：入队/取队首/删除', () => {
     useChatStore.setState({ queued: [] });

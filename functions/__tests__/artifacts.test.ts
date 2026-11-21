@@ -29,6 +29,47 @@ describe('artifacts', () => {
   it('非法 JSON → null', () => { expect(parseModelText('{bad')).toBeNull(); });
   it('schema 不合法 → null', () => { expect(parseModelText(JSON.stringify({ type: 'constraint_set', task_defs: [] }))).toBeNull(); });
 
+  describe('块时间的本地钟面写法（start_local/end_local → 系统换算 UTC）', () => {
+    const patchWith = (ops: any[]) => JSON.stringify({ type: 'patch', summary: '细化行程', ops });
+    const block = { title: '出发', category: 'life', start_local: '2026-11-28T09:00', end_local: '2026-11-28T10:00', priority: 'mid', pinned: false };
+    it('add_block：Asia/Shanghai 09:00 本地 = 01:00Z', () => {
+      const r = parseModelText(patchWith([{ op: 'add_block', value: block }]), '2026-11-21', 'Asia/Shanghai');
+      expect(r?.kind).toBe('patch');
+      const v = (r as any).value.ops[0].value;
+      expect(v.start_utc).toBe('2026-11-28T01:00:00.000Z');
+      expect(v.end_utc).toBe('2026-11-28T02:00:00.000Z');
+      expect(v.start_local).toBeUndefined();
+    });
+    it('move_block / update_block 同样换算', () => {
+      const r = parseModelText(patchWith([
+        { op: 'move_block', id: 'b1', start_local: '2026-11-28T19:00', end_local: '2026-11-28T20:00' },
+        { op: 'update_block', id: 'b2', patch: { start_local: '2026-11-28T08:00', end_local: '2026-11-28T09:00' } },
+      ]), '2026-11-21', 'Asia/Shanghai');
+      const ops = (r as any).value.ops;
+      expect(ops[0].start_utc).toBe('2026-11-28T11:00:00.000Z');
+      expect(ops[1].patch.start_utc).toBe('2026-11-28T00:00:00.000Z');
+    });
+    it('负偏移时区不套 UTC+8：America/Denver 冬季 09:00 本地 = 16:00Z', () => {
+      const r = parseModelText(patchWith([{ op: 'add_block', value: block }]), '2026-11-21', 'America/Denver');
+      expect((r as any).value.ops[0].value.start_utc).toBe('2026-11-28T16:00:00.000Z');
+    });
+    it('空格分隔与带秒的写法也接受', () => {
+      const r = parseModelText(patchWith([{ op: 'add_block', value: { ...block, start_local: '2026-11-28 09:00', end_local: '2026-11-28T10:00:00' } }]), '2026-11-21', 'Asia/Shanghai');
+      expect((r as any).value.ops[0].value.start_utc).toBe('2026-11-28T01:00:00.000Z');
+    });
+    it('旧 type 字段的 op 也换算', () => {
+      const r = parseModelText(patchWith([{ type: 'add_block', value: block }]), '2026-11-21', 'Asia/Shanghai');
+      expect((r as any).value.ops[0].value.start_utc).toBe('2026-11-28T01:00:00.000Z');
+    });
+    it('直接写 start_utc 的旧写法仍兼容', () => {
+      const r = parseModelText(patchWith([{ op: 'move_block', id: 'b1', start_utc: '2026-11-17T01:00:00Z', end_utc: '2026-11-17T02:30:00Z' }]), '2026-11-21', 'Asia/Shanghai');
+      expect(r?.kind).toBe('patch');
+    });
+    it('缺 tz 时 local 写法不臆造换算（schema 拒绝，交给修复重试）', () => {
+      expect(parseModelText(patchWith([{ op: 'add_block', value: block }]), '2026-11-21')).toBeNull();
+    });
+  });
+
   describe('输出被截断的兜底（长计划常见）', () => {
     const big = {
       type: 'constraint_set', plan_title: '雅思三个月', horizon_days: 90,

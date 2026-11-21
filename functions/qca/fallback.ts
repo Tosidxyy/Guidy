@@ -6,16 +6,19 @@ export interface QcaProvider {
   adapter: QcaAdapter;
 }
 
-// 配额/鉴权/限流/上游不可用才切换；模型产物 invalid 等业务错误不切换（换供应商也一样错）。
+// 配额/鉴权/限流/上游不可用/网络失败/首包超时才切换；模型产物 invalid 等业务错误不切换（换供应商也一样错）。
 export function isFailoverError(e: unknown): boolean {
-  const err = e as { code?: string; status?: number; message?: string };
+  const err = e as { code?: string; status?: number; message?: string; name?: string };
   const code = String(err?.code ?? '');
   const status = Number(err?.status ?? 0);
   const msg = String(err?.message ?? '');
-  return ['quota_exceeded', 'insufficient_quota', 'rate_limited', 'unauthorized', 'forbidden', 'service_unavailable'].includes(code)
-    || [401, 403, 429, 500, 502, 503].includes(status)
-    || /llm_http_(401|403|429|5\d\d)/.test(msg)
-    || /quota|credit|balance|rate.?limit|unauthorized|forbidden|insufficient/i.test(msg);
+  return ['quota_exceeded', 'insufficient_quota', 'rate_limited', 'unauthorized', 'forbidden', 'service_unavailable', 'timeout'].includes(code)
+    || [401, 403, 408, 429].includes(status)
+    || (status >= 500 && status < 600)
+    || /llm_http_(401|403|408|429|5\d\d)/.test(msg)
+    || /quota|credit|balance|rate.?limit|unauthorized|forbidden|insufficient/i.test(msg)
+    || err?.name === 'TimeoutError'
+    || /timeout|timed out|fetch failed|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|UND_ERR|socket hang up|network/i.test(`${msg} ${code}`);
 }
 
 interface SessionRef { idx: number; realId: string }
@@ -70,9 +73,11 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
       for (let i = idx; i < providers.length; i++) {
         try {
           const b = await bindingAt(i);
+          if (i > idx) console.info('provider_switch', providers[idx].name, '->', providers[i].name);
           idx = i;
           return b;
         } catch (e) {
+          console.error('provider_failed', providers[i].name, (e as any)?.status ?? (e as any)?.code ?? '', String((e as any)?.message ?? e).slice(0, 200));
           lastErr = e;
           if (!isFailoverError(e)) throw e;
         }
@@ -80,11 +85,22 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
       throw lastErr;
     },
     async createSession(_binding, title, metadata) {
-      const realId = await sessionAt(idx, title, metadata ?? {});
-      // 映射持久化进会话 id（JSON）：edge 多 isolate 不共享内存，冷启动靠它复用真实会话，避免重建撞 409。
-      const id = JSON.stringify({ i: idx, r: realId });
-      sessions.set(id, { idx, realId });
-      return { id };
+      let lastErr: unknown;
+      for (let i = idx; i < providers.length; i++) {
+        try {
+          const realId = await sessionAt(i, title, metadata ?? {});
+          idx = i;
+          // 映射持久化进会话 id（JSON）：edge 多 isolate 不共享内存，冷启动靠它复用真实会话，避免重建撞 409。
+          const id = JSON.stringify({ i, r: realId });
+          sessions.set(id, { idx: i, realId });
+          return { id };
+        } catch (e) {
+          console.error('provider_failed', providers[i].name, (e as any)?.status ?? (e as any)?.code ?? '', String((e as any)?.message ?? e).slice(0, 200));
+          lastErr = e;
+          if (!isFailoverError(e)) throw e;
+        }
+      }
+      throw lastErr;
     },
     async sendEvents(wrapperId, text, idempotencyKey) {
       // 只把本轮文本+幂等键交给 openStream 的泵；真正发往供应商在泵里按 failover 顺序执行，避免双发。
@@ -132,13 +148,17 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
           const { text, key } = await pending;
           if (closed) { try { controller.close(); } catch { /* closed */ } return; }
           const ref = refOf(wrapperId);
+          const startIdx = ref.idx;
           let lastErr: unknown;
           for (let i = ref.idx; i < providers.length; i++) {
             if (closed || combinedSignal.aborted) break;
             let realId = i === ref.idx ? ref.realId : '';
             let failed = false;
             // 落到备用供应商时给用户可见提示（投影为 progress/ModelSwitch）。
-            if (i > ref.idx) controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'provider.switch', name: providers[i].name })}\n\n`));
+            if (i > startIdx) {
+              console.info('provider_switch', providers[startIdx].name, '->', providers[i].name);
+              safeEnqueue(controller, new TextEncoder().encode(`data: ${JSON.stringify({ type: 'provider.switch', name: providers[i].name })}\n\n`));
+            }
             try {
               if (!realId) realId = await sessionAt(i, 'resume', {});
               // 先 send 再 open：带续读游标时 QCA 只推送开流之后已存在的新回合事件，先开后发会静默挂起。
@@ -148,12 +168,22 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
               const upstream = await providers[i].adapter.openStream(realId, { ...opts, signal: combinedSignal });
               upstreamRef = upstream;
               const decoder = new TextDecoder();
+              let failedMsg: string | null = null;
+              let forwardedContent = false;
               for await (const frame of readSSE(upstream.body, { signal: combinedSignal })) {
                 if (closed) break;
+                let payload: any = null;
+                try { payload = JSON.parse(frame.data); } catch { /* 非 JSON 帧 */ }
+                // 失败供应商的错误帧扣住不发：能切换时用户不该看到它。
+                if (payload?.type === 'session.error' || payload?.status === 'failed') {
+                  failed = true;
+                  failedMsg = String(payload?.message ?? 'upstream_error');
+                  break;
+                }
                 const raw = new TextEncoder().encode(`id: ${frame.id ?? ''}\nevent: ${frame.event}\ndata: ${frame.data}\n\n`);
                 if (!safeEnqueue(controller, raw)) break;
+                if (payload?.type === 'event_delta' || payload?.type === 'agent.message') forwardedContent = true;
                 const chunk = decoder.decode(raw);
-                if (chunk.includes('session.error') || /"status"\s*:\s*"failed"/.test(chunk)) failed = true;
                 // QCA 持久流不 EOF：遇到终态即结束本轮，否则流不释放、下一轮 send 撞 409。
                 if (/"type"\s*:\s*"session\.(status_idle|completed)"/.test(chunk) || /"type"\s*:\s*"session\.status"[^}]*"status"\s*:\s*"idle"/.test(chunk)) break;
               }
@@ -167,7 +197,16 @@ export function createResilientQca(providers: QcaProvider[]): QcaAdapter {
                 try { controller.close(); } catch { /* closed */ }
                 return;
               }
-              lastErr = new Error(`provider_${providers[i].name}_stream_failed`);
+              const streamErr = new Error(failedMsg ?? `provider_${providers[i].name}_stream_failed`);
+              console.error('provider_failed', providers[i].name, '', String(streamErr.message).slice(0, 200));
+              lastErr = streamErr;
+              // 已输出正文再切换会重复生成：只能把扣住的错误帧原样下发。
+              if (forwardedContent) {
+                if (safeEnqueue(controller, new TextEncoder().encode(`data: ${JSON.stringify({ type: 'session.error', status: 'failed', message: streamErr.message })}\n\n`))) {
+                  try { controller.close(); } catch { /* closed */ }
+                }
+                return;
+              }
             } catch (e) {
               // 主动关闭/取消不算供应商失败：不记 provider_failed、不切换。
               if (closed || combinedSignal.aborted) return;

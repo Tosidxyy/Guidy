@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { CalendarDays, MessageSquare } from 'lucide-react';
 import { useUiStore } from '@/store/useUiStore';
+import { usePlanStore } from '@/store/usePlanStore';
 import { undoActivePlan } from '@/lib/planActions';
 import { applyPrefs, loadPrefs } from '@/lib/prefs';
 import { cn } from '@/lib/utils';
@@ -32,6 +33,11 @@ export default function App() {
   useEffect(() => {
     applyPrefs(loadPrefs());
   }, []);
+
+  const storageError = usePlanStore((s) => s.storageError);
+  useEffect(() => {
+    if (storageError) toast.error('本机计划未能保存', { description: storageError, duration: Infinity });
+  }, [storageError]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

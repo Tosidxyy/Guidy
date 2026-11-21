@@ -6,7 +6,7 @@ import type { ConstraintSetArtifact, PatchArtifact } from '@/shared/schemas';
 import { CATEGORY_MAP } from '@/shared/constants';
 import type { Block, PlanState } from '@/shared/types';
 
-type PlanMeta = { horizon_start: string; timezone: string };
+type PlanMeta = { horizon_start: string; timezone: string; now_ms?: number };
 
 function fits(draft: ConstraintSetArtifact, plan: PlanMeta, blocks: Block[]): boolean {
   return solveArtifact(draft, plan, blocks).output.violations.length === 0;
@@ -22,7 +22,7 @@ export function trimDraftToFit(
   plan: PlanMeta,
   blocks: Block[],
 ): { draft: ConstraintSetArtifact; changes: string[] } | null {
-  return trimArtifactToFit(draft, plan, blocks.filter((b) => b.pinned || b.origin === 'manual'));
+  return trimArtifactToFit(draft, { ...plan, now_ms: plan.now_ms ?? Date.now() }, blocks.filter((b) => b.pinned || b.origin === 'manual'));
 }
 
 /**

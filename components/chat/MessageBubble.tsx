@@ -20,7 +20,10 @@ export function MessageBubble({ message, streaming, clarificationPending, onRetr
     return (
       <div className="flex items-center gap-1.5 rounded-[var(--site-radius-card)] border border-site-line bg-site-surface-2 px-3 py-2 text-xs text-site-ink">
         <ClipboardCheck className="h-3.5 w-3.5 text-site-ink-soft" />
-        {artifactLabel}
+        <div>
+          {artifactLabel}
+          {message.content && <p className="mt-1 text-site-ink-soft">{message.content}</p>}
+        </div>
       </div>
     );
   }

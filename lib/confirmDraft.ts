@@ -66,6 +66,7 @@ export const isSchedule = (c: ConstraintPayload): c is SchedulePayload => c.type
 export interface ScheduleGroup {
   indices: number[];
   type: ScheduleType;
+  anchorKind: 'date' | 'weekly';
   label: string;
   start: string;
   end: string;
@@ -79,14 +80,17 @@ export function groupSchedules(draft: ConstraintSetArtifact): ScheduleGroup[] {
   draft.constraints.forEach((c, i) => {
     if (!isSchedule(c)) return;
     const label = c.type === 'fixed_block' ? c.title : (c.label ?? '忙碌');
-    const key = `${c.type}|${label}|${c.start}|${c.end}`;
-    const g = map.get(key) ?? { indices: [], type: c.type, label, start: c.start, end: c.end, days: [], dates: [] };
+    const anchorKind = c.date !== undefined ? 'date' : 'weekly';
+    const key = JSON.stringify([c.type, anchorKind, label, c.start, c.end]);
+    const g = map.get(key) ?? { indices: [], type: c.type, anchorKind, label, start: c.start, end: c.end, days: [], dates: [] };
     g.indices.push(i);
-    if (c.weekday !== undefined) g.days.push(c.weekday);
+    if (anchorKind === 'weekly' && c.weekday !== undefined) g.days.push(c.weekday);
     if (c.date !== undefined) g.dates.push(c.date);
     map.set(key, g);
   });
-  return [...map.values()];
+  return [...map.values()].map((g) => ({
+    ...g, days: [...new Set(g.days)].sort((a, b) => a - b), dates: [...new Set(g.dates)].sort(),
+  }));
 }
 
 function compressWeekdays(days: number[]): string {

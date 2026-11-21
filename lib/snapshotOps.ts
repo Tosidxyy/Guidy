@@ -19,6 +19,15 @@ export function snapshotOps(state: PlanState): ApplyOp[] {
         priority: b.priority,
         pinned: b.pinned,
         ...(b.notes ? { notes: b.notes } : {}),
+        ...(b.recurrence_weekday !== undefined ? { recurrence_weekday: b.recurrence_weekday } : {}),
+        ...(b.unavailable_date ? { unavailable_date: b.unavailable_date } : {}),
+        // 撤销/重做要还原任务归属、移动保留语义与进度，不能只还原标题和时间。
+        ...(b.task_key ? { task_key: b.task_key } : {}),
+        ...(b.origin ? { origin: b.origin } : {}),
+        ...(b.status ? { status: b.status } : {}),
+        ...(b.completed_at != null ? { completed_at: b.completed_at } : {}),
+        ...(b.actual_duration_min != null ? { actual_duration_min: b.actual_duration_min } : {}),
+        ...(b.progress_updated_at != null ? { progress_updated_at: b.progress_updated_at } : {}),
       },
     } as unknown as ApplyOp);
   }

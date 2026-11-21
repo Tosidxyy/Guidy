@@ -32,7 +32,7 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
 
   return (
     <div>
-      <div className="mt-3 flex items-center gap-2 rounded-[var(--site-radius-card)] border border-site-line bg-site-bg px-2.5 py-1.5">
+      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[var(--site-radius-card)] border border-site-line bg-site-bg px-2.5 py-1.5">
         <span className="text-xs text-site-ink-soft">开始日期</span>
         <DateInput value={draft.horizon_start ?? planStart} aria-label="计划开始日期"
           onChange={(v) => set({ ...draft, horizon_start: v || planStart })}
@@ -52,13 +52,13 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
           {draft.task_defs.map((t) => (
             editingKey === t.key ? (
               <li key={t.key} className="rounded-[var(--site-radius-card)] border border-site-ink bg-site-bg px-2.5 py-1.5">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Input
                     autoFocus
                     value={t.title}
                     aria-label={`任务标题 ${t.title}`}
                     onChange={(e) => set(updateTaskTitle(draft, t.key, e.target.value.slice(0, 60)))}
-                    className="h-7 flex-1 text-xs"
+                    className="h-7 min-w-24 flex-1 text-xs"
                   />
                   <Input
                     type="number" min={15} max={480} value={t.duration_min}
@@ -101,19 +101,19 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
           ))}
           {schedules.map((g) => (
             <li key={`sch-${g.type}-${g.label}-${g.start}-${g.end}-${g.indices[0]}`} className="rounded-[var(--site-radius-card)] border border-site-line bg-site-bg px-2.5 py-1.5">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
                   value={g.label}
                   aria-label={`固定占用标题 ${g.label}`}
                   onChange={(e) => set(updateScheduleLabel(draft, g.indices, e.target.value))}
-                  className="h-7 flex-1 text-xs"
+                  className="h-7 min-w-24 flex-1 text-xs"
                 />
-                <span className="shrink-0 text-xs text-site-ink-soft">{scheduleDayText(g)}</span>
+                <span className="min-w-0 break-words text-xs text-site-ink-soft">{scheduleDayText(g)}</span>
                 <button type="button" aria-label={`删除任务 ${g.label}`} className="rounded p-1 text-site-ink-soft hover:text-site-danger" onClick={() => set(removeScheduleGroup(draft, g.indices))}>
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <div className="mt-1 flex items-center gap-1.5">
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 <TimeInput value={g.start} aria-label={`固定占用开始时间 ${g.label}`} onChange={(v) => set(updateScheduleGroup(draft, g.indices, 'start', v))} className="h-7 w-28 text-xs" />
                 <span className="text-xs text-site-ink-soft">至</span>
                 <TimeInput value={g.end} aria-label={`固定占用结束时间 ${g.label}`} onChange={(v) => set(updateScheduleGroup(draft, g.indices, 'end', v))} className="h-7 w-28 text-xs" />
@@ -151,7 +151,7 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
                 </button>
               </div>
               {c.type === 'active_window' && (
-                <div className="mt-1.5 flex items-center gap-1.5">
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                   <TimeInput value={c.start} aria-label="开始时间" onChange={(v) => set(updateWindow(draft, i, 'start', v))} className="h-7 w-28 text-xs" />
                   <span className="text-xs text-site-ink-soft">至</span>
                   <TimeInput value={c.end} aria-label="结束时间" onChange={(v) => set(updateWindow(draft, i, 'end', v))} className="h-7 w-28 text-xs" />
@@ -170,8 +170,8 @@ export function ConstraintSetBody({ draft, onChange, planStart, footer }: {
   );
 }
 
-export function ConstraintSetFooter({ children }: { children: React.ReactNode }) {
-  return <div className="mt-4 flex items-center justify-end gap-2">{children}</div>;
+export function ConstraintSetFooter({ children, ref }: { children: React.ReactNode; ref?: React.Ref<HTMLDivElement> }) {
+  return <div ref={ref} className="mt-4 flex flex-wrap items-center justify-end gap-2">{children}</div>;
 }
 
 export function ConfirmGenerateButton({ disabled, onClick }: { disabled?: boolean; onClick: () => void }) {

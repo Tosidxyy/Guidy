@@ -236,20 +236,32 @@ export function createOpenAiQca(config: LocalLlmConfig, db?: Db): QcaAdapter {
     let toolRounds = 0;
 
     for (let round = 0; round < MAX_TOOL_ROUNDS + 2; round++) {
-      const useTools = toolRounds < MAX_TOOL_ROUNDS;
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${config.apiKey}` },
-        body: JSON.stringify({ model: config.model, stream: true, max_tokens: config.maxTokens ?? DEFAULT_MAX_TOKENS, messages, ...(useTools ? { tools: TOOLS, tool_choice: 'auto' } : {}) }),
-        signal,
-      });
-      if (!res.ok) throw new Error(`llm_http_${res.status}`);
+      const useTools = toolRounds < MAX_TOOL_ROUNDS && !message.includes('【修正要求】');
+      // 首包计时覆盖 headers 后的空流；收到正文首包才解除，避免挂起且不限制长回复。
+      const connect = new AbortController();
+      const connectTimer = setTimeout(() => connect.abort(Object.assign(new Error('llm_connect_timeout'), { code: 'timeout' })), 20000);
+      let res: Response;
+      try {
+        res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${config.apiKey}` },
+          body: JSON.stringify({ model: config.model, stream: true, max_tokens: config.maxTokens ?? DEFAULT_MAX_TOKENS, messages, ...(useTools ? { tools: TOOLS, tool_choice: 'auto' } : {}) }),
+          signal: signal ? AbortSignal.any([signal, connect.signal]) : connect.signal,
+        });
+      } catch (error) {
+        clearTimeout(connectTimer);
+        throw error;
+      }
+      if (!res.ok) {
+        clearTimeout(connectTimer);
+        throw Object.assign(new Error(`llm_http_${res.status}`), { status: res.status, code: 'llm_http' });
+      }
 
       let content = '';
       const calls: ToolCall[] = [];
       const isStream = (res.headers.get('content-type') ?? '').includes('text/event-stream');
       if (!isStream) {
-        const json = (await res.json()) as CompletionChunk;
+        const json = await res.json().finally(() => clearTimeout(connectTimer)) as CompletionChunk;
         const msg = json.choices?.[0]?.message as any;
         content = msg?.content ?? '';
         if (msg?.reasoning_content) onActivity?.();
@@ -262,6 +274,7 @@ export function createOpenAiQca(config: LocalLlmConfig, db?: Db): QcaAdapter {
         try {
           for (;;) {
             const { done, value } = await reader.read();
+            clearTimeout(connectTimer);
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
             let newline = buffer.indexOf('\n');
@@ -288,6 +301,7 @@ export function createOpenAiQca(config: LocalLlmConfig, db?: Db): QcaAdapter {
             }
           }
         } finally {
+          clearTimeout(connectTimer);
           reader.releaseLock();
         }
       }
@@ -363,8 +377,12 @@ export function createOpenAiQca(config: LocalLlmConfig, db?: Db): QcaAdapter {
             );
             controller.enqueue(encodeSSE('agent.message', { type: 'agent.message', id: 'local', content: [{ type: 'text', text: full }] }));
             controller.enqueue(encodeSSE('session.status', { type: 'session.status', status: 'idle' }));
-          } catch {
-            if (!opts.signal?.aborted) controller.enqueue(encodeSSE('session.error', { type: 'session.error', status: 'failed' }));
+          } catch (e) {
+            if (!opts.signal?.aborted) {
+              const err = e as { status?: number; code?: string; message?: string };
+              console.error('llm_upstream_failed', config.model, err?.status ?? err?.code ?? '', String(err?.message ?? e).slice(0, 200));
+              controller.enqueue(encodeSSE('session.error', { type: 'session.error', status: 'failed', message: String(err?.message ?? e) }));
+            }
           } finally {
             controller.close();
           }

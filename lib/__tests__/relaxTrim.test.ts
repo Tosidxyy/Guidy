@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { trimDraftToFit } from '@/lib/relaxPlan';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
 
-const meta = { horizon_start: '2026-11-16', timezone: 'Asia/Shanghai' };
+const meta = { horizon_start: '2026-11-16', timezone: 'Asia/Shanghai', now_ms: Date.parse('2026-11-15T00:00:00Z') };
 const task = (over: any) => ({
   key: 'x', title: '任务', category: 'other', duration_min: 60,
   frequency: { type: 'once' as const }, priority: 'mid' as const, splittable: false, sort_order: 0, ...over,

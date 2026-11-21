@@ -1,11 +1,13 @@
-import { DEFAULT_ACTIVE, DEFAULT_MUTEX_GAP, MIN_FRAGMENT_MIN, PERIOD_BOUNDS, PRIORITY_WEIGHT } from '../constants.ts';
+import { DEFAULT_ACTIVE, DEFAULT_MUTEX_GAP, MIN_FRAGMENT_MIN, PERIOD_BOUNDS, PRIORITY_WEIGHT, PREFERRED_DAY_START, QUIET_END, QUIET_START } from '../constants.ts';
 import type { Block, Compromise, Constraint, Feasibility, SolveInput, SolveOutput, TaskDef, UnplacedWork, Violation } from '../types.ts';
-import { dayList, gapBetween, hhmmToMin, localDay, localMinutes, subtractIntervals, utcAt, weekdayOfDay, type Interval } from './time.ts';
+import { blockBusyCuts, pastTodayCuts } from './availability.ts';
+import { dayList, gapBetween, hhmmToMin, localDay, localMinutes, minToHHmm, subtractIntervals, utcAt, weekdayOfDay, type Interval } from './time.ts';
 
 interface DayContext {
   day: string;
   weekday: number;
   active: Interval[];
+  hasActiveCons: boolean;
   busy: Interval[];
   occupied: Interval[];
   blocks: Block[];
@@ -29,20 +31,33 @@ function matchesSubject(rule: MutexRule, side: 'a' | 'b', block: { task_key?: st
   return rule.kind === 'task' ? block.task_key === value : block.category === value;
 }
 
-function preferredPeriodFor(task: TaskDef, constraints: Constraint[]): string | undefined {
-  if (task.preferred_period) return task.preferred_period;
+interface PeriodPref { period: string; bounds: [number, number]; custom?: boolean }
+
+function preferredPeriodFor(task: TaskDef, constraints: Constraint[]): PeriodPref | undefined {
+  let period: string | undefined = task.preferred_period;
+  let bounds: [number, number] | undefined;
   for (const c of constraints) {
     if (!c.enabled || c.payload.type !== 'preferred_period') continue;
     const p = c.payload;
-    if (p.task_key === task.key || (p.category && p.category === task.category)) return p.period;
+    if (p.task_key !== task.key && !(p.category && p.category === task.category)) continue;
+    if (!period) period = p.period;
+    if (!bounds && (p.start || p.end)) {
+      const base = PERIOD_BOUNDS[p.period];
+      bounds = [p.start ? hhmmToMin(p.start) : base[0], p.end ? hhmmToMin(p.end) : base[1]];
+    }
   }
-  return undefined;
+  if (!period) return undefined;
+  return { period, bounds: bounds ?? PERIOD_BOUNDS[period], custom: !!bounds };
 }
 
 export function solve(input: SolveInput): SolveOutput {
-  const { timezone: tz, horizon_start, horizon_days } = input;
-  const constraints = input.constraints.filter((c) => c.enabled);
+  const { timezone: tz, horizon_start, horizon_days, now_ms } = input;
+  const today = now_ms === undefined ? undefined : localDay(new Date(now_ms).toISOString(), tz);
+  // The explicit clock replaces stale caller cuts without reading ambient time.
+  const constraints = input.constraints.filter((c) => c.enabled && !(now_ms !== undefined && c.id === 'now-past' && c.payload.type === 'busy_window'));
+  if (now_ms !== undefined) constraints.push(...pastTodayCuts(tz, horizon_start, horizon_days, now_ms));
   const days = dayList(horizon_start, horizon_days, tz);
+  const pastDays = new Set(days.filter((day) => today !== undefined && day < today));
   const compromises: Compromise[] = [];
   const violations: Violation[] = [];
   const targetMinutes = new Map<string, number>();
@@ -57,6 +72,9 @@ export function solve(input: SolveInput): SolveOutput {
 
   const activeCons = constraints.filter((c) => c.payload.type === 'active_window');
   const busyCons = constraints.filter((c) => c.payload.type === 'busy_window');
+  // pastTodayCuts 生成的「今天已过去」忙时：当天的容量缺口按妥协说明，不算排不下。
+  const nowPastCons = constraints.find((c) => c.id === 'now-past' && c.payload.type === 'busy_window');
+  const nowPastDay = nowPastCons?.payload.type === 'busy_window' ? nowPastCons.payload.date : undefined;
   const capCons = constraints.filter((c) => c.payload.type === 'daily_cap');
   const bufferMin = constraints.reduce((m, c) => (c.payload.type === 'buffer' ? Math.max(m, c.payload.minutes) : m), 0);
   const mutexRules: MutexRule[] = constraints
@@ -98,7 +116,16 @@ export function solve(input: SolveInput): SolveOutput {
     for (const c of activeCons) {
       const p = c.payload as Extract<Constraint['payload'], { type: 'active_window' }>;
       if (p.weekdays && !p.weekdays.includes(weekday)) continue;
-      active.push({ start: hhmmToMin(p.start), end: hhmmToMin(p.end) });
+      let start = hhmmToMin(p.start);
+      let end = hhmmToMin(p.end);
+      // 深夜保护：AI 放宽的可用时段不得侵占 23:00–06:00，除非显式 include_quiet 或用户手工设置。
+      const allowQuiet = p.include_quiet === true || c.source === 'user';
+      if (!allowQuiet) {
+        start = Math.max(start, QUIET_END);
+        end = Math.min(end, QUIET_START);
+        if (end <= start) continue;
+      }
+      active.push({ start, end });
     }
     const busy: Interval[] = [];
     for (const c of busyCons) {
@@ -110,10 +137,38 @@ export function solve(input: SolveInput): SolveOutput {
       day,
       weekday,
       active: active.length ? active : [{ start: DEFAULT_ACTIVE[0], end: DEFAULT_ACTIVE[1] }],
+      hasActiveCons: active.length > 0,
       busy,
       occupied: [],
       blocks: [],
     });
+  }
+
+  // 整天被占用的日子（旅行/考试等）：跳过而不是硬塞进缝隙。判定 = 忙碌覆盖 ≥8h
+  // 且常见白昼段（07:00–23:00）剩余空闲不足 1h。刻意收窄的 active_window 不触发判定。
+  // 无任务归属的 pinned 块（旅行行程、全天外出等手动承诺）与忙时同等参与判定。
+  const intervalLen = (xs: Interval[]) => xs.reduce((n, x) => n + (x.end - x.start), 0);
+  const pinnedCuts = blockBusyCuts(input.pinned_blocks.filter((b) => !b.task_key), tz);
+  const extraBusyByDay = new Map<string, Interval[]>();
+  for (const c of pinnedCuts) {
+    const p = c.payload as Extract<Constraint['payload'], { type: 'busy_window' }>;
+    const day = p.date!;
+    extraBusyByDay.set(day, [...(extraBusyByDay.get(day) ?? []), { start: hhmmToMin(p.start), end: hhmmToMin(p.end) }]);
+  }
+  const blockedDays = new Set<string>();
+  for (const ctx of ctxByDay.values()) {
+    const busyAll = [...ctx.busy, ...(extraBusyByDay.get(ctx.day) ?? [])];
+    const busyMin = 1440 - intervalLen(subtractIntervals([{ start: 0, end: 1440 }], busyAll));
+    if (busyMin < 480) continue;
+    const waking = [{ start: PREFERRED_DAY_START, end: QUIET_START }];
+    if (intervalLen(subtractIntervals(waking, busyAll)) < 60) blockedDays.add(ctx.day);
+  }
+  for (const day of blockedDays) {
+    const ctx = ctxByDay.get(day)!;
+    const label = [...busyCons.map((c) => c.payload as Extract<Constraint['payload'], { type: 'busy_window' }>), ...pinnedCuts.map((c) => c.payload as Extract<Constraint['payload'], { type: 'busy_window' }>)]
+      .filter((p) => (p.date !== undefined ? p.date === day : p.weekday === ctx.weekday))
+      .sort((a, b) => (hhmmToMin(b.end) - hhmmToMin(b.start)) - (hhmmToMin(a.end) - hhmmToMin(a.start)))[0]?.label;
+    compromises.push({ reason: `${day} 全天被「${label ?? '既有安排'}」占用，当天不安排任务` });
   }
 
   const capRemaining = new Map<string, number>();
@@ -184,12 +239,26 @@ export function solve(input: SolveInput): SolveOutput {
       const hit = p.date !== undefined ? p.date === ctx.day : p.weekday === ctx.weekday;
       if (!hit) continue;
       const interval = { start: hhmmToMin(p.start), end: hhmmToMin(p.end) };
+      const startUtc = utcAt(ctx.day, interval.start, tz);
+      // Skip expired new fixed events without changing supplied pins or history.
+      if (pastDays.has(ctx.day) || (now_ms !== undefined && Date.parse(startUtc) < now_ms)) {
+        compromises.push({ constraint_id: c.id, ...(linked ? { task_key: linked.key } : {}), reason: `${ctx.day}「${p.title}」开始时间已过去，未新增固定安排` });
+        continue;
+      }
       const fixedBlock: Block = {
         id: nextId(), title: p.title, category: p.category,
         ...(linked ? { task_key: linked.key } : {}),
-        start_utc: utcAt(ctx.day, interval.start, tz), end_utc: utcAt(ctx.day, interval.end, tz),
+        start_utc: startUtc, end_utc: utcAt(ctx.day, interval.end, tz),
         priority: 'high', pinned: true, origin: 'fixed',
       };
+      const busyClash = busyCons.find(b => {
+        if (b.payload.type !== 'busy_window') return false;
+        const p = b.payload;
+        return (p.date !== undefined ? p.date === ctx.day : p.weekday === ctx.weekday)
+          && interval.start < hhmmToMin(p.end) && hhmmToMin(p.start) < interval.end
+          && !(p.label === fixedBlock.title && p.start === minToHHmm(interval.start) && p.end === minToHHmm(interval.end));
+      });
+      if (busyClash) violations.push({ constraint_id: c.id, ...(linked ? { task_key: linked.key } : {}), reason: `${ctx.day}「${p.title}」与「${busyClash.payload.type === 'busy_window' ? busyClash.payload.label ?? '已有占用' : '已有占用'}」冲突`, suggestion: '请先确认调整哪项安排，不能同时执行' });
       assertNoOverlap(ctx, fixedBlock, interval, c.id);
       registerBlock(ctx, fixedBlock, interval);
       // 同名任务已在固定时段落位：计入完成量，避免再排一次同样的任务。
@@ -228,23 +297,36 @@ export function solve(input: SolveInput): SolveOutput {
     return null;
   };
 
-  const freeSlots = (ctx: DayContext, minSize = MIN_FRAGMENT_MIN): Interval[] => {
+  const freeSlots = (ctx: DayContext, minSize = MIN_FRAGMENT_MIN, pref?: PeriodPref): Interval[] => {
     const cuts = [...ctx.busy];
     for (const occ of ctx.occupied) {
       cuts.push({ start: occ.start - bufferMin, end: occ.end + bufferMin });
     }
-    return subtractIntervals(ctx.active, cuts).filter((s) => s.end - s.start >= minSize);
+    // 用户用约束 start/end 明确声明的精确窗口 = 该任务的硬可用窗口（正文承诺几点就几点），仍受作息保护；
+    // 无显式 active_window 时窗口可早于默认作息起点，有显式 active_window 时取交集。
+    let active = ctx.active;
+    if (pref?.custom) {
+      const w = { start: Math.max(pref.bounds[0], QUIET_END), end: Math.min(pref.bounds[1], QUIET_START) };
+      const base = ctx.hasActiveCons ? ctx.active : [{ start: QUIET_END, end: QUIET_START }];
+      active = base.map((iv) => ({ start: Math.max(iv.start, w.start), end: Math.min(iv.end, w.end) })).filter((iv) => iv.end > iv.start);
+    }
+    return subtractIntervals(active, cuts).filter((s) => s.end - s.start >= minSize);
   };
 
-  const periodScore = (period: string | undefined, interval: Interval): number => {
-    if (!period) return 0;
-    const [ps, pe] = PERIOD_BOUNDS[period];
+  const periodScore = (pref: PeriodPref | undefined, interval: Interval): number => {
+    if (!pref) return 0;
+    const [ps, pe] = pref.bounds;
     const overlap = Math.max(0, Math.min(interval.end, pe) - Math.max(interval.start, ps));
     return overlap >= (interval.end - interval.start) * 0.8 ? 0 : 1;
   };
 
-  const candidateIntervals = (ctx: DayContext, slot: Interval, task: TaskDef, candidate: { task_key?: string; category: string }, period: string | undefined): Interval[] => {
+  // 早于常见作息起点的分钟数罚分：不改变日期优先与偏好时段优先，只压掉「贴窗口起点」的凌晨/清晨落位。
+  const earlyPenalty = (start: number) => Math.max(0, PREFERRED_DAY_START - start) * 10;
+
+  const candidateIntervals = (ctx: DayContext, slot: Interval, task: TaskDef, candidate: { task_key?: string; category: string }, pref: PeriodPref | undefined): Interval[] => {
     const starts = new Set<number>([slot.start]);
+    // 常见作息起点也是候选：可用时段从 06:00 开始时，07:00 优先于 06:00。
+    if (PREFERRED_DAY_START > slot.start && PREFERRED_DAY_START < slot.end) starts.add(PREFERRED_DAY_START);
     for (const rule of mutexRules) {
       const selfA = matchesSubject(rule, 'a', candidate);
       const selfB = matchesSubject(rule, 'b', candidate);
@@ -259,8 +341,8 @@ export function solve(input: SolveInput): SolveOutput {
         if (before > slot.start && before < slot.end) starts.add(before);
       }
     }
-    if (period) {
-      const ps = PERIOD_BOUNDS[period][0];
+    if (pref) {
+      const ps = pref.bounds[0];
       if (ps > slot.start && ps < slot.end) starts.add(ps);
     }
     const out: Interval[] = [];
@@ -274,6 +356,8 @@ export function solve(input: SolveInput): SolveOutput {
       if (task.splittable && length < MIN_FRAGMENT_MIN && length < task.duration_min) continue;
       out.push({ start: s, end: s + length });
     }
+    // 拆分补位按此顺序取首个可行候选：越接近常见作息起点越优先。
+    out.sort((a, b) => (earlyPenalty(a.start) + a.start) - (earlyPenalty(b.start) + b.start));
     return out;
   };
 
@@ -336,9 +420,9 @@ export function solve(input: SolveInput): SolveOutput {
   });
 
   const recordSoft = (task: TaskDef, block: Block, ctx: DayContext, interval: Interval) => {
-    const period = preferredPeriodFor(task, constraints);
-    if (period && periodScore(period, interval) === 1) {
-      compromises.push({ block_id: block.id, task_key: task.key, reason: `「${task.title}」未落在偏好的${period === 'morning' ? '早晨' : period === 'afternoon' ? '下午' : period === 'evening' ? '傍晚' : '夜间'}时段` });
+    const pref = preferredPeriodFor(task, constraints);
+    if (pref && periodScore(pref, interval) === 1) {
+      compromises.push({ block_id: block.id, task_key: task.key, reason: `「${task.title}」未落在偏好的${pref.period === 'morning' ? '早晨' : pref.period === 'afternoon' ? '下午' : pref.period === 'evening' ? '傍晚' : '夜间'}时段` });
     }
     const rule = mutexConflict(ctx, block, interval);
     if (rule && rule.strength === 'soft') {
@@ -350,24 +434,29 @@ export function solve(input: SolveInput): SolveOutput {
     if (!t.earliest_start && !t.deadline) return null;
     return days.filter((d) => (!t.earliest_start || d >= t.earliest_start) && (!t.deadline || d <= t.deadline));
   };
+  // Historical pins count toward the quota but cannot consume future occurrences.
+  const unavailableDayFor = (t: TaskDef, day: string) => blockedDays.has(day) || (pastDays.has(day) && !pinnedByTask.get(t.key)?.days.has(day));
   const targetCountFor = (t: TaskDef): number => {
     const scoped = scopedDaysOf(t);
     if (t.frequency.type === 'once') return scoped ? (scoped.length ? 1 : 0) : 1;
-    if (t.frequency.type === 'daily') return scoped ? scoped.length : days.length;
+    // 全天被占用的日子不计入目标量：旅行/考试日跳过是承诺的一部分，不是「放不下」。
+    if (t.frequency.type === 'daily') return (scoped ?? days).filter((d) => !unavailableDayFor(t, d)).length;
     const { count } = t.frequency;
     let target = 0;
     for (let i = 0; i < days.length; i += 7) {
-      const len = Math.min(7, days.length - i);
-      target += len === 7 ? count : Math.max(1, Math.round((count * len) / 7));
+      const seg = days.slice(i, i + 7);
+      const quota = seg.length === 7 ? count : Math.max(1, Math.round((count * seg.length) / 7));
+      const blockedHere = seg.filter((d) => unavailableDayFor(t, d)).length;
+      target += blockedHere ? Math.min(quota, seg.length - blockedHere) : quota;
     }
-    return scoped ? target : target;
+    return target;
   };
 
   for (const task of sortedTasks) {
     const pre = pinnedByTask.get(task.key);
     let placedCount = pre?.count ?? 0;
     const usedDays = new Set<string>(pre?.days ?? []);
-    const period = preferredPeriodFor(task, constraints);
+    const pref = preferredPeriodFor(task, constraints);
     const candidate = { task_key: task.key, category: task.category };
 
     const scoped = scopedDaysOf(task);
@@ -405,8 +494,13 @@ export function solve(input: SolveInput): SolveOutput {
       if (!depReadyUtc || withGap > depReadyUtc) depReadyUtc = withGap;
     }
     const depReadyDay = depReadyUtc ? localDay(depReadyUtc, tz) : null;
-    const dayAllowed = (day: string) => (!window || window.has(day)) && (!depReadyDay || day >= depReadyDay);
-    const startAllowed = (day: string, startMin: number) => !depReadyUtc || Date.parse(utcAt(day, startMin, tz)) >= Date.parse(depReadyUtc);
+    const dayAllowed = (day: string) => !pastDays.has(day) && (!window || window.has(day)) && (!depReadyDay || day >= depReadyDay);
+    const startAllowed = (day: string, startMin: number) => {
+      if (now_ms === undefined && !depReadyUtc) return true;
+      const startMs = Date.parse(utcAt(day, startMin, tz));
+      // Also compare instants: repeated local hours at DST fallback can map to an earlier instant.
+      return (now_ms === undefined || startMs >= now_ms) && (!depReadyUtc || startMs >= Date.parse(depReadyUtc));
+    };
 
     /** 在允许的日期里落一次；允许集合为空表示整个 horizon。 */
     const placeOne = (allowed?: Set<string>): boolean => {
@@ -415,14 +509,17 @@ export function solve(input: SolveInput): SolveOutput {
         if (allowed && !allowed.has(ctx.day)) continue;
         if (!dayAllowed(ctx.day)) continue;
         if (usedDays.has(ctx.day)) continue;
+        if (blockedDays.has(ctx.day)) continue;
         if (capFor(ctx.day, task.category) < (task.splittable ? minPlacement(task.duration_min) : task.duration_min)) continue;
-        for (const slot of freeSlots(ctx, minPlacement(task.duration_min))) {
-          for (const interval of candidateIntervals(ctx, slot, task, candidate, period)) {
+        for (const slot of freeSlots(ctx, minPlacement(task.duration_min), pref)) {
+          for (const interval of candidateIntervals(ctx, slot, task, candidate, pref)) {
             if (!startAllowed(ctx.day, interval.start)) continue;
             const conflict = mutexConflict(ctx, candidate, interval);
             if (conflict && conflict.strength === 'hard') continue;
             const softPenalty = conflict ? 100000 : 0;
-            const score = periodScore(period, interval) * 1000000 + softPenalty + days.indexOf(ctx.day) * 10000 + interval.start;
+            // 同日内整块优先于早起的碎片：能一次排完就不拆分。
+            const splitPenalty = task.splittable && interval.end - interval.start < task.duration_min ? 5000 : 0;
+            const score = periodScore(pref, interval) * 1000000 + softPenalty + days.indexOf(ctx.day) * 10000 + splitPenalty + earlyPenalty(interval.start) + interval.start;
             const best = bestRef.current;
             if (!best || score < best.score) bestRef.current = { ctx, interval, score };
           }
@@ -443,34 +540,46 @@ export function solve(input: SolveInput): SolveOutput {
         let splitMinutesLeft = task.duration_min - minutes;
         while (splitMinutesLeft > 0) {
           let frag: { ctx: DayContext; interval: Interval } | null = null;
-          let fallback: { ctx: DayContext; interval: Interval } | null = null;
           const fragTask = { ...task, duration_min: splitMinutesLeft };
-          for (const fctx of ctxByDay.values()) {
+          // 拆分补位同日优先；daily 任务的剩余部分只允许落在当天，
+          // 否则会把别的日子的配额偷走（单日超量、其他日缺量）。
+          const fragDays = task.frequency.type === 'daily'
+            ? [ctx]
+            : [ctx, ...[...ctxByDay.values()].filter((d) => d !== ctx && !usedDays.has(d.day))];
+          for (const fctx of fragDays) {
             if (allowed && !allowed.has(fctx.day)) continue;
             if (!dayAllowed(fctx.day)) continue;
+            if (blockedDays.has(fctx.day)) continue;
             if (capFor(fctx.day, task.category) < minPlacement(splitMinutesLeft)) continue;
-            for (const slot of freeSlots(fctx, minPlacement(splitMinutesLeft))) {
-              for (const fi of candidateIntervals(fctx, slot, fragTask, candidate, period)) {
+            let bestClean: { interval: Interval; score: number } | null = null;
+            let bestSoft: { interval: Interval; score: number } | null = null;
+            for (const slot of freeSlots(fctx, minPlacement(splitMinutesLeft), pref)) {
+              for (const fi of candidateIntervals(fctx, slot, fragTask, candidate, pref)) {
                 if (fi.end - fi.start < MIN_FRAGMENT_MIN && fi.end - fi.start < splitMinutesLeft) continue;
                 if (!startAllowed(fctx.day, fi.start)) continue;
                 const conflict = mutexConflict(fctx, candidate, fi);
                 if (conflict && conflict.strength === 'hard') continue;
-                if (!conflict) { frag = { ctx: fctx, interval: fi }; break; }
-                if (!fallback) fallback = { ctx: fctx, interval: fi };
+                const score = periodScore(pref, fi) * 1000000 + earlyPenalty(fi.start) + fi.start;
+                if (!conflict) { if (!bestClean || score < bestClean.score) bestClean = { interval: fi, score }; }
+                else if (!bestSoft || score < bestSoft.score) bestSoft = { interval: fi, score };
               }
-              if (frag) break;
             }
-            if (frag) break;
+            const chosen = bestClean ?? bestSoft;
+            if (chosen) { frag = { ctx: fctx, interval: chosen.interval }; break; }
           }
-          if (!frag) frag = fallback;
           if (!frag) break;
           const fb = makeBlock(task, frag.ctx, frag.interval);
           registerBlock(frag.ctx, fb, frag.interval);
+          usedDays.add(frag.ctx.day);
           recordSoft(task, fb, frag.ctx, frag.interval);
           splitMinutesLeft -= frag.interval.end - frag.interval.start;
         }
         if (splitMinutesLeft > 0) {
-          violations.push({ task_key: task.key, reason: `「${task.title}」拆分后仍有 ${splitMinutesLeft} 分钟无法落位`, suggestion: '放宽每日上限或增加可用时段' });
+          if (ctx.day === nowPastDay) {
+            compromises.push({ reason: `今天剩余时段放不下「${task.title}」剩余的 ${splitMinutesLeft} 分钟，已安排能放下的部分` });
+          } else {
+            violations.push({ task_key: task.key, reason: `「${task.title}」拆分后仍有 ${splitMinutesLeft} 分钟无法落位${task.frequency.type === 'daily' ? '（当天剩余时段放不下）' : ''}`, suggestion: '放宽每日上限或增加可用时段' });
+          }
         }
       }
       return true;
@@ -484,7 +593,9 @@ export function solve(input: SolveInput): SolveOutput {
       const { count } = task.frequency;
       target = 0;
       for (const seg of weekSegments) {
-        const quota = seg.length === 7 ? count : Math.max(1, Math.round((count * seg.length) / 7));
+        const rawQuota = seg.length === 7 ? count : Math.max(1, Math.round((count * seg.length) / 7));
+        const blockedHere = seg.filter((d) => unavailableDayFor(task, d)).length;
+        const quota = blockedHere ? Math.min(rawQuota, seg.length - blockedHere) : rawQuota;
         target += quota;
         const allowed = new Set(seg);
         const pinnedHere = [...(pre?.days ?? [])].filter((d) => allowed.has(d)).length;
@@ -492,8 +603,13 @@ export function solve(input: SolveInput): SolveOutput {
         while (need > 0 && placeOne(allowed)) { placedCount += 1; need -= 1; }
       }
     } else {
-      target = task.frequency.type === 'daily' ? (window ? window.size : days.length) : 1;
+      target = targetCountFor(task);
       while (placedCount < target && placeOne()) placedCount += 1;
+    }
+    // 今天已过去的时间不算容量缺口：当日剩余放不下而跳过今天时，用妥协说明而不是报「排不下」。
+    if (placedCount < target && nowPastDay && !usedDays.has(nowPastDay) && !blockedDays.has(nowPastDay) && dayAllowed(nowPastDay)) {
+      target -= 1;
+      compromises.push({ reason: `今天剩余时段已放不下「${task.title}」，今天先跳过` });
     }
     targetMinutes.set(task.key, target * task.duration_min);
 

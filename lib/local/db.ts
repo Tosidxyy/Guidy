@@ -8,6 +8,12 @@ export type StoreName = typeof STORES[number];
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 const memory = new Map<StoreName, Map<IDBValidKey, unknown>>();
+let memoryWrites: Promise<unknown> = Promise.resolve();
+function memoryWrite<T>(run: () => T | Promise<T>): Promise<T> {
+  const result = memoryWrites.then(run);
+  memoryWrites = result.catch(() => undefined);
+  return result;
+}
 const memStore = (name: StoreName) => {
   let s = memory.get(name);
   if (!s) { s = new Map(); memory.set(name, s); }
@@ -68,7 +74,7 @@ export async function getOne<T>(name: StoreName, key: IDBValidKey): Promise<T | 
 }
 
 export async function putOne(name: StoreName, key: IDBValidKey, value: unknown): Promise<void> {
-  if (!hasIndexedDb()) { memStore(name).set(key, value); return; }
+  if (!hasIndexedDb()) return memoryWrite(() => { memStore(name).set(key, value); });
   const db = await openDb();
   const tx = db.transaction(name, 'readwrite');
   if (name === 'kv') tx.objectStore(name).put(value, key);
@@ -77,7 +83,7 @@ export async function putOne(name: StoreName, key: IDBValidKey, value: unknown):
 }
 
 export async function deleteOne(name: StoreName, key: IDBValidKey): Promise<void> {
-  if (!hasIndexedDb()) { memStore(name).delete(key); return; }
+  if (!hasIndexedDb()) return memoryWrite(() => { memStore(name).delete(key); });
   const db = await openDb();
   const tx = db.transaction(name, 'readwrite');
   tx.objectStore(name).delete(key);
@@ -85,11 +91,57 @@ export async function deleteOne(name: StoreName, key: IDBValidKey): Promise<void
 }
 
 export async function clearAll(): Promise<void> {
-  if (!hasIndexedDb()) { memory.clear(); return; }
+  if (!hasIndexedDb()) return memoryWrite(() => { memory.clear(); });
   const db = await openDb();
   const tx = db.transaction([...STORES], 'readwrite');
   for (const s of STORES) tx.objectStore(s).clear();
   await txDone(tx);
+}
+
+/** Plan/session writes share one transaction so selection never precedes durable data. */
+export interface PlanStorageTransaction {
+  get<T>(store: 'plans' | 'kv', key: string): Promise<T | undefined>;
+  put(store: 'plans' | 'kv', key: string, value: unknown): void;
+  delete(store: 'plans' | 'kv', key: string): void;
+}
+
+export async function planStorageTransaction<T>(run: (tx: PlanStorageTransaction) => Promise<T>): Promise<T> {
+  if (!hasIndexedDb()) {
+    return memoryWrite(async () => {
+      const stores = { plans: new Map(memStore('plans')), kv: new Map(memStore('kv')) };
+      const value = await run({
+        get: async <V>(store: 'plans' | 'kv', key: string) => structuredClone(stores[store].get(key)) as V | undefined,
+        put: (store, key, data) => { stores[store].set(key, structuredClone(data)); },
+        delete: (store, key) => { stores[store].delete(key); },
+      });
+      memory.set('plans', stores.plans);
+      memory.set('kv', stores.kv);
+      return value;
+    });
+  }
+  const db = await openDb();
+  const tx = db.transaction(['plans', 'kv'], 'readwrite');
+  const done = txDone(tx);
+  try {
+    const value = await run({
+      get: <V>(store: 'plans' | 'kv', key: string) => new Promise<V | undefined>((resolve, reject) => {
+        const req = tx.objectStore(store).get(key);
+        req.onsuccess = () => resolve(req.result as V | undefined);
+        req.onerror = () => reject(req.error);
+      }),
+      put: (store, key, data) => {
+        if (store === 'kv') tx.objectStore(store).put(data, key);
+        else tx.objectStore(store).put(data);
+      },
+      delete: (store, key) => { tx.objectStore(store).delete(key); },
+    });
+    await done;
+    return value;
+  } catch (err) {
+    try { tx.abort(); } catch { /* Already aborted/completed. */ }
+    await done.catch(() => undefined);
+    throw err;
+  }
 }
 
 /** 仅测试使用：重置内存态。 */

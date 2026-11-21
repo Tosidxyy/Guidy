@@ -74,6 +74,7 @@ export function ChatPanel() {
   const setConversation = useChatStore((s) => s.setConversation);
 
   const planId = usePlanStore((s) => s.state.plan.id);
+  const planReady = usePlanStore((s) => s.ready);
 
   const openDrawer = useUiStore((s) => s.openDrawer);
 
@@ -101,12 +102,16 @@ export function ChatPanel() {
   }, [streaming, qc]);
 
   useEffect(() => {
+    if (!planReady) return;
     const items = conversations.data?.items ?? [];
     if (!shouldAutoRestore({ conversationId, restoreDone }, items.length, !!conversations.data)) return;
     const first = conversationForPlan(items, planId);
     if (!first) return;
     const plan = usePlanStore.getState().state;
+    const revision = usePlanStore.getState().selectionRevision;
+    let cancelled = false;
     api.history(first.id).then((h) => {
+      if (cancelled || usePlanStore.getState().selectionRevision !== revision) return;
       const restored = restoreChat(h.messages, plan);
       setConversation(first.id, restored.messages);
       useChatStore.setState({
@@ -118,7 +123,8 @@ export function ChatPanel() {
       });
       if (first.status === 'active') chat.resume();
     }).catch(() => {});
-  }, [conversations.data, conversationId, restoreDone, planId]);
+    return () => { cancelled = true; };
+  }, [conversations.data, conversationId, restoreDone, planId, planReady]);
 
   const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant' && m.kind === 'text');
   const lastMessage = messages[messages.length - 1];

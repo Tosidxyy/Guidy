@@ -59,7 +59,7 @@ export function restoreChat(rows: HistoryRow[], plan: PlanState): RestoredChat {
     ? lastArtifact.seq
     : null;
   const messages = rows
-    .filter((r) => r.role !== 'system' && r.seq !== appliedSeq)
+    .filter((r) => r.role !== 'system' && (r.seq !== appliedSeq || r.content?.startsWith('排程预览提示：')))
     .map((r) => ({ seq: r.seq, role: r.role as 'user' | 'assistant', kind: r.kind, content: r.content ?? '', payload: r.payload }));
   const artifact = lastArtifact?.kind === 'constraint_set' && appliedSeq === null
     ? (lastArtifact.payload as ConstraintSetArtifact)

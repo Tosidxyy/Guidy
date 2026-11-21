@@ -18,6 +18,24 @@ const other = {
 };
 
 describe('buildUserMessage — 跨计划上下文', () => {
+  it('日期摘要不把一个周末旅游误当每周周末；后段日期不能被截断', () => {
+    const blocks = Array.from({ length: 28 }, (_, i) => {
+      const day = new Date(Date.parse('2026-11-18T00:00:00Z') + i * 86400000).toISOString().slice(0, 10);
+      return block(`travel-${i}`, i === 27 ? '最后一天安排' : '日程', `${day}T00:00:00Z`, `${day}T01:00:00Z`);
+    });
+    const text = buildUserMessage({ message: '排新任务', plan: null, history: [], today: '2026-11-18', timezone: 'Asia/Shanghai', others: [{ ...other, horizon_days: 28, blocks }] });
+    expect(text).toContain('travel-27｜最后一天安排');
+    expect(text).toContain('2026-11-18：07:00–08:00、09:00–23:00');
+    expect(text).not.toContain('仅列前');
+  });
+
+  it('细化子块明确保留整天不可用提示，避免在行程间隙塞任务', () => {
+    const child = { ...block('trip-child', '西湖', '2026-11-21T05:00:00Z', '2026-11-21T07:00:00Z'), unavailable_date: '2026-11-21' };
+    const text = buildUserMessage({ message: '练吉他', plan: null, history: [], today: '2026-11-18', sharedBlocks: [child] });
+    expect(text).toContain('【整天不安排任务】2026-11-21');
+    expect(text).toContain('2026-11-21：全天不可安排');
+  });
+
   it('没有作息上下文时明确提示不要假设上班时间或默认排到晚上', () => {
     const text = buildUserMessage({ message: '下周开始健身', plan: null, history: [], today: '2026-11-18' });
     expect(text).toContain('【作息未知】');
@@ -122,9 +140,10 @@ describe('buildUserMessage — 跨计划上下文', () => {
   });
   it('注入可安排时段并约束追问选项', () => {
     const text = buildUserMessage({ message: '帮我排训练', plan, history: [], today: '2026-11-18', availability: '周一至周五：无可安排时段；周六、周日：09:00–22:00' });
-    expect(text).toContain('【参考可用时段（按共享日历估算；其他计划的块只是参考，可能与新计划冲突）】');
-    expect(text).toContain('周六、周日：09:00–22:00');
-    expect(text).toContain('用户本轮明确说出的作息/时段/时长优先');
+    expect(text).toContain('按日期的剩余时段');
+    expect(text).toContain('2026-11-20：08:00–23:00');
+    expect(text).not.toContain('周一至周五：无可安排时段');
+    expect(text).toContain('固定时间冲突时先给 question_card');
   });
   it('没有时间块时用 patch 补齐任务与约束，由方案卡生成排程', () => {
     const emptyPlan: PlanState = { ...plan, plan: { ...plan.plan, status: 'draft' }, blocks: [] };

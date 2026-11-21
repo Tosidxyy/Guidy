@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
@@ -19,56 +19,35 @@ import { applySharedOps } from '@/lib/sharedBlocks';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConstraintSetBody, ConstraintSetFooter } from './ConstraintSetBody';
+import { groupSharedBusy, sharedBusyDayText } from './sharedBusyGroups';
+import { scheduleActionReveal } from './planCardScroll';
 
 // 忙时/固定日程物化在共享日历而非计划任务里：方案卡必须可见可删，否则用户找不到「上班」这类块。
 function SharedBusySection() {
   const busy = useSharedCalendar((s) => s.busyBlocks);
   const tz = usePlanStore((s) => s.state.plan.timezone) || 'Asia/Shanghai';
   if (!busy.length) return null;
-  const fmtDay = (iso: string) => new Date(iso).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'short', timeZone: tz });
-  const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz });
-  // 按「标题 + 时段 + 星期几」合并：18 条「上班 · 某日」→「上班 · 周一至周五 09:00–18:00」。
-  const WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-  const groups = new Map<string, { title: string; start: string; end: string; days: Set<number>; dates: string[]; ids: { id: string; day: string }[] }>();
-  for (const b of busy) {
-    const d = new Date(b.start_utc);
-    const day = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
-    const wd = new Date(`${day}T12:00:00Z`).getUTCDay();
-    const start = fmtTime(b.start_utc);
-    const end = fmtTime(b.end_utc);
-    const key = `${b.title}|${start}|${end}`;
-    const g = groups.get(key) ?? { title: b.title, start, end, days: new Set<number>(), dates: [], ids: [] };
-    g.days.add(wd);
-    g.dates.push(day);
-    g.ids.push({ id: b.id, day });
-    groups.set(key, g);
-  }
-  const weekdayText = (days: Set<number>) => {
-    const arr = [...days].sort((a, b) => a - b);
-    if (arr.length === 7) return '每天';
-    if (arr.length >= 2 && arr.every((d, i) => i === 0 || d === arr[i - 1] + 1)) return `${WD[arr[0]]}至${WD[arr[arr.length - 1]]}`;
-    return arr.map((d) => WD[d]).join('、');
-  };
+  const groups = groupSharedBusy(busy, tz);
   return (
     <section className="mt-3 border-t border-site-line pt-2">
-      <h4 className="text-xs font-semibold text-site-ink">固定日程 / 公共忙时（{groups.size}）</h4>
+      <h4 className="text-xs font-semibold text-site-ink">固定日程 / 公共忙时（{groups.length}）</h4>
       <p className="mt-0.5 text-xs text-site-ink-soft">来自共享日历（如「上班」），参与排程避让；可展开管理某一天（例如请假删除）。</p>
       <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto">
-        {[...groups.values()].map((g) => (
-          <li key={`${g.title}|${g.start}|${g.end}`} className="rounded border border-site-line bg-site-surface-2 px-2 py-1 text-xs text-site-ink">
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate">{g.title} · {weekdayText(g.days)} {g.start}–{g.end}</span>
-              <details className="shrink-0">
-                <summary className="cursor-pointer select-none text-site-ink-soft">某天…</summary>
+        {groups.map((g) => (
+          <li key={g.key} className="rounded border border-site-line bg-site-surface-2 px-2 py-1 text-xs text-site-ink">
+            <div className="space-y-1">
+              <span className="break-words">{g.title} · {sharedBusyDayText(g)} {g.start}–{g.end}</span>
+              <details>
+                <summary className="cursor-pointer select-none text-site-ink-soft">管理具体日期（{g.occurrences.length}）</summary>
                 <ul className="mt-1 max-h-32 space-y-0.5 overflow-y-auto">
-                  {g.dates.map((day) => (
-                    <li key={day} className="flex items-center justify-between gap-2">
-                      <span>{day}（{WD[new Date(`${day}T12:00:00Z`).getUTCDay()]}）</span>
+                  {g.occurrences.map(({ id, day }) => (
+                    <li key={id} className="flex items-center justify-between gap-2">
+                      <span>{day}</span>
                       <Button
-                        variant="ghost" size="sm" className="h-5 px-1 text-xs text-site-danger"
+                        variant="ghost" size="sm" className="h-6 px-1 text-xs text-site-danger"
+                        aria-label={`删除 ${g.title} ${day} ${g.start}–${g.end}`}
                         onClick={() => {
-                          const id = g.ids.find((x) => x.day === day)?.id;
-                          if (id) void applySharedOps([{ op: 'remove_block', id }]).then((r) => { if (!r.ok) toast.error(r.reason ?? '删除失败'); });
+                          void applySharedOps([{ op: 'remove_block', id }]).then((r) => { if (!r.ok) toast.error(r.reason ?? '删除失败'); });
                         }}
                       >
                         删除
@@ -94,7 +73,13 @@ export function PlanCardPanel() {
   const [attention, setAttention] = useState(false);
   // 新方案/新调整到达时整卡闪一下（展开状态也闪），4 秒后停；收起的卡另外保留常驻提示。
   const [flash, setFlash] = useState(false);
-  const adjustRef = useRef<HTMLElement | null>(null);
+  const bodyId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const applyRowRef = useRef<HTMLDivElement>(null);
+  const footerRowRef = useRef<HTMLDivElement>(null);
+  const autoReveal = useRef(true);
   const flashTimer = useRef<number | null>(null);
   const pulseOnce = () => {
     setFlash(true);
@@ -109,12 +94,16 @@ export function PlanCardPanel() {
   const serverPreview = useChatStore((s) => s.artifactPreview);
   const patch = useChatStore((s) => s.patch);
   const patchPreview = useChatStore((s) => s.patchPreview);
+  const patchNotices = [...new Set<string>([
+    ...(patchPreview?.notes ?? []),
+    ...(patchPreview?.compromises ?? []).map((c: { reason: string }) => c.reason),
+  ])].filter(Boolean);
   const conversationId = useChatStore((s) => s.conversationId);
   const autoSave = useAutoSaveDraft();
   const { apply: applyPatchOps, isPending: patchPending } = useApplyPatch();
   const { commit, isPending } = useCommitPlan(() => {
     useChatStore.setState({ artifact: null, clarifications: [] });
-    setOpen(false);
+    close();
     setDraft(null);
   });
 
@@ -200,15 +189,24 @@ export function PlanCardPanel() {
     usePlanStore.getState().previewPatch(foreignPatch);
   }, [foreignPatch, patchAlreadyApplied]);
 
+  const hasApplyRow = !!foreignPatch && !patchAlreadyApplied;
+  const revealContentKey = JSON.stringify([patchNotices, preview, foreignPatch?.ops]);
+  useEffect(() => {
+    if (!open || !autoReveal.current) return;
+    const row = hasApplyRow ? applyRowRef.current : footerRowRef.current;
+    if (!row || !scrollerRef.current || !bodyRef.current) return;
+    return scheduleActionReveal(scrollerRef.current, bodyRef.current, row, () => { autoReveal.current = false; });
+  }, [open, hasApplyRow, revealContentKey, proposal, needsSchedule]);
+
   // 打开时保留编辑草稿（AI patch 的结果暂存在草稿里，清掉会看到旧/空内容）。
   const openPlan = () => {
     setAttention(false);
-    // 有「排程调整」时，展开后直接定位到调整清单与应用按钮。
-    setTimeout(() => adjustRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 0);
+    autoReveal.current = true;
     setOpen(true);
   };
 
   const close = () => {
+    if (bodyRef.current?.contains(document.activeElement)) triggerRef.current?.focus({ preventScroll: true });
     setOpen(false);
   };
 
@@ -284,9 +282,11 @@ export function PlanCardPanel() {
         <Button
           variant="ghost"
           size="sm"
+          ref={triggerRef}
           onClick={toggle}
           aria-expanded={open}
-          className="relative h-8 min-w-0 flex-1 justify-start gap-1.5 rounded-none px-2.5 text-xs font-normal text-site-ink-soft hover:bg-site-surface-2 hover:text-site-ink"
+          aria-controls={bodyId}
+          className="relative h-auto min-h-8 min-w-0 flex-1 flex-wrap justify-start gap-1.5 rounded-none px-2.5 py-1.5 text-xs font-normal text-site-ink-soft hover:bg-site-surface-2 hover:text-site-ink"
         >
           {(flash || (attention && !open)) && <span aria-hidden="true" className="guidy-card-pulse pointer-events-none absolute inset-0" />}
           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-site-ink" />
@@ -303,16 +303,18 @@ export function PlanCardPanel() {
 
       {(
         <div
+          id={bodyId}
+          ref={bodyRef}
           inert={!open}
           aria-hidden={!open}
           className={cn(
-            'grid transition-[grid-template-rows] duration-[var(--site-motion-standard)] ease-[var(--site-ease-glide)]',
+            'grid transition-[grid-template-rows] duration-[var(--site-motion-standard)] ease-[var(--site-ease-glide)] motion-reduce:transition-none',
             open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
           )}
         >
           <div className="min-h-0 overflow-hidden">
             {/* 整张卡一个滚动容器：预览、调整清单、任务与约束一起滚，滚轮不会被裁在外层。 */}
-            <div className={cn('max-h-[min(45vh,calc(100dvh-360px))] overflow-y-auto overscroll-contain', open && 'border-t border-site-line')}>
+            <div ref={scrollerRef} className={cn('max-h-[min(50dvh,max(8rem,calc(100dvh-240px)))] overflow-y-auto overscroll-contain', open && 'border-t border-site-line')}>
           <div className="flex items-start justify-between gap-3 px-3.5 pt-3">
             <div>
               <h3 className="font-display text-sm font-semibold text-site-ink">{viewed.plan_title || '方案卡'}</h3>
@@ -321,7 +323,7 @@ export function PlanCardPanel() {
           </div>
 
           {foreignPatch && !patchAlreadyApplied && (
-          <section ref={adjustRef} className="mx-3.5 mt-3 rounded-[var(--site-radius-card)] border border-site-line bg-site-bg p-2.5">
+          <section className="mx-3.5 mt-3 rounded-[var(--site-radius-card)] border border-site-line bg-site-bg p-2.5">
             <p className="text-xs font-semibold text-site-ink">排程调整 · {foreignPatch.summary}</p>
             <ul className="mt-1.5 max-h-28 space-y-1 overflow-y-auto">
               {foreignPatch.ops.map((op, i) => (
@@ -330,14 +332,14 @@ export function PlanCardPanel() {
                 </li>
               ))}
             </ul>
-            {Array.isArray(patchPreview?.notes) && patchPreview.notes.length > 0 && (
+            {patchNotices.length > 0 && (
               <ul className="mt-1.5 space-y-1">
-                {(patchPreview.notes as string[]).slice(0, 4).map((n, i) => (
+                {patchNotices.map((n, i) => (
                   <li key={i} className="rounded border border-site-warning/50 bg-site-warning/5 px-2 py-1 text-xs leading-snug text-site-ink">{n}</li>
                 ))}
               </ul>
             )}
-            <div className="mt-2 flex justify-end gap-2">
+            <div ref={applyRowRef} className="mt-2 flex flex-wrap justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => { usePlanStore.getState().discardPreview(); useChatStore.setState({ patch: null }); }}>放弃</Button>
               <Button size="sm" disabled={patchPending || saving} onClick={() => { void applyForeign(); }}>
                 {patchPending ? '应用中…' : '应用调整'}
@@ -414,7 +416,7 @@ export function PlanCardPanel() {
               onChange={change}
               planStart={state.plan.horizon_start}
               footer={(
-                <ConstraintSetFooter>
+                <ConstraintSetFooter ref={footerRowRef}>
                   {proposal ? (
                     <>
                       <Button variant="outline" size="sm" onClick={() => { usePlanStore.getState().discardPreview(); useChatStore.setState({ artifact: null, clarifications: [] }); close(); }}>取消</Button>

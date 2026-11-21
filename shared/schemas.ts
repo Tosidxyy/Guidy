@@ -56,7 +56,7 @@ const exactlyOneAnchor = (c: { weekday?: number; date?: string }) =>
 
 export const ConstraintPayloadSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('busy_window'), ...weekdayOrDate, start: HHmm, end: HHmm, label: z.string().max(30).optional() }),
-  z.object({ type: z.literal('active_window'), start: HHmm, end: HHmm, weekdays: z.array(Weekday).min(1).optional() }),
+  z.object({ type: z.literal('active_window'), start: HHmm, end: HHmm, weekdays: z.array(Weekday).min(1).optional(), include_quiet: z.boolean().optional() }),
   z.object({ type: z.literal('daily_cap'), category: CategoryEnum, max_minutes: z.number().int().min(30).max(960) }),
   z.object({
     type: z.literal('mutex'),
@@ -70,6 +70,9 @@ export const ConstraintPayloadSchema = z.discriminatedUnion('type', [
     category: CategoryEnum.optional(),
     period: PeriodEnum,
     strength: z.literal('soft').default('soft'),
+    /** 精确时段覆盖：用户说「19点以后」这类与 period 边界不一致的窗口时用 start/end 表达。 */
+    start: HHmm.optional(),
+    end: HHmm.optional(),
   }),
   z.object({ type: z.literal('buffer'), minutes: z.number().int().min(0).max(120) }),
   z.object({ type: z.literal('fixed_block'), title: z.string().max(60), category: CategoryEnum, ...weekdayOrDate, start: HHmm, end: HHmm }),
@@ -84,6 +87,9 @@ export const ConstraintPayloadSchema = z.discriminatedUnion('type', [
   if (val.type === 'mutex' && val.subjects.values[0] === val.subjects.values[1]) issue('互斥主体必须不同');
   if (val.type === 'preferred_period' && (val.task_key === undefined) === (val.category === undefined)) {
     issue('task_key 与 category 必须二选一');
+  }
+  if (val.type === 'preferred_period' && val.start && val.end && hhmmOrderInvalid(val.start, val.end)) {
+    issue('结束时间必须晚于开始时间');
   }
 });
 
@@ -106,8 +112,11 @@ export const ManualBlockSchema = z.object({
   priority: PriorityEnum.default('mid'),
   pinned: z.boolean().default(false),
   notes: z.string().max(500).optional(),
+  recurrence_weekday: z.number().int().min(0).max(6).optional(),
+  unavailable_date: z.string().date().optional(),
   // 仅用于撤销恢复原块语义：engine 块会被重排替换，manual 块作为固定保留。
   origin: z.enum(['engine', 'manual', 'fixed']).optional(),
+  task_key: z.string().optional(),
   ...progressFields,
 });
 
@@ -122,6 +131,8 @@ export const PlanBlockSchema = z.object({
   pinned: z.boolean(),
   origin: z.enum(['engine', 'manual', 'fixed']),
   notes: z.string().max(500).optional(),
+  recurrence_weekday: z.number().int().min(0).max(6).optional(),
+  unavailable_date: z.string().date().optional(),
   ...progressFields,
 }).refine((b) => Date.parse(b.end_utc) > Date.parse(b.start_utc), '结束时间必须晚于开始时间');
 
@@ -154,7 +165,7 @@ export const PatchOpSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('add_block'), value: ManualBlockSchema, client_id: z.string().uuid().optional(), plan_id: z.string().uuid().optional() }),
   // 块操作带语义定位（task_key/date/title）：AI 引用过期 id 时可按「哪个任务的哪一天」校正。
   z.object({ op: z.literal('update_block'), id: z.string(), patch: ManualBlockSchema.partial(), task_key: z.string().optional(), date: z.string().optional(), title: z.string().optional(), allow_overlap: z.boolean().optional() }),
-  z.object({ op: z.literal('move_block'), id: z.string(), start_utc: z.string().datetime(), end_utc: z.string().datetime(), task_key: z.string().optional(), date: z.string().optional(), title: z.string().optional() }),
+  z.object({ op: z.literal('move_block'), id: z.string(), start_utc: z.string().datetime(), end_utc: z.string().datetime(), task_key: z.string().optional(), date: z.string().optional(), title: z.string().optional(), origin: z.enum(['engine', 'manual', 'fixed']).optional(), recurrence_weekday: z.number().int().min(0).max(6).optional(), unavailable_date: z.string().date().optional() }),
   z.object({ op: z.literal('remove_block'), id: z.string(), task_key: z.string().optional(), date: z.string().optional(), title: z.string().optional() }),
   z.object({ op: z.literal('reschedule'), scope: z.enum(['affected_only', 'all']).default('affected_only'), keep_pinned: z.literal(true) }),
   z.object({ op: z.literal('clear_plan') }),

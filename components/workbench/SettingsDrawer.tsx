@@ -31,7 +31,7 @@ export function SettingsDrawer() {
   const visibleEnd = useUiStore((s) => s.visibleEnd);
   const setVisibleRange = useUiStore((s) => s.setVisibleRange);
   const state = usePlanStore((s) => s.state);
-  const importState = usePlanStore((s) => s.importState);
+  const importJsonState = usePlanStore((s) => s.importJsonState);
   const streaming = useChatStore((s) => s.streaming);
   const { deleteAll, isDeleting } = useRecovery();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -105,11 +105,13 @@ export function SettingsDrawer() {
       for (const b of s.blocks) {
         if (!b.id || !b.title || !b.start_utc || !b.end_utc) { toast.error('任务块数据不完整，导入已取消'); return; }
       }
-      importState(s);
-      toast.success('计划已导入');
+      await importJsonState(s);
+      void qc.invalidateQueries({ queryKey: ['plans'] });
+      void qc.invalidateQueries({ queryKey: ['calendar'] });
+      toast.success(usePlanStore.getState().state.plan.id !== s.plan.id ? '计划已导入为副本，原计划保持不变' : '计划已导入');
       closeDrawer();
-    } catch {
-      toast.error('无法解析 JSON 文件');
+    } catch (err) {
+      toast.error('导入失败，原计划未更改', { description: err instanceof Error ? err.message : '无法读取 JSON 或写入本机存储' });
     }
   };
 

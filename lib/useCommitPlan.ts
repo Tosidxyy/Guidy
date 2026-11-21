@@ -12,8 +12,9 @@ import { useChatStore } from '@/store/useChatStore';
 import { useBlockHistory } from '@/store/useBlockHistory';
 import { appliedPatches } from '@/lib/appliedPatches';
 import { snapshotOps } from '@/lib/snapshotOps';
+import { SHARED_PLAN_ID } from '@/lib/patchTargets';
 import type { ConstraintSetArtifact } from '@/shared/schemas';
-import type { PlanState } from '@/shared/types';
+import type { Block, PlanState } from '@/shared/types';
 
 /** 方案卡确认：本地求一次排程算 hash，直接落库生成计划与时间块（不再需要单独的预览步骤）。 */
 export function useCommitPlan(onSaved?: (planId: string) => void) {
@@ -43,7 +44,7 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
       const before = store.state;
       const resp = await api.commit(body);
       appliedPatches.mark(useChatStore.getState().conversationId, draft as any);
-      return { resp, before, draft };
+      return { resp, before, draft, selectionRevision: store.selectionRevision };
     },
     onError: (err, draft) => {
       const e = err instanceof ApiError ? err : new ApiError('service_unavailable', 503, '提交失败，请重试');
@@ -51,7 +52,7 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
       // 排不下时优先给「自动放宽重试」，不能被缺口详情短路。
       if (e.code === 'engine_infeasible' && draft) {
         const store = usePlanStore.getState();
-        const meta = { horizon_start: store.state.plan.horizon_start, timezone: store.state.plan.timezone };
+        const meta = { horizon_start: store.state.plan.horizon_start, timezone: store.state.plan.timezone, now_ms: Date.now() };
         const blocks = store.state.blocks;
         const relaxed = relaxDraft(draft, meta, blocks);
         const trimmed = trimArtifactToFit(draft, meta, blocks);
@@ -83,7 +84,7 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
       }
       toast.error(e.message, { description: e.diagnosticId ? `诊断 ID：${e.diagnosticId}` : undefined });
     },
-    onSuccess: ({ resp: serverPlan, before }: any) => {
+    onSuccess: async ({ resp: serverPlan, before, selectionRevision }: any) => {
       const store = usePlanStore.getState();
       const next: PlanState = {
         plan: serverPlan.plan,
@@ -91,13 +92,14 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
         constraints: serverPlan.constraints,
         blocks: serverPlan.blocks,
       };
-      store.importState(next);
+      const adopt = store.selectionRevision === selectionRevision && store.state === before;
+      if (adopt) store.importState(next, before.plan.id === null);
       // 确认生成同样可撤销：撤销=恢复提交前的任务/约束/块，重做=再次应用这次结果。
       useBlockHistory.getState().push(serverPlan.plan.id, {
         at: Date.now(),
         label: `确认生成：${serverPlan.plan.title}`.slice(0, 40),
-        forwardOps: snapshotOps(next),
-        inverseOps: snapshotOps(before),
+        forwardOps: [...snapshotOps(next), ...(serverPlan.shared_added ?? []).map(({ id, ...value }: Block) => ({ op: 'add_block' as const, client_id: id, plan_id: SHARED_PLAN_ID, value }))],
+        inverseOps: [...snapshotOps(before), ...(serverPlan.shared_added ?? []).map((b: Block) => ({ op: 'remove_block' as const, id: b.id, plan_id: SHARED_PLAN_ID }))],
       });
       qc.invalidateQueries({ queryKey: ['plans'] });
       qc.invalidateQueries({ queryKey: ['conversations'] });
@@ -105,8 +107,13 @@ export function useCommitPlan(onSaved?: (planId: string) => void) {
       // 有新计划生成/调整后自动更新习惯画像（只用过去的块）。
       void localLearnProfile().then(() => qc.invalidateQueries({ queryKey: ['profile'] })).catch(() => null);
       toast.success('计划已保存到本机');
-      if (Array.isArray(serverPlan.warnings) && serverPlan.warnings.length) toast.info(serverPlan.warnings[0], { duration: 8000 });
-      onSaved?.(serverPlan.plan.id);
+      const notices = [...new Set<string>([
+        ...(serverPlan.warnings ?? []),
+        ...(serverPlan.compromises ?? []).map((c: { reason: string }) => c.reason),
+      ])].filter(Boolean);
+      if (notices.length) toast.info('实际排程提示', { description: notices.join('；'), duration: 12000 });
+      await store.flush();
+      if (adopt && usePlanStore.getState().state.plan.id === serverPlan.plan.id) onSaved?.(serverPlan.plan.id);
     },
   });
   return {

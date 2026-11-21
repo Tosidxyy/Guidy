@@ -67,7 +67,10 @@ export async function undoActivePlan(redo = false): Promise<string | null> {
   const store = usePlanStore.getState();
   const planId = store.state.plan.id;
   if (peekUndo(redo).source === 'block' && planId) {
-    return redo ? planController.redo(planId) : planController.undo(planId);
+    const r = redo ? await planController.redoDetailed(planId) : await planController.undoDetailed(planId);
+    // 撤销失败必须给出原因，不能静默无反应。
+    if (!r.label && r.reason) toast.error(`无法${redo ? '重做' : '撤销'}：${r.reason}`);
+    return r.label;
   }
   return redo ? store.redo() : store.undo();
 }
@@ -103,42 +106,64 @@ export function renamePlanAction(title: string) {
 }
 
 /** 保存尚未落库的草稿：整份快照提交，不跑求解，保留手放块与备注。 */
-const draftSaveInFlight: { current: Promise<{ ok: boolean; planId?: string; reason?: string }> | null } = { current: null };
+const draftSaveInFlight: { current: Promise<{ ok: boolean; planId?: string; reason?: string }> | null; revision: number } = { current: null, revision: -1 };
 
 export function saveDraftAction(): Promise<{ ok: boolean; planId?: string; reason?: string }> {
   // 自动保存与「应用调整/保存卡片」可能同时触发：并发调用共享同一次保存，
   // 否则 plan_id=null 的两次请求会在云端各建一个草稿计划，后续提交必然版本冲突。
-  if (draftSaveInFlight.current) return draftSaveInFlight.current;
+  if (draftSaveInFlight.current) {
+    if (draftSaveInFlight.revision === usePlanStore.getState().selectionRevision) return draftSaveInFlight.current;
+    return draftSaveInFlight.current.then(() => saveDraftAction());
+  }
+  draftSaveInFlight.revision = usePlanStore.getState().selectionRevision;
   const run = doSaveDraftAction().finally(() => { draftSaveInFlight.current = null; });
   draftSaveInFlight.current = run;
   return run;
 }
 
+export async function flushDraftSave(): Promise<void> {
+  while (draftSaveInFlight.current) await draftSaveInFlight.current;
+}
+
 async function doSaveDraftAction(): Promise<{ ok: boolean; planId?: string; reason?: string }> {
   const store = usePlanStore.getState();
-  const state = store.state;
-  if (state.plan.id) return { ok: true, planId: state.plan.id };
+  if (store.state.plan.id) return { ok: true, planId: store.state.plan.id };
+  const revision = store.selectionRevision;
+  const conversationId = useChatStore.getState().conversationId;
+  let savedId: string | null = null;
   try {
-    const resp = await api.saveDraft({
-      plan_id: null,
-      conversation_id: useChatStore.getState().conversationId,
-      input: {
-        title: state.plan.title,
-        horizon_start: state.plan.horizon_start,
-        horizon_days: state.plan.horizon_days,
-        timezone: state.plan.timezone,
-        task_defs: state.task_defs,
-        constraints: state.constraints,
-        blocks: state.blocks,
-      },
-    });
-    store.importState({ plan: resp.plan, task_defs: resp.task_defs, constraints: resp.constraints, blocks: resp.blocks });
-        void queryClient.invalidateQueries({ queryKey: ['plans'] });
-    void queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    void queryClient.invalidateQueries({ queryKey: ['calendar'] });
-    return { ok: true, planId: resp.plan.id };
+    while (usePlanStore.getState().selectionRevision === revision) {
+      await store.flush();
+      if (usePlanStore.getState().selectionRevision !== revision) break;
+      const state = usePlanStore.getState().state;
+      const resp = await api.saveDraft({
+        plan_id: savedId,
+        conversation_id: conversationId,
+        input: {
+          title: state.plan.title,
+          horizon_start: state.plan.horizon_start,
+          horizon_days: state.plan.horizon_days,
+          timezone: state.plan.timezone,
+          task_defs: state.task_defs,
+          constraints: state.constraints,
+          blocks: state.blocks,
+        },
+      });
+      savedId = resp.plan.id;
+      void queryClient.invalidateQueries({ queryKey: ['plans'] });
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      void queryClient.invalidateQueries({ queryKey: ['calendar'] });
+      const current = usePlanStore.getState();
+      if (current.selectionRevision !== revision) break;
+      // An edit during the write must be saved to the same new ID before adopting it.
+      if (current.state !== state) continue;
+      store.importState({ plan: resp.plan, task_defs: resp.task_defs, constraints: resp.constraints, blocks: resp.blocks }, true);
+      await store.flush();
+      return { ok: true, planId: resp.plan.id };
+    }
+    return { ok: false, reason: '当前计划已切换，未替换新的草稿' };
   } catch (err) {
-    return { ok: false, reason: err instanceof ApiError ? err.message : '保存失败，请重试' };
+    return { ok: false, reason: err instanceof Error ? err.message : '保存失败，请重试' };
   }
 }
 

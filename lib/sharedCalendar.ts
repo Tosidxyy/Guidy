@@ -1,5 +1,5 @@
 import type { Block, Constraint, PlanState } from '@/shared/types';
-import { localDay, localMinutes, minToHHmm } from '@/shared/engine';
+import { blockBusyCuts } from '@/shared/engine';
 import { canonical } from '@/lib/restoreChat';
 
 const RECURRING = new Set(['busy_window', 'fixed_block']);
@@ -35,16 +35,5 @@ export function mergeSharedWindows(own: Constraint[], shared: Constraint[]): Con
  * 避免预览输出混入共享块导致 ghost/diff/应用逻辑复杂化。
  */
 export function sharedBlockCuts(blocks: Block[], timezone: string): Constraint[] {
-  return blocks.map((b) => ({
-    id: `cut-${b.id}`,
-    payload: {
-      type: 'busy_window' as const,
-      date: localDay(b.start_utc, timezone),
-      start: minToHHmm(localMinutes(b.start_utc, timezone)),
-      end: minToHHmm(localMinutes(b.end_utc, timezone)),
-      label: b.title,
-    },
-    source: 'user' as const,
-    enabled: true,
-  }));
+  return blockBusyCuts(blocks, timezone);
 }

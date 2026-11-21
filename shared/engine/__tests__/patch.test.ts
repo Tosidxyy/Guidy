@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { applyPatch } from '../patch';
-import type { PlanState } from '../../types';
+import { applyPatch, inheritUnavailableDates, MATERIALIZED_NOTE } from '../patch';
+import { localDay, utcAt } from '../time';
+import { blockBusyCuts } from '../availability';
+import { solve } from '../solve';
+import { ApplyOpSchema, ManualBlockSchema, PlanBlockSchema } from '../../schemas';
+import type { ApplyOp, Block, PlanState } from '../../types';
 
 const base: PlanState = {
   plan: { id: 'p1', title: '测试', horizon_start: '2026-11-16', horizon_days: 7, timezone: 'Asia/Shanghai', status: 'active', version: 1, created_at: '', updated_at: '' },
@@ -99,7 +103,21 @@ describe('applyPatch — block ops（不重算）', () => {
     const r = applyPatch(base, [{ op: 'move_block', id: 'b1', start_utc: '2026-11-16T03:00:00.000Z', end_utc: '2026-11-16T04:30:00.000Z' }]);
     expect(r.state.blocks[0].start_utc).toBe('2026-11-16T03:00:00.000Z');
     expect(r.requiresReschedule).toBe(false);
-    expect(r.inverse_ops).toContainEqual({ op: 'move_block', id: 'b1', start_utc: '2026-11-16T01:00:00.000Z', end_utc: '2026-11-16T02:30:00.000Z' });
+    expect(r.inverse_ops).toContainEqual({ op: 'move_block', id: 'b1', start_utc: '2026-11-16T01:00:00.000Z', end_utc: '2026-11-16T02:30:00.000Z', origin: 'engine' });
+  });
+  it('move_block 把 engine 块转 manual（重排保留），逆操作恢复 origin', () => {
+    const r = applyPatch(base, [{ op: 'move_block', id: 'b1', start_utc: '2026-11-16T03:00:00.000Z', end_utc: '2026-11-16T04:30:00.000Z' }]);
+    expect(r.state.blocks[0].origin).toBe('manual');
+    expect(r.state.blocks[0].pinned).toBe(false);
+    const undone = applyPatch(r.state, r.inverse_ops);
+    expect(undone.state.blocks[0].origin).toBe('engine');
+    expect(undone.state.blocks[0].start_utc).toBe('2026-11-16T01:00:00.000Z');
+  });
+  it('move_block 显式 origin（撤销路径）按指定值恢复', () => {
+    const manual: PlanState = { ...base, blocks: [{ ...base.blocks[0], origin: 'manual' }] };
+    const r = applyPatch(manual, [{ op: 'move_block', id: 'b1', start_utc: '2026-11-16T03:00:00.000Z', end_utc: '2026-11-16T04:30:00.000Z', origin: 'engine' } as any]);
+    expect(r.state.blocks[0].origin).toBe('engine');
+    expect(r.inverse_ops).toContainEqual(expect.objectContaining({ op: 'move_block', origin: 'manual' }));
   });
   it('add_block 使用 client_id，并生成可定位的逆操作', () => {
     const id = '11111111-1111-4111-8111-111111111111';
@@ -168,6 +186,86 @@ describe('applyPatch — reschedule 与混合', () => {
     expect(JSON.stringify(base)).toBe(snapshot);
   });
 });
+describe('dated full-day replacement provenance', () => {
+  const tz = 'Asia/Shanghai';
+  const date = '2026-11-28';
+  const original: Block = {
+    id: '11111111-1111-4111-8111-111111111111', title: 'Reserved', category: 'life',
+    start_utc: utcAt(date, 360, tz), end_utc: utcAt(date, 1380, tz),
+    priority: 'high', pinned: false, origin: 'manual', notes: MATERIALIZED_NOTE, unavailable_date: date,
+  };
+  const add = (day = date, start = 390, end = 1260): ApplyOp => ({
+    op: 'add_block', client_id: '22222222-2222-4222-8222-222222222222',
+    value: { title: 'Detail', category: 'life', start_utc: utcAt(day, start, tz), end_utc: utcAt(day, end, tz), priority: 'mid', pinned: false },
+  });
+  const state = (block = original): PlanState => ({
+    ...base, plan: { ...base.plan, horizon_start: '2026-11-23' }, blocks: [block],
+  });
+  const persisted = (ops: ApplyOp[]) => JSON.parse(JSON.stringify(ops)).map((op: unknown) => ApplyOpSchema.parse(op));
+
+  it('replaces the full-day parent without lengthening children; pure pinned solve and foreign cuts skip gaps', () => {
+    const ops: ApplyOp[] = [{ op: 'remove_block', id: original.id }, add()];
+    const before = JSON.stringify({ original, ops });
+    const patched = applyPatch(state(), ops);
+    expect(patched.state.blocks).toHaveLength(1);
+    const child = patched.state.blocks[0];
+    expect(child).toMatchObject({ title: 'Detail', unavailable_date: date, start_utc: utcAt(date, 390, tz), end_utc: utcAt(date, 1260, tz) });
+    expect(child.id).not.toBe(original.id);
+    expect(PlanBlockSchema.parse(child).unavailable_date).toBe(date);
+    expect(ManualBlockSchema.parse(child).unavailable_date).toBe(date);
+    expect(ManualBlockSchema.safeParse({ ...child, unavailable_date: '2026-02-30' }).success).toBe(false);
+    const input = { engine_version: 1, horizon_start: '2026-11-23', horizon_days: 7, timezone: tz,
+      task_defs: base.task_defs, constraints: base.constraints, pinned_blocks: [child] };
+    for (const solved of [solve(input), solve({ ...input, constraints: [...base.constraints, ...blockBusyCuts([child], tz)], pinned_blocks: [] })]) {
+      expect(solved.violations).toEqual([]);
+      const tasks = solved.blocks.filter((b) => b.task_key);
+      expect(tasks).toHaveLength(6);
+      expect(tasks.some((b) => localDay(b.start_utc, tz) === date)).toBe(false);
+    }
+    expect(JSON.stringify({ original, ops })).toBe(before);
+    const undone = applyPatch(patched.state, persisted(patched.inverse_ops));
+    expect(undone.state.blocks).toEqual([original]);
+    expect(applyPatch(undone.state, persisted(undone.inverse_ops)).state.blocks).toEqual([child]);
+    const removed = applyPatch(patched.state, [{ op: 'remove_block', id: child.id }]);
+    expect(applyPatch(removed.state, persisted(removed.inverse_ops)).state.blocks).toEqual([child]);
+    const refined = applyPatch(patched.state, [{ op: 'remove_block', id: child.id }, add(date, 600, 660)]);
+    expect(refined.state.blocks[0].unavailable_date).toBe(date);
+  });
+
+  it('supports only explicit legacy materialized full-waking-day replacements, not names or unrelated adds', () => {
+    const { unavailable_date, ...legacy } = original;
+    const ops: ApplyOp[] = [{ op: 'remove_block', id: legacy.id }, add()];
+    expect(applyPatch(state(legacy), ops).state.blocks[0].unavailable_date).toBe(date);
+    const nonParents: Block[] = [
+      { ...legacy, recurrence_weekday: 6 },
+      { ...legacy, end_utc: utcAt(date, 1320, tz) },
+      { ...legacy, start_utc: utcAt(date, 480, tz) },
+      { ...legacy, notes: undefined, title: 'Whole day trip: no tasks' },
+      { ...original, task_key: 'math' },
+    ];
+    for (const b of nonParents) expect(applyPatch(state(b), ops).state.blocks[0].unavailable_date).toBeUndefined();
+    expect(inheritUnavailableDates([original], [add()], tz)).toEqual([add()]);
+    for (const child of [add('2026-11-29'), add(date, 1380, 1410), add(date, 300, 360)]) {
+      expect(inheritUnavailableDates([original], [ops[0], child], tz)[1]).toEqual(child);
+    }
+  });
+
+  it.each(['move_block', 'update_block'] as const)('%s retains within-day provenance, clears on date change, and restores through persisted undo/redo', (op) => {
+    const child = applyPatch(state(), [{ op: 'remove_block', id: original.id }, add(date, 480, 600)]).state;
+    const operation = (day: string): ApplyOp => {
+      const times = { start_utc: utcAt(day, 720, tz), end_utc: utcAt(day, 780, tz) };
+      return op === 'move_block' ? { op, id: child.blocks[0].id, ...times } : { op, id: child.blocks[0].id, patch: times };
+    };
+    expect(applyPatch(child, [operation(date)]).state.blocks[0].unavailable_date).toBe(date);
+    const moved = applyPatch(child, [operation('2026-11-29')]);
+    expect(moved.state.blocks[0].unavailable_date).toBeUndefined();
+    expect(blockBusyCuts(moved.state.blocks, tz)[0].payload).toMatchObject({ date: '2026-11-29', start: '12:00', end: '13:00' });
+    const restored = applyPatch(moved.state, persisted(moved.inverse_ops));
+    expect(restored.state.blocks).toEqual(child.blocks);
+    expect(applyPatch(restored.state, persisted(restored.inverse_ops)).state.blocks).toEqual(moved.state.blocks);
+  });
+});
+
 describe('过期块 id 的语义校正', () => {
   const plan = { id: 'p1', title: '论文', horizon_start: '2026-11-20', horizon_days: 7 as const, timezone: 'Asia/Shanghai', status: 'active' as const, version: 1, created_at: '', updated_at: '' };
   const fit = (id: string, day: string, h: string) => ({

@@ -43,6 +43,8 @@ describe('isFailoverError', () => {
   it('配额/鉴权/限流/上游 5xx 才切换', () => {
     expect(isFailoverError({ code: 'quota_exceeded' })).toBe(true);
     expect(isFailoverError({ status: 429 })).toBe(true);
+    for (const status of [500, 501, 502, 503, 504, 507, 599]) expect(isFailoverError({ status })).toBe(true);
+    expect(isFailoverError({ status: 600 })).toBe(false);
     expect(isFailoverError(new Error('llm_http_401'))).toBe(true);
     expect(isFailoverError({ code: 'validation_failed' })).toBe(false);
     expect(isFailoverError(new Error('bad json'))).toBe(false);
@@ -192,5 +194,80 @@ describe('createResilientQca', () => {
     const e2: any[] = [];
     for await (const f of readSSE(s2.body, { signal: AbortSignal.timeout(500) })) e2.push(JSON.parse(f.data));
     expect(e2.some((e) => e.type === 'agent.message')).toBe(true);
+  });
+});
+describe('供应商失败识别与切换（P0：fallback 必须生效）', () => {
+  const errFrame = (message: string) => new ReadableStream<Uint8Array>({
+    start(c) {
+      c.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'session.error', status: 'failed', message })}\n\n`));
+      c.close();
+    },
+  });
+  const failingStream = (message: string): QcaAdapter => ({
+    ...fakeAdapter({}),
+    async openStream() { return { body: errFrame(message), close() {} }; },
+  });
+
+  it.each([401, 429, 500])('主供应商流内 llm_http_%i → 备用成功，且失败错误帧不透传', async (status) => {
+    const backup = fakeAdapter({ text: '备用回复' });
+    const qca = createResilientQca([
+      { name: 'deepseek', adapter: failingStream(`llm_http_${status}`) },
+      { name: 'bailian', adapter: backup },
+    ]);
+    const events = await turn(qca, '问');
+    expect(events.some((e) => e.type === 'session.error')).toBe(false);
+    expect(events.some((e) => e.type === 'provider.switch' && e.name === 'bailian')).toBe(true);
+    expect(events.some((e) => e.type === 'agent.message' && e.content[0].text === '备用回复')).toBe(true);
+  });
+
+  it('连接失败（fetch failed）→ 切换备用', async () => {
+    const primary: QcaAdapter = { ...fakeAdapter({}), async openStream(): Promise<any> { throw new TypeError('fetch failed'); } };
+    const qca = createResilientQca([{ name: 'a', adapter: primary }, { name: 'b', adapter: fakeAdapter({ text: '备用' }) }]);
+    const events = await turn(qca, '问');
+    expect(events.some((e) => e.type === 'agent.message' && e.content[0].text === '备用')).toBe(true);
+  });
+
+  it('首包超时（llm_connect_timeout / TimeoutError）→ 切换备用', async () => {
+    const primary: QcaAdapter = { ...fakeAdapter({}), async openStream(): Promise<any> { throw Object.assign(new Error('llm_connect_timeout'), { code: 'timeout' }); } };
+    const qca = createResilientQca([{ name: 'a', adapter: primary }, { name: 'b', adapter: fakeAdapter({ text: '备用' }) }]);
+    const events = await turn(qca, '问');
+    expect(events.some((e) => e.type === 'agent.message')).toBe(true);
+    expect(isFailoverError(new DOMException('timed out', 'TimeoutError'))).toBe(true);
+    expect(isFailoverError(new Error('connect ECONNREFUSED 127.0.0.1:8000'))).toBe(true);
+  });
+
+  it('全部供应商失败 → 只下发一条最终 session.error', async () => {
+    const qca = createResilientQca([
+      { name: 'a', adapter: failingStream('llm_http_401') },
+      { name: 'b', adapter: failingStream('llm_http_500') },
+    ]);
+    const events = await turn(qca, '问');
+    const errs = events.filter((e) => e.type === 'session.error');
+    expect(errs).toHaveLength(1);
+    expect(events.some((e) => e.type === 'agent.message')).toBe(false);
+  });
+
+  it('已输出正文后失败 → 不切换（避免重复生成），错误如实下发', async () => {
+    const partial: QcaAdapter = {
+      ...fakeAdapter({}),
+      async openStream() {
+        return { body: sse([
+          { type: 'agent.message', id: 'm1', content: [{ type: 'text', text: '半截回复' }] },
+          { type: 'session.error', status: 'failed', message: 'llm_http_500' },
+        ]), close() {} };
+      },
+    };
+    const backup = fakeAdapter({ text: '不应出现' });
+    const qca = createResilientQca([{ name: 'a', adapter: partial }, { name: 'b', adapter: backup }]);
+    const events = await turn(qca, '问');
+    expect(events.some((e) => e.type === 'session.error')).toBe(true);
+    expect(events.some((e) => e.type === 'agent.message' && e.content[0].text === '不应出现')).toBe(false);
+  });
+
+  it('createSession 鉴权失败 → 落到备用供应商建会话', async () => {
+    const primary: QcaAdapter = { ...fakeAdapter({}), async createSession(): Promise<any> { throw Object.assign(new Error('llm_http_401'), { status: 401 }); } };
+    const qca = createResilientQca([{ name: 'a', adapter: primary }, { name: 'b', adapter: fakeAdapter({ text: '备用回复' }) }]);
+    const events = await turn(qca, '问');
+    expect(events.some((e) => e.type === 'agent.message' && e.content[0].text === '备用回复')).toBe(true);
   });
 });

@@ -1,8 +1,8 @@
 import { solve } from './solve.ts';
 import type { ConstraintSetArtifact } from '../schemas.ts';
-import type { Block, TaskDef } from '../types.ts';
+import type { Block, Constraint, TaskDef } from '../types.ts';
 
-export type FitPlanMeta = { horizon_start: string; timezone: string };
+export type FitPlanMeta = { horizon_start: string; timezone: string; now_ms?: number; extra_constraints?: Constraint[] };
 
 function constraintsOf(draft: ConstraintSetArtifact) {
   return draft.constraints.map((payload, i) => ({ id: `fit-${i}`, payload, source: 'ai' as const, enabled: true }));
@@ -14,8 +14,9 @@ export function artifactFeasible(draft: ConstraintSetArtifact, plan: FitPlanMeta
     horizon_start: draft.horizon_start ?? plan.horizon_start,
     horizon_days: draft.horizon_days,
     timezone: plan.timezone,
+    now_ms: plan.now_ms,
     task_defs: draft.task_defs,
-    constraints: constraintsOf(draft),
+    constraints: [...constraintsOf(draft), ...(plan.extra_constraints ?? [])],
     pinned_blocks: pinned,
   });
   return out.violations.length === 0;

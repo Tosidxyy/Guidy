@@ -17,6 +17,10 @@ interface Props {
   widthPct: number;
   visual: BlockVisualState;
   compact: boolean;
+  /** Shared enclosing context; its exposed edit control is in the day header. */
+  background?: boolean;
+  timeLabel?: string;
+  inClusterScroller?: boolean;
   planLabel?: string;
   /** 与其他计划块重叠：加明显描边，避免被当前计划完全盖住。 */
   overlap?: boolean;
@@ -30,22 +34,34 @@ interface Props {
 
 export const BlockCard = memo(function BlockCard({
   block, startMin, endMin, top, height, leftPct, widthPct, visual, compact,
-  planLabel, titleLines, overlap, onPointerDown, onResizeDown, onOpen, onClick,
+  background, timeLabel, inClusterScroller, planLabel, titleLines, overlap, onPointerDown, onResizeDown, onOpen, onClick,
 }: Props) {
   const ghost = visual.startsWith('ghost');
   const interactive = !ghost && visual !== 'dimmed';
+  const time = timeLabel ?? `${minToHHmm(startMin)}–${minToHHmm(endMin)}`;
+
+  if (background) return (
+    <div
+      aria-hidden="true"
+      data-background-id={block.id}
+      className="pointer-events-none absolute inset-x-0 overflow-hidden rounded-[var(--site-radius-control)] border border-dashed border-site-line"
+      style={{ top, height, background: `color-mix(in srgb, ${categoryColor(block.category)} 7%, transparent)` }}
+    />
+  );
 
   return (
     <div
       data-block-id={block.id}
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
-      aria-label={`${block.title} ${minToHHmm(startMin)} 到 ${minToHHmm(endMin)}${planLabel ? `，${planLabel}` : ''}`}
-      title={`${block.title} ${minToHHmm(startMin)}–${minToHHmm(endMin)}${planLabel ? `（${planLabel}）` : ''}`}
+      aria-label={`${block.title} ${time}${planLabel ? `，${planLabel}` : ''}`}
+      title={`${block.title} ${time}${planLabel ? `（${planLabel}）` : ''}`}
       className={cn(
         'group absolute select-none overflow-hidden rounded-[var(--site-radius-control)] border text-left hover:[--cat-fill:18%]',
         'transition-shadow duration-150',
-        interactive && !block.pinned && 'cursor-grab active:cursor-grabbing touch-none',
+        interactive && !!onPointerDown && !block.pinned && 'cursor-grab active:cursor-grabbing',
+        interactive && !onPointerDown && 'cursor-pointer',
+        interactive && (inClusterScroller || !onPointerDown ? 'touch-auto' : 'touch-none'),
         interactive && block.pinned && 'cursor-default',
         visual === 'foreign' && (overlap
           ? 'z-10 border-2 border-dashed border-site-flow bg-site-surface/90 opacity-90 ring-2 ring-site-flow/40 hover:opacity-100'
@@ -71,11 +87,16 @@ export const BlockCard = memo(function BlockCard({
         borderLeftColor: 'var(--cat)',
         zIndex: visual === 'selected' ? 20 : visual === 'foreign' ? 5 : 10,
       }}
-      onPointerDown={interactive ? (e) => onPointerDown?.(e, block) : undefined}
-      onClick={interactive && visual === 'foreign' ? onClick : undefined}
+      onPointerDown={interactive ? (e) => {
+        if (inClusterScroller && e.pointerType === 'touch') return;
+        onPointerDown?.(e, block);
+      } : undefined}
+      onClick={interactive ? onClick : undefined}
       onDoubleClick={interactive && visual !== 'foreign' ? () => onOpen?.(block) : undefined}
       onKeyDown={interactive ? (e) => {
-        if (e.key !== 'Enter') return;
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        e.stopPropagation();
         if (visual === 'foreign') onClick?.();
         else onOpen?.(block);
       } : undefined}
@@ -104,11 +125,11 @@ export const BlockCard = memo(function BlockCard({
         </div>
         {!compact && (
           <span className="tabular mt-0.5 text-xs leading-tight text-site-ink-soft">
-            {minToHHmm(startMin)}–{minToHHmm(endMin)}
+            {time}
           </span>
         )}
       </div>
-      {interactive && (
+      {interactive && onResizeDown && (
         <div
           data-resize-handle
           className="absolute inset-x-0 bottom-0 h-2 cursor-ns-resize touch-none"

@@ -19,7 +19,7 @@ export function sharedPlanState(blocks: Block[] = useSharedCalendar.getState().b
 
 let lastInverse: ApplyOp[] = [];
 
-export async function applySharedOps(ops: ApplyOp[]): Promise<{ ok: boolean; reason?: string }> {
+export async function applySharedOps(ops: ApplyOp[]): Promise<{ ok: boolean; reason?: string; inverseOps?: ApplyOp[] }> {
   const store = useSharedCalendar.getState();
   const previous = store.busyBlocks;
   store.setBusyBlocks(applyPatch(sharedPlanState(previous), ops).state.blocks);
@@ -28,7 +28,7 @@ export async function applySharedOps(ops: ApplyOp[]): Promise<{ ok: boolean; rea
     useSharedCalendar.getState().setBusyBlocks(resp.blocks as Block[]);
     lastInverse = (resp.inverse_ops ?? []) as ApplyOp[];
     void queryClient.invalidateQueries({ queryKey: ['calendar'] });
-    return { ok: true };
+    return { ok: true, inverseOps: lastInverse };
   } catch (err) {
     useSharedCalendar.getState().setBusyBlocks(previous);
     return { ok: false, reason: err instanceof ApiError ? err.message : '公共日历保存失败，已恢复原状态' };

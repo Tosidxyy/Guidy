@@ -2,8 +2,10 @@ import { api } from '@/lib/api';
 import { queryClient } from '@/lib/queryClient';
 import { createPlanMutations } from '@/lib/planMutations';
 import { createPlanUndo } from '@/lib/planUndo';
+import { applySharedOps } from '@/lib/sharedBlocks';
 import { usePlanStore } from '@/store/usePlanStore';
 import { useBlockHistory } from '@/store/useBlockHistory';
+import { useSharedCalendar } from '@/store/useSharedCalendar';
 import type { PlanState } from '@/shared/types';
 
 const apply = createPlanMutations({
@@ -25,6 +27,8 @@ const undoer = createPlanUndo({
     if (active.plan.id === id) return active;
     return queryClient.getQueryData<PlanState>(['plan', id]);
   },
+  getSharedBlocks: () => useSharedCalendar.getState().busyBlocks,
+  applyShared: (ops) => applySharedOps(ops),
 });
 
 export const planController = {

@@ -41,4 +41,15 @@ describe('trimArtifactToFit（服务端自动取舍）', () => {
     const d = draft([task({ key: 'a' })], 7, { start: '07:00', end: '23:00' });
     expect(trimArtifactToFit(d, meta)).toBeNull();
   });
+  it('forwards explicit now_ms through feasibility and every trim solve', () => {
+    const d = draft([task({ key: 'a' })], 1);
+    const timedMeta = { ...meta, now_ms: Date.parse('2026-11-17T00:00:00+08:00') };
+    expect(artifactFeasible(d, meta)).toBe(true);
+    expect(artifactFeasible(d, timedMeta)).toBe(false);
+    const trimmed = trimArtifactToFit(d, timedMeta);
+    expect(trimmed).not.toBeNull();
+    expect(trimmed!.draft.task_defs).toEqual([]);
+    expect(artifactFeasible(trimmed!.draft, timedMeta)).toBe(true);
+    expect(d.task_defs).toHaveLength(1);
+  });
 });

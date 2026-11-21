@@ -6,7 +6,7 @@ import { mergeSharedWindows } from '@/lib/sharedCalendar';
 
 export function solveArtifact(
   draft: ConstraintSetArtifact,
-  plan: { horizon_start: string; timezone: string },
+  plan: { horizon_start: string; timezone: string; now_ms?: number },
   blocks: Block[],
   sharedWindows: Constraint[] = [],
 ): { output: SolveOutput; diff: DiffResult; horizon_start: string } {
@@ -15,9 +15,10 @@ export function solveArtifact(
     id: `ai-${i}`, payload, source: 'ai', enabled: true,
   }));
   const effective = mergeSharedWindows(constraints, sharedWindows);
-  const pinned = blocks.filter((b) => b.pinned || b.origin === 'manual');
+  const pinned = blocks.filter((b) => b.pinned || b.origin === 'manual' || ['completed', 'in_progress', 'partial'].includes(b.status ?? ''));
   const output = solve({
     engine_version: ENGINE_VERSION,
+    now_ms: plan.now_ms ?? Date.now(),
     horizon_start,
     horizon_days: draft.horizon_days,
     timezone: plan.timezone,
