@@ -80,20 +80,29 @@ const WMO: Record<number, string> = {
   95: '雷暴', 96: '雷暴伴冰雹', 99: '强雷暴伴冰雹',
 };
 
+async function fetchJson(url: string, ms: number): Promise<any> {
+  // 边缘出口偶发慢/抖：一次重试，仍失败才如实报错。
+  for (let i = 0; i < 2; i++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(ms) });
+      if (res.ok) return await res.json();
+    } catch { /* retry */ }
+  }
+  return null;
+}
+
 export async function weather(city: string, days: number): Promise<string> {
   const n = Math.max(1, Math.min(7, Math.floor(days) || 3));
   try {
-    const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh&format=json`, { signal: AbortSignal.timeout(5000) });
-    if (!geoRes.ok) return JSON.stringify({ error: 'weather_unavailable', note: '地理编码服务不可用；不要编造数值，可建议用户看天气 App。' });
-    const geo = (await geoRes.json()) as any;
+    const geo = await fetchJson(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh&format=json`, 8000);
+    if (!geo) return JSON.stringify({ error: 'weather_unavailable', note: '地理编码服务不可用；不要编造数值，可建议用户看天气 App。' });
     const g = geo?.results?.[0];
     if (!g) return JSON.stringify({ error: 'city_not_found', note: `找不到城市「${city}」，请向用户确认地名。` });
-    const fcRes = await fetch(
+    const fc = await fetchJson(
       `https://api.open-meteo.com/v1/forecast?latitude=${g.latitude}&longitude=${g.longitude}&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max&timezone=auto&forecast_days=${n}`,
-      { signal: AbortSignal.timeout(6000) },
+      8000,
     );
-    if (!fcRes.ok) return JSON.stringify({ error: 'weather_unavailable', note: '天气服务不可用；不要编造数值，可建议用户看天气 App。' });
-    const fc = (await fcRes.json()) as any;
+    if (!fc) return JSON.stringify({ error: 'weather_unavailable', note: '天气服务不可用；不要编造数值，可建议用户看天气 App。' });
     const w = (c: number) => WMO[c] ?? `代码${c}`;
     return JSON.stringify({
       city: g.name ?? city,
