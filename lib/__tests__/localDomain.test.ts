@@ -267,7 +267,8 @@ describe('本地 patch：版本与幂等', () => {
 
 describe('本地画像', () => {
   it('只统计过去的块，未来计划不参与', async () => {
-    const res = await commitPlan();
+    const futureStart = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+    const res = await commitPlan({ horizon_start: futureStart, horizon_days: 3 });
     const plan = (await getPlan(res.plan.id))!;
     const past = { ...plan.blocks[0], id: 'past-1', start_utc: '2026-09-01T01:00:00.000Z', end_utc: '2026-09-01T02:00:00.000Z' };
     await putPlan({ ...plan, blocks: [past, ...plan.blocks] });

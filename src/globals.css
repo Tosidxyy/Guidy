@@ -415,11 +415,13 @@
 button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
   box-shadow: 0 0 0 1px var(--site-bg), 0 0 0 3px var(--site-focus-ring);
 }
-/* 主题切换做短暂颜色过渡 */
-html, body, .bg-site-bg, .bg-site-surface, .bg-site-surface-2, .text-site-ink, .text-site-ink-soft, .border-site-line {
-  transition: background-color var(--site-motion-standard) var(--site-ease-glide),
-    color var(--site-motion-standard) var(--site-ease-glide),
-    border-color var(--site-motion-standard) var(--site-ease-glide);
+/* 主题切换做短暂颜色过渡；放在 base 层，避免覆盖组件自身的 transition 工具类（如抽屉滑动）。 */
+@layer base {
+  html, body, .bg-site-bg, .bg-site-surface, .bg-site-surface-2, .text-site-ink, .text-site-ink-soft, .border-site-line {
+    transition: background-color var(--site-motion-standard) var(--site-ease-glide),
+      color var(--site-motion-standard) var(--site-ease-glide),
+      border-color var(--site-motion-standard) var(--site-ease-glide);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }

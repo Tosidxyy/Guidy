@@ -293,10 +293,17 @@ export function PlanCardPanel() {
       </div>
 
       {(
-        <div className={open ? 'block' : 'hidden'}>
-          <div>
+        <div
+          inert={!open}
+          aria-hidden={!open}
+          className={cn(
+            'grid transition-[grid-template-rows] duration-[var(--site-motion-standard)] ease-[var(--site-ease-glide)]',
+            open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+          )}
+        >
+          <div className="min-h-0 overflow-hidden">
             {/* 整张卡一个滚动容器：预览、调整清单、任务与约束一起滚，滚轮不会被裁在外层。 */}
-            <div className="max-h-[min(45vh,calc(100dvh-360px))] overflow-y-auto overscroll-contain border-t border-site-line">
+            <div className={cn('max-h-[min(45vh,calc(100dvh-360px))] overflow-y-auto overscroll-contain', open && 'border-t border-site-line')}>
           <div className="flex items-start justify-between gap-3 px-3.5 pt-3">
             <div>
               <h3 className="font-display text-sm font-semibold text-site-ink">{viewed.plan_title || '方案卡'}</h3>
