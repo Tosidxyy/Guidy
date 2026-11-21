@@ -172,3 +172,16 @@ describe('纯 no-op patch 按纯文本回复', () => {
     expect(frames.some((f) => f.event === 'delta' && f.data.text.includes('你好，我是 Guidy'))).toBe(true);
   });
 });
+
+describe('寒暄纯文本回复不被误判为排程请求', () => {
+  it('「不要修改任何计划」的打招呼直接完成', async () => {
+    const d = deps({ openStream: async () => ({ body: upstreamStream([
+      { type: 'event_delta', event_id: 'e1', delta: { type: 'content_delta', content: { type: 'text', text: '你好，我是 Guidy，帮你把目标排进日历。' } } },
+      { type: 'session.status', status: 'idle' },
+    ]), close() {} }) });
+    const frames = await collect(await application(d)(ctx({ ...body, text: '你好，请只用一句话打个招呼，不要创建或修改任何计划，也不要调用工具。' })));
+    expect(frames.some((f) => f.event === 'error')).toBe(false);
+    expect(frames.some((f) => f.event === 'status' && f.data.state === 'completed')).toBe(true);
+    expect(frames.some((f) => f.event === 'delta' && f.data.text.includes('你好，我是 Guidy'))).toBe(true);
+  });
+});

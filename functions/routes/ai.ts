@@ -603,9 +603,11 @@ ${copies.length ? `新计划照抄了其他计划/共享日历的既有安排：
             break;
           }
           const expectsArtifact = /```json|^\s*\{/.test(finalText);
-          const requestedArtifact = /(制定|做|排|列|生成|安排|规划|调整|修改|改|加|删).{0,8}(计划|方案|日程|作息|表)|直接给方案|帮我排/.test(chat.text)
+          // 寒暄/明确否定排程意图的消息不算排程请求（「不要修改任何计划」不该命中「修改…计划」）。
+          const harmless = /打个招呼|只用一句话|不要创建|不要修改|别创建|别修改|不要调用工具|别调用工具/.test(chat.text);
+          const requestedArtifact = !harmless && (/(制定|做|排|列|生成|安排|规划|调整|修改|改|加|删).{0,8}(计划|方案|日程|作息|表)|直接给方案|帮我排/.test(chat.text)
             || /(每天|每周|每次|天天|工作日)[^。\n]{0,24}?\d+\s*(分钟|小时)/.test(chat.text)
-            || (!!planState?.plan?.id && /细化|拆分|做细|规划详细|规划细|挪|移动|调整|改到|新增|再加|删除|取消/.test(chat.text));
+            || (!!planState?.plan?.id && /细化|拆分|做细|规划详细|规划细|挪|移动|调整|改到|新增|再加|删除|取消/.test(chat.text)));
           if ((expectsArtifact || requestedArtifact) && attempt < 2) {
             repairNote = '\n输出被截断或只有文字。本轮必须直接输出完整闭合的 ```json 产物：省略冗长 notes，但保留用户要求的任务和约束；不能用漏项来伪装成功。';
             continue;
